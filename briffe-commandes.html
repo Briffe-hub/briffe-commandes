@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Briffe · Commandes appels d'offre</title>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:#0f0f0f;color:#e8e8e0;min-height:100vh}
+button{font-family:'DM Mono',monospace;cursor:pointer}
+.header{border-bottom:1px solid #1e1e1e;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;background:#111;position:sticky;top:0;z-index:10}
+.logo{font-size:12px;letter-spacing:.15em;color:#444;text-transform:uppercase}
+.logo span{color:#e8e8e0}
+.header-right{display:flex;gap:8px;align-items:center}
+.main{padding:24px 28px;max-width:920px;margin:0 auto}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:20px}
+.dot{width:5px;height:5px;border-radius:50%}
+.btn{font-size:11px;letter-spacing:.1em;padding:8px 18px;border-radius:3px;text-transform:uppercase;border:1px solid #2a2a2a;background:transparent;color:#666;white-space:nowrap}
+.btn:hover{border-color:#444;color:#aaa}
+.btn.primary{border-color:#e8e8e0;background:#e8e8e0;color:#0f0f0f}
+.btn.primary:hover{opacity:.85}
+.btn:disabled{opacity:.4;cursor:default}
+.connect-box{border:1px solid #1e1e1e;border-radius:8px;padding:56px 48px;text-align:center;background:#111;margin-top:40px}
+.connect-title{font-size:18px;font-weight:400;margin-bottom:8px;letter-spacing:-.01em}
+.connect-sub{font-size:13px;color:#555;margin-bottom:28px;line-height:1.7}
+.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-label{font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase}
+.count{font-size:11px;color:#333;padding:2px 8px;border:1px solid #1e1e1e;border-radius:3px;margin-left:10px}
+.email-row{border:1px solid #1a1a1a;border-radius:6px;margin-bottom:6px;overflow:hidden;background:#111}
+.email-head{display:flex;align-items:center;padding:13px 16px;gap:10px}
+.from{font-size:12px;color:#555;min-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subj{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.date{font-size:11px;color:#333;white-space:nowrap}
+.result-grid{border-top:1px solid #1a1a1a;padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px}
+.f-label{font-size:10px;color:#3a3a3a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.f-value{font-size:13px;color:#b0b0a8}
+.action-bar{border-top:1px solid #1a1a1a;padding:10px 16px;display:flex;align-items:center;gap:8px}
+.tag{font-size:11px;border-radius:3px;padding:3px 9px;flex:1}
+.tag.ok{color:#22c55e;background:#22c55e0e;border:1px solid #22c55e33}
+.tag.warn{color:#f59e0b;background:#f59e0b0e;border:1px solid #f59e0b33}
+.tag.err{color:#ef4444;background:#ef44440e;border:1px solid #ef444433}
+.loading-row{padding:12px 16px;color:#444;font-size:12px;border-top:1px solid #1a1a1a}
+.empty{padding:64px 0;text-align:center;color:#333;font-size:13px;line-height:2}
+.error-msg{color:#ef4444;font-size:12px;margin-top:12px}
+.hint{font-size:11px;color:#2a2a2a;line-height:1.8;margin-top:20px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo"><span>Briffe</span> · commandes appels d'offre</div>
+  <div class="header-right" id="header-right"></div>
+</div>
+
+<div class="main" id="main">
+  <div class="connect-box">
+    <div class="connect-title">Connexion Google requise</div>
+    <div class="connect-sub">Accès Gmail (lecture + archivage) et Google Sheets (écriture).<br>Aucune donnée stockée hors de votre session.</div>
+    <button class="btn primary" onclick="signIn()">→ Connecter Google</button>
+    <div id="auth-error" class="error-msg" style="display:none"></div>
+    <div class="hint">Permissions : gmail.modify · spreadsheets<br>Connectez-vous avec logistique@briffe.me</div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const CLIENT_ID = "846004846641-mh9q8v3mcr9c8n8keor84tfungsdn9bo.apps.googleusercontent.com";
+const SHEETS_ID = "1ySJ7ORWl_D50WX-0cyJAcrHBCq6orDcFFpGUSzL2GIU";
+const GMAIL_USER = "logistique%40briffe.me";
+const TRAITE_LABEL = "Traités";
+
+const SHEET_MAP = {
+  "univlille pdj": "[UnivLille] PDJ",
+  "univlille petit dejeuner": "[UnivLille] PDJ",
+  "univlille pc": "[UnivLille] PC",
+  "univlille pause cafe": "[UnivLille] PC",
+  "euratech pdj simple": "[EuraTech] PDJ Simple",
+  "euratech petit dejeuner simple": "[EuraTech] PDJ Simple",
+  "euratech pdj elabore": "[EuraTech] PDJ élaboré & sain",
+  "euratech pdj sain": "[EuraTech] PDJ élaboré & sain",
+  "euratech petit dejeuner elabore": "[EuraTech] PDJ élaboré & sain",
+  "euratech pc simple": "[EuraTech] PC Simple",
+  "euratech pause cafe simple": "[EuraTech] PC Simple",
+  "euratech pc gourmande": "[EuraTech] PC Gourmande",
+  "euratech pause cafe gourmande": "[EuraTech] PC Gourmande",
+  "sciencespo pdj": "[SciencePo] PDJ",
+  "science po pdj": "[SciencePo] PDJ",
+  "sciencespo petit dejeuner": "[SciencePo] PDJ",
+};
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let TOKEN = null;
+let LABEL_ID = null;
+let EMAILS = [];
+let ORDERS = {};
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+function signIn() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/spreadsheets",
+    callback: (resp) => {
+      if (resp.error) { showAuthError(resp.error); return; }
+      TOKEN = resp.access_token;
+      onSignedIn();
+    },
+  });
+  client.requestAccessToken({ hint: "logistique@briffe.me" });
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById("auth-error");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+async function onSignedIn() {
+  renderHeader();
+  renderLoading("Récupération des emails non lus…");
+  try {
+    LABEL_ID = await getOrCreateLabel(TRAITE_LABEL);
+    EMAILS = await fetchUnreadEmails();
+    renderEmailList();
+  } catch(e) {
+    renderEmpty("Erreur : " + e.message);
+  }
+}
+
+// ── GMAIL ─────────────────────────────────────────────────────────────────────
+async function gFetch(url, opts={}) {
+  const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json", ...(opts.headers||{}) } });
+  return r.json();
+}
+
+async function fetchUnreadEmails() {
+  const data = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages?q=is:unread+from:noreply@consignerie.com+has:attachment`);
+  if (!data.messages || data.messages.length === 0) return [];
+  const details = await Promise.all(data.messages.map(m =>
+    gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/${m.id}?format=full`)
+  ));
+  return details.filter(m => findPdfParts(m.payload?.parts).length > 0);
+}
+
+async function fetchAttachment(messageId, attachmentId) {
+  const data = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/${messageId}/attachments/${attachmentId}`);
+  return data.data.replace(/-/g, "+").replace(/_/g, "/");
+}
+
+async function getOrCreateLabel(name) {
+  const data = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/labels`);
+  const existing = (data.labels||[]).find(l => l.name === name);
+  if (existing) return existing.id;
+  const created = await gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/labels`, {
+    method: "POST",
+    body: JSON.stringify({ name, labelListVisibility: "labelShow", messageListVisibility: "show" })
+  });
+  return created.id;
+}
+
+async function archiveEmail(messageId) {
+  await gFetch(`https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/${messageId}/modify`, {
+    method: "POST",
+    body: JSON.stringify({ addLabelIds: [LABEL_ID], removeLabelIds: ["UNREAD","INBOX"] })
+  });
+}
+
+function getHeader(msg, name) {
+  return (msg.payload?.headers||[]).find(h => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+}
+
+function findPdfParts(parts, acc=[]) {
+  if (!parts) return acc;
+  for (const p of parts) {
+    if (p.mimeType === "application/pdf" && p.body?.attachmentId) acc.push(p);
+    if (p.parts) findPdfParts(p.parts, acc);
+  }
+  return acc;
+}
+
+// ── CLAUDE EXTRACTION ─────────────────────────────────────────────────────────
+async function extractFromPdf(base64) {
+  const resp = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: [
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+        { type: "text", text: `Analyse ce bon de livraison / bon de commande traiteur (format Consignerie). Réponds UNIQUEMENT en JSON valide sans markdown ni backticks.
+
+IMPORTANT pour le nombre de personnes : dans ce format, le nombre apparaît en fin de ligne produit, par exemple "Petit déjeuner Café, thé... 72" signifie 72 personnes. Prends le nombre associé à la prestation principale (petit déjeuner, pause café, déjeuner...), pas à la vaisselle.
+
+IMPORTANT pour le client : déduis-le depuis le nom de l'université/entreprise mentionnée dans le document (ex: "UNIVERSITÉ DE LILLE" → "UnivLille", "EURATECH" → "EuraTech", "SCIENCES PO" → "SciencePo").
+
+IMPORTANT pour sheet_key : combine client normalisé + type de prestation en minuscules sans accents, ex: "univlille pdj simple", "euratech pc gourmande".
+
+{
+  "numero_commande": "string ou null",
+  "date_evenement": "JJ/MM/AAAA ou null",
+  "client": "UnivLille ou EuraTech ou SciencePo ou autre",
+  "type_prestation": "description courte ex: petit dejeuner, pause cafe, dejeuner",
+  "sheet_key": "ex: univlille pdj / euratech pc simple / sciencespo pdj",
+  "nombre_personnes": number,
+  "lieu": "string ou null",
+  "notes": "string ou null"
+}` }
+      ]}]
+    })
+  });
+  const data = await resp.json();
+  const text = (data.content||[]).find(b => b.type==="text")?.text || "{}";
+  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); }
+  catch { return null; }
+}
+
+// ── SHEETS ────────────────────────────────────────────────────────────────────
+function resolveSheet(extracted) {
+  if (!extracted) return null;
+  const key = normalize(extracted.sheet_key || "");
+  if (SHEET_MAP[key]) return SHEET_MAP[key];
+  for (const [k,v] of Object.entries(SHEET_MAP)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+  const tp = normalize(extracted.type_prestation || "");
+  for (const [k,v] of Object.entries(SHEET_MAP)) {
+    if (tp.includes(k) || k.includes(tp)) return v;
+  }
+  return null;
+}
+
+function normalize(s) {
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+}
+
+async function updateSheet(sheetName, nb) {
+  const enc = encodeURIComponent(sheetName);
+  const data = await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${enc}`);
+  const rows = data.values || [];
+  let targetRange = null;
+  for (let i=0; i<rows.length; i++) {
+    for (let j=0; j<rows[i].length; j++) {
+      if ((rows[i][j]||"").toString().toLowerCase().includes("nombre de personnes")) {
+        if (j+1 < (rows[i]||[]).length) {
+          targetRange = `${sheetName}!${col(j+1)}${i+1}`;
+        } else if (rows[i+1]) {
+          targetRange = `${sheetName}!${col(j)}${i+2}`;
+        }
+        break;
+      }
+    }
+    if (targetRange) break;
+  }
+  if (!targetRange) throw new Error(`Cellule introuvable dans "${sheetName}"`);
+  await gFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${encodeURIComponent(targetRange)}?valueInputOption=USER_ENTERED`,
+    { method: "PUT", body: JSON.stringify({ values: [[nb]] }) }
+  );
+  return targetRange;
+}
+
+function col(i) { return String.fromCharCode(65+i); }
+
+// ── PRINT ─────────────────────────────────────────────────────────────────────
+function autoPrint(base64) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    setTimeout(() => {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+      catch { window.open(url, "_blank"); }
+      setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 3000);
+    }, 800);
+  };
+}
+
+// ── PROCESS ───────────────────────────────────────────────────────────────────
+async function processEmail(msg) {
+  const id = msg.id;
+  ORDERS[id] = { status: "loading" };
+  renderEmailList();
+
+  try {
+    const parts = findPdfParts(msg.payload?.parts);
+    if (!parts.length) throw new Error("Aucun PDF trouvé");
+
+    const base64 = await fetchAttachment(msg.id, parts[0].body.attachmentId);
+    const extracted = await extractFromPdf(base64);
+    if (!extracted || !extracted.nombre_personnes) throw new Error("Extraction échouée — nombre de personnes non trouvé");
+
+    const sheetName = resolveSheet(extracted);
+    let sheetResult = null, sheetError = null;
+
+    if (sheetName) {
+      try { const range = await updateSheet(sheetName, extracted.nombre_personnes); sheetResult = { sheetName, range }; }
+      catch(e) { sheetError = e.message; }
+    } else {
+      sheetError = `Onglet non reconnu : "${extracted.type_prestation}" (${extracted.client})`;
+    }
+
+    try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed", e); }
+
+    ORDERS[id] = { status: sheetResult ? "success" : "partial", data: extracted, base64, sheetResult, error: sheetError };
+    renderEmailList();
+    autoPrint(base64);
+
+  } catch(e) {
+    ORDERS[id] = { status: "error", error: e.message };
+    renderEmailList();
+  }
+}
+
+async function processAll() {
+  const btn = document.getElementById("btn-all");
+  if (btn) { btn.disabled = true; btn.textContent = "Traitement en cours…"; }
+  for (const msg of EMAILS) {
+    const st = ORDERS[msg.id]?.status;
+    if (!st || st === "error") {
+      await processEmail(msg);
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = `→ Tout traiter (${EMAILS.length})`; }
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+const STATUS = {
+  idle:    { label: "En attente",  color: "#555" },
+  loading: { label: "Traitement…", color: "#f59e0b" },
+  success: { label: "Traité ✓",    color: "#22c55e" },
+  partial: { label: "Partiel",     color: "#f59e0b" },
+  error:   { label: "Erreur",      color: "#ef4444" },
+};
+
+function pill(color, label) {
+  return `<span class="pill" style="border:1px solid ${color}44;background:${color}11;color:${color}">
+    <span class="dot" style="background:${color}"></span>${label}
+  </span>`;
+}
+
+function renderHeader() {
+  document.getElementById("header-right").innerHTML = `
+    ${pill("#22c55e","Connecté")}
+    <button class="btn" onclick="refresh()">↻ Actualiser</button>
+  `;
+}
+
+function renderLoading(msg) {
+  document.getElementById("main").innerHTML = `<div class="empty">${msg}</div>`;
+}
+
+function renderEmpty(msg) {
+  document.getElementById("main").innerHTML = `<div class="empty">${msg}<br><span style="color:#2a2a2a">Les commandes traitées sont dans le dossier "${TRAITE_LABEL}".</span></div>`;
+}
+
+function renderEmailList() {
+  if (EMAILS.length === 0) { renderEmpty("Aucun email non lu de noreply@consignerie.com."); return; }
+
+  let html = `<div class="toolbar">
+    <div style="display:flex;align-items:center">
+      <span class="section-label">Emails non lus</span>
+      <span class="count">${EMAILS.length}</span>
+    </div>
+    <button id="btn-all" class="btn primary" onclick="processAll()">→ Tout traiter (${EMAILS.length})</button>
+  </div>`;
+
+  for (const msg of EMAILS) {
+    const order = ORDERS[msg.id];
+    const status = order?.status || "idle";
+    const st = STATUS[status];
+    const from = getHeader(msg,"from").replace(/<.*>/,"").trim();
+    const subj = getHeader(msg,"subject");
+    const date = new Date(getHeader(msg,"date")).toLocaleDateString("fr-FR");
+
+    html += `<div class="email-row">
+      <div class="email-head">
+        ${pill(st.color, st.label)}
+        <span class="from">${esc(from)}</span>
+        <span class="subj">${esc(subj)}</span>
+        <span class="date">${date}</span>
+        ${(!order || status==="error") ? `<button class="btn" onclick="processEmail(EMAILS.find(m=>m.id==='${msg.id}'))">→ Traiter</button>` : ""}
+      </div>`;
+
+    if (status === "loading") {
+      html += `<div class="loading-row">Lecture PDF · extraction en cours…</div>`;
+    }
+
+    if (order?.data) {
+      const d = order.data;
+      html += `<div class="result-grid">
+        ${field("Client", d.client)}
+        ${field("Prestation", d.type_prestation)}
+        ${field("Personnes", d.nombre_personnes)}
+        ${field("N° commande", d.numero_commande)}
+        ${field("Date événement", d.date_evenement)}
+        ${field("Lieu", d.lieu)}
+      </div>
+      <div class="action-bar">`;
+
+      if (order.sheetResult) {
+        html += `<span class="tag ok">✓ Sheets — "${esc(order.sheetResult.sheetName)}" · ${order.sheetResult.range.split("!")[1]}</span>`;
+      } else {
+        html += `<span class="tag warn">⚠ ${esc(order.error||"Onglet non mis à jour")}</span>`;
+      }
+
+      if (status === "success") html += pill("#22c55e","BL imprimé · archivé");
+
+      html += `<button class="btn" onclick="autoPrint('${msg.id}_base64')">⎙ Réimprimer</button>
+      </div>`;
+
+      // Store base64 for reprint
+      window["_b64_"+msg.id] = order.base64;
+      html = html.replace(`'${msg.id}_base64'`, `window['_b64_${msg.id}']`);
+    }
+
+    if (status === "error" && !order?.data) {
+      html += `<div class="loading-row" style="color:#ef4444">✗ ${esc(order.error)}</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  document.getElementById("main").innerHTML = html;
+}
+
+function field(label, value) {
+  if (!value) return "";
+  return `<div><div class="f-label">${label}</div><div class="f-value">${esc(String(value))}</div></div>`;
+}
+
+function esc(s) {
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+async function refresh() {
+  EMAILS = [];
+  ORDERS = {};
+  renderLoading("Actualisation…");
+  try {
+    LABEL_ID = LABEL_ID || await getOrCreateLabel(TRAITE_LABEL);
+    EMAILS = await fetchUnreadEmails();
+    renderEmailList();
+  } catch(e) { renderEmpty("Erreur : " + e.message); }
+}
+</script>
+</body>
+</html>
