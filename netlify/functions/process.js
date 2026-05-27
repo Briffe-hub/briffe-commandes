@@ -177,7 +177,6 @@ exports.handler = async function(event) {
       headers: cors(),
       body: JSON.stringify({
         ok: true,
-        mergedPdfBase64: mergedBase64,   // returned for auto-print
         pdfFileId: uploadedFile.id,
         pdfFileName: fileName,
         calEventId: calEvent.id,
