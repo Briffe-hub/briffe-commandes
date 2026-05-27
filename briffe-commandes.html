@@ -292,6 +292,26 @@ function autoPrint(base64) {
   };
 }
 
+// ── EXTRACT FROM EMAIL BODY ──────────────────────────────────────────────────
+async function extractFromEmailBody(body, subject) {
+  const resp = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: [{
+        type: "text",
+        text: "Analyse ce corps d'email de La Consignerie. Il peut y avoir plusieurs livraisons.\n\nSujet: " + subject + "\n\nCorps:\n" + body + "\n\nFORMAT : chaque livraison a un tableau Produit/Qté. Ex: \"Petit déjeuner : Café... 42\" = type_prestation=\"petit dejeuner\", nombre_personnes=42. Ignore la vaisselle.\nCLIENT : UNIVERSITÉ DE LILLE→UnivLille, EURATECH→EuraTech, SCIENCES PO→SciencePo, CARSAT→Carsat.\nSHEET_KEY : client+prestation minuscules sans accents ex: \"univlille pdj\", \"euratech pc simple\".\n\nRéponds UNIQUEMENT en JSON valide sans markdown :\n{\n  \"numero_commande\": \"ex: DEV-014965\",\n  \"client\": \"UnivLille ou EuraTech ou SciencePo ou Carsat ou autre\",\n  \"livraisons\": [\n    {\n      \"date_evenement\": \"JJ/MM/AAAA\",\n      \"type_prestation\": \"petit dejeuner ou pause cafe ou dejeuner\",\n      \"sheet_key\": \"ex: univlille pdj\",\n      \"nombre_personnes\": 0,\n      \"lieu\": \"adresse ou null\",\n      \"salle\": \"string ou null\"\n    }\n  ]\n}"
+      }]}]
+    })
+  });
+  const data = await resp.json();
+  const text = (data.content||[]).find(b => b.type==="text")?.text || "{}";
+  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); }
+  catch { return null; }
+}
+
 // ── PROCESS ───────────────────────────────────────────────────────────────────
 async function processEmail(msg) {
   const id = msg.id;
@@ -299,28 +319,56 @@ async function processEmail(msg) {
   renderEmailList();
 
   try {
-    const parts = findPdfParts(msg.payload?.parts);
-    if (!parts.length) throw new Error("Aucun PDF trouvé");
-
-    const base64 = await fetchAttachment(msg.id, parts[0].body.attachmentId);
-    const extracted = await extractFromPdf(base64);
-    if (!extracted || !extracted.nombre_personnes) throw new Error("Extraction échouée — nombre de personnes non trouvé");
-
-    const sheetName = resolveSheet(extracted);
-    let sheetResult = null, sheetError = null;
-
-    if (sheetName) {
-      try { const range = await updateSheet(sheetName, extracted.nombre_personnes); sheetResult = { sheetName, range }; }
-      catch(e) { sheetError = e.message; }
-    } else {
-      sheetError = `Onglet non reconnu : "${extracted.type_prestation}" (${extracted.client})`;
+    // Extract from email body (reliable structured text)
+    // Decode plaintext body from Gmail base64 parts
+    let body = "";
+    function extractBody(parts) {
+      if (!parts) return;
+      for (const p of parts) {
+        if (p.mimeType === "text/plain" && p.body && p.body.data) {
+          body += atob(p.body.data.replace(/-/g,"+").replace(/_/g,"/"));
+        }
+        if (p.parts) extractBody(p.parts);
+      }
     }
+    extractBody(msg.payload && msg.payload.parts);
+    if (!body && msg.payload && msg.payload.body && msg.payload.body.data) {
+      body = atob(msg.payload.body.data.replace(/-/g,"+").replace(/_/g,"/"));
+    }
+    const subject = getHeader(msg, "subject");
+    const extracted = await extractFromEmailBody(body, subject);
+    if (!extracted || !extracted.livraisons || !extracted.livraisons.length) throw new Error("Extraction échouée — données introuvables dans le corps du mail");
+
+    // Update Sheets for each livraison
+    const sheetResults = [], sheetErrors = [];
+    for (const liv of extracted.livraisons) {
+      const sheetName = resolveSheet(liv);
+      if (sheetName) {
+        try { const range = await updateSheet(sheetName, liv.nombre_personnes); sheetResults.push({ sheetName, range, nb: liv.nombre_personnes }); }
+        catch(e) { sheetErrors.push(e.message); }
+      } else {
+        sheetErrors.push("Onglet non reconnu : " + liv.type_prestation + " (" + extracted.client + ")");
+      }
+    }
+
+    // Get all PDF attachments for printing
+    const pdfParts = findPdfParts(msg.payload?.parts);
+    const base64 = pdfParts.length ? await fetchAttachment(msg.id, pdfParts[0].body.attachmentId) : null;
 
     try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed", e); }
 
+    const sheetResult = sheetResults.length ? sheetResults : null;
+    const sheetError = sheetErrors.length ? sheetErrors.join(" | ") : null;
     ORDERS[id] = { status: sheetResult ? "success" : "partial", data: extracted, base64, sheetResult, error: sheetError };
     renderEmailList();
-    autoPrint(base64);
+
+    // Auto-print all PDFs with delay between each
+    for (let i = 0; i < pdfParts.length; i++) {
+      setTimeout(async () => {
+        const b = await fetchAttachment(msg.id, pdfParts[i].body.attachmentId);
+        autoPrint(b);
+      }, i * 2500);
+    }
 
   } catch(e) {
     ORDERS[id] = { status: "error", error: e.message };
