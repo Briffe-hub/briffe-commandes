@@ -153,6 +153,14 @@ function findPdfParts(parts, acc=[]) {
   return acc;
 }
 
+function b64decode(data) {
+  // Properly decode base64 UTF-8 encoded content
+  const bin = atob(data.replace(/-/g,"+").replace(/_/g,"/"));
+  const bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
 function getPlainBody(payload) {
   if (!payload) return "";
   function dig(parts) {
@@ -160,7 +168,7 @@ function getPlainBody(payload) {
     let txt = "";
     for (const p of parts) {
       if (p.mimeType==="text/plain" && p.body && p.body.data) {
-        try { txt += atob(p.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch(e){}
+        try { txt += b64decode(p.body.data); } catch(e){}
       }
       if (p.parts) txt += dig(p.parts);
     }
@@ -168,7 +176,7 @@ function getPlainBody(payload) {
   }
   let body = dig(payload.parts);
   if (!body && payload.body && payload.body.data) {
-    try { body = atob(payload.body.data.replace(/-/g,"+").replace(/_/g,"/")); } catch(e){}
+    try { body = b64decode(payload.body.data); } catch(e){}
   }
   return body;
 }
