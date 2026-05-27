@@ -194,9 +194,11 @@ async function extractFromBody(body, subject) {
     })
   });
   const data = await resp.json();
+  console.log("Claude raw response:", JSON.stringify(data).substring(0,500));
   const text = ((data.content||[]).find(b => b.type==="text")||{}).text || "{}";
+  console.log("Claude text:", text.substring(0,300));
   try { return JSON.parse(text.replace(/```json|```/g,"").trim()); }
-  catch { return null; }
+  catch(e) { console.error("JSON parse error:", e, "text:", text); return null; }
 }
 
 function normalize(s) {
