@@ -172,11 +172,15 @@ exports.handler = async function(event) {
     );
     const calEvent = await calResp.json();
 
+    // Return sheet PDF as base64 for printing (BL printed separately on front)
+    const sheetPdfBase64 = Buffer.from(sheetPdfBytes).toString("base64");
+
     return {
       statusCode: 200,
       headers: cors(),
       body: JSON.stringify({
         ok: true,
+        sheetPdfBase64: sheetPdfBase64,
         pdfFileId: uploadedFile.id,
         pdfFileName: fileName,
         calEventId: calEvent.id,
