@@ -189,22 +189,33 @@ async function extractFromPdf(base64) {
       max_tokens: 1000,
       messages: [{ role: "user", content: [
         { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-        { type: "text", text: `Analyse ce bon de livraison / bon de commande traiteur (format Consignerie). Réponds UNIQUEMENT en JSON valide sans markdown ni backticks.
+        { type: "text", text: `Analyse ce bon de commande LA CONSIGNERIE. Réponds UNIQUEMENT en JSON valide sans markdown ni backticks.
 
-IMPORTANT pour le nombre de personnes : dans ce format, le nombre apparaît en fin de ligne produit, par exemple "Petit déjeuner Café, thé... 72" signifie 72 personnes. Prends le nombre associé à la prestation principale (petit déjeuner, pause café, déjeuner...), pas à la vaisselle.
+FORMAT DU PDF : dans la section "Produits", chaque prestation est présentée ainsi :
+Nom de la prestation
+[nombre de personnes sur une ligne seule]
+Description détaillée
 
-IMPORTANT pour le client : déduis-le depuis le nom de l'université/entreprise mentionnée dans le document (ex: "UNIVERSITÉ DE LILLE" → "UnivLille", "EURATECH" → "EuraTech", "SCIENCES PO" → "SciencePo").
+Exemple réel :
+"Petit déjeuner
+72
+Café, thé, lait, eau + jus de fruit + mini-viennoiseries"
+→ nombre_personnes = 72, type_prestation = "petit dejeuner"
 
-IMPORTANT pour sheet_key : combine client normalisé + type de prestation en minuscules sans accents, ex: "univlille pdj simple", "euratech pc gourmande".
+Prends toujours le nombre associé à la prestation principale (petit déjeuner, pause café, déjeuner), jamais celui de la vaisselle.
+
+CLIENT : déduis depuis le nom présent dans le doc (ex: "UNIVERSITÉ DE LILLE" → "UnivLille", "EURATECH" → "EuraTech", "SCIENCES PO" → "SciencePo", "CARSAT" → "Carsat").
+
+SHEET_KEY : client + prestation en minuscules sans accents. Exemples : "univlille pdj", "euratech pc simple", "sciencespo pdj".
 
 {
-  "numero_commande": "string ou null",
+  "numero_commande": "ex: BL-14965-1",
   "date_evenement": "JJ/MM/AAAA ou null",
-  "client": "UnivLille ou EuraTech ou SciencePo ou autre",
-  "type_prestation": "description courte ex: petit dejeuner, pause cafe, dejeuner",
-  "sheet_key": "ex: univlille pdj / euratech pc simple / sciencespo pdj",
+  "client": "UnivLille ou EuraTech ou SciencePo ou Carsat ou autre",
+  "type_prestation": "petit dejeuner ou pause cafe ou dejeuner",
+  "sheet_key": "ex: univlille pdj",
   "nombre_personnes": number,
-  "lieu": "string ou null",
+  "lieu": "adresse ou null",
   "notes": "string ou null"
 }` }
       ]}]
