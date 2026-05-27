@@ -342,13 +342,16 @@ async function processEmail(msg) {
     };
     renderEmailList();
 
-    // Auto-print merged PDF (BL + feuille) for each livraison
-    for (var ri=0; ri<sheetResults.length; ri++) {
-      (function(r, delay) {
-        setTimeout(function() {
-          if (r.mergedPdfBase64) autoPrint(r.mergedPdfBase64);
+    // Auto-print: BL PDFs already fetched, print them
+    for (var ri=0; ri<pdfParts.length; ri++) {
+      (function(part, delay) {
+        setTimeout(async function() {
+          try {
+            var b = await fetchAttachment(msg.id, part.body.attachmentId);
+            autoPrint(b);
+          } catch(e) { console.warn("Print failed:", e); }
         }, delay);
-      })(sheetResults[ri], ri * 2500);
+      })(pdfParts[ri], ri * 2500);
     }
 
   } catch(e) {
@@ -478,15 +481,16 @@ function renderEmailList() {
 
 async function reprintOrder(msgId) {
   var order = ORDERS[msgId];
-  if (!order) return;
-  if (order.sheetResult) {
-    for (var i=0; i<order.sheetResult.length; i++) {
-      (function(r, delay) {
-        setTimeout(function() {
-          if (r.mergedPdfBase64) autoPrint(r.mergedPdfBase64);
-        }, delay);
-      })(order.sheetResult[i], i * 2500);
-    }
+  if (!order || !order.pdfParts) return;
+  for (var i=0; i<order.pdfParts.length; i++) {
+    (function(part, delay) {
+      setTimeout(async function() {
+        try {
+          var b = await fetchAttachment(order.msgId, part.body.attachmentId);
+          autoPrint(b);
+        } catch(e) { console.warn("Reprint failed:", e); }
+      }, delay);
+    })(order.pdfParts[i], i * 2500);
   }
 }
 
