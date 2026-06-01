@@ -107,7 +107,7 @@ function signIn() {
       onSignedIn();
     },
   });
-  client.requestAccessToken({ prompt: "select_account" });
+  client.requestAccessToken({});
 }
 
 async function gFetch(url, opts) {
