@@ -107,7 +107,7 @@ function signIn() {
       onSignedIn();
     },
   });
-  client.requestAccessToken({ hint: "logistique@briffe.me" });
+  client.requestAccessToken({ prompt: "select_account" });
 }
 
 async function gFetch(url, opts) {
