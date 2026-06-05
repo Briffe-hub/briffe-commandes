@@ -286,8 +286,9 @@ async function processEmail(msg) {
     for (var li=0; li<extracted.livraisons.length; li++) {
       var liv = extracted.livraisons[li];
       var sheetName = resolveSheet(liv);
+      console.log("resolveSheet for", liv.sheet_key, "->", sheetName);
       if (!sheetName) {
-        sheetErrors.push("Onglet non reconnu : "+liv.type_prestation+" ("+extracted.client+")");
+        sheetErrors.push("Onglet non reconnu : "+liv.type_prestation+" ("+extracted.client+") sheet_key="+liv.sheet_key);
         continue;
       }
       liv.sheetName = sheetName;
