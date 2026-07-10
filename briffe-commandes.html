@@ -133,7 +133,7 @@ async function onSignedIn() {
 }
 
 async function fetchUnreadEmails() {
-  const data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=is:unread+from:noreply@consignerie.com+has:attachment");
+  const data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=is:unread+from:noreply@consignerie.com+has:attachment+in:inbox");
   if (!data.messages || !data.messages.length) return [];
   const details = await Promise.all(data.messages.map(function(m) {
     return gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+m.id+"?format=full");
@@ -315,6 +315,7 @@ async function processEmail(msg) {
         });
         var result = await resp.json();
         if (result.ok) {
+          console.log("process result:", result.pdfFileId, "calEvent:", result.calEventLink, "sheetPdf:", result.sheetPdfBase64 ? result.sheetPdfBase64.length : "MISSING");
           sheetResults.push({
             sheetName: sheetName,
             nb: liv.nombre_personnes,
