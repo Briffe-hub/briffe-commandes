@@ -144,7 +144,7 @@ function showAddressModal(address, typePrestation, callback) {
   overlay.className = "modal-overlay";
   overlay.innerHTML = '<div class="modal">'
     + '<div class="modal-title">Adresse non reconnue</div>'
-    + '<div class="modal-sub">Cette adresse n'est pas dans la base. Choisissez le bon de préparation à utiliser, puis confirmez pour mémoriser.</div>'
+    + '<div class="modal-sub">Cette adresse n&#39;est pas dans la base. Choisissez le bon de pr&eacute;paration &agrave; utiliser, puis confirmez pour m&eacute;moriser.</div>'
     + '<div class="modal-addr">' + esc(address) + '</div>'
     + '<div class="modal-label">Prestation détectée : ' + esc(typePrestation) + '</div>'
     + '<div class="modal-label" style="margin-top:12px">Bon de préparation</div>'
@@ -152,7 +152,7 @@ function showAddressModal(address, typePrestation, callback) {
     + ALL_SHEETS.map(function(s) { return '<option value="'+esc(s)+'">'+esc(s)+'</option>'; }).join("")
     + '</select>'
     + '<div class="modal-btns">'
-    + '<button class="btn" onclick="document.body.removeChild(document.querySelector('.modal-overlay'))">Annuler</button>'
+    + '<button class="btn" onclick="document.body.removeChild(document.querySelector(\'.modal-overlay\'))">Annuler</button>'
     + '<button class="btn primary" id="modal-confirm">→ Confirmer et mémoriser</button>'
     + '</div></div>';
   document.body.appendChild(overlay);
