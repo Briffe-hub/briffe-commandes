@@ -46,6 +46,14 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 .empty{padding:64px 0;text-align:center;color:#333;font-size:13px;line-height:2}
 .error-msg{color:#ef4444;font-size:12px;margin-top:12px}
 .hint{font-size:11px;color:#2a2a2a;line-height:1.8;margin-top:20px}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center}
+.modal{background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:28px;max-width:480px;width:90%;font-family:'DM Mono',monospace}
+.modal-title{font-size:13px;font-weight:500;color:#e8e8e0;margin-bottom:6px}
+.modal-sub{font-size:11px;color:#555;margin-bottom:20px;line-height:1.6}
+.modal-addr{font-size:12px;color:#f59e0b;background:#f59e0b0e;border:1px solid #f59e0b33;border-radius:3px;padding:6px 10px;margin-bottom:20px}
+.modal-label{font-size:10px;color:#444;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.modal select{font-family:'DM Mono',monospace;font-size:12px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:8px 10px;width:100%;margin-bottom:16px;appearance:none}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -69,24 +77,92 @@ const GMAIL_USER = "logistique%40briffe.me";
 const TRAITE_LABEL = "[CONSIGNERIE] traités";
 
 const SHEET_MAP = {
-  "univlille pdj": "[UnivLille] PDJ",
-  "univlille pc": "[UnivLille] PC",
-  "euratech pdj simple": "[EuraTech] PDJ Simple",
-  "euratech pdj elabore": "[EuraTech] PDJ élaboré & sain",
-  "euratech pdj sain": "[EuraTech] PDJ élaboré & sain",
-  "euratech pc simple": "[EuraTech] PC Simple",
-  "euratech pc gourmande": "[EuraTech] PC Gourmande",
-  "sciencespo pdj": "[SciencePo] PDJ",
-  "science po pdj": "[SciencePo] PDJ",
-  "carsat pdj": "[Carsat] PDJ Classique",
-  "carsat pc": "[Carsat] PC",
-  "carsat buffet": "[Carsat] Buffet",
-  "cci pdj standard": "[CCI] PDJ standard",
-  "cci pdj prestige": "[CCI] PDJ Prestige",
-  "cci pc": "[CCI] PC",
+  // Mapping par nom exact de prestation Consignerie (normalisé)
+  // EuraTech
+  "petit dejeuner simple": "[EuraTech] PDJ Simple",
+  "petit dejeuner elabore et sain": "[EuraTech] PDJ élaboré & sain",
+  "petit dejeuner elabore": "[EuraTech] PDJ élaboré & sain",
+  "pdj elabore et sain": "[EuraTech] PDJ élaboré & sain",
+  "pause cafe simple": "[EuraTech] PC Simple",
+  "pause cafe gourmande": "[EuraTech] PC Gourmande",
+  // UnivLille
+  "petit dejeuner univlille": "[UnivLille] PDJ",
+  "formule pdj": "[UnivLille] PDJ",
+  "formule pc": "[UnivLille] PC",
+  "pause cafe univlille": "[UnivLille] PC",
+  // SciencePo
+  "petit dejeuner sciencespo": "[SciencePo] PDJ",
+  "petit dejeuner sciences po": "[SciencePo] PDJ",
+  // Carsat
+  "petit dejeuner classique": "[Carsat] PDJ Classique",
+  "carsat pdj classique": "[Carsat] PDJ Classique",
+  "pause cafe carsat": "[Carsat] PC",
+  "buffet carsat": "[Carsat] Buffet",
+  // CCI
+  "pdj standard": "[CCI] PDJ standard",
+  "pdj prestige": "[CCI] PDJ Prestige",
+  "pause cafe cci": "[CCI] PC",
 };
 
 let TOKEN=null, LABEL_ID=null, EMAILS=[], ORDERS={};
+
+const ALL_SHEETS = [
+  "[UnivLille] PDJ",
+  "[UnivLille] PC",
+  "[EuraTech] PDJ Simple",
+  "[EuraTech] PDJ élaboré & sain",
+  "[EuraTech] PC Simple",
+  "[EuraTech] PC Gourmande",
+  "[SciencePo] PDJ",
+  "[Carsat] PDJ Classique",
+  "[Carsat] PC",
+  "[Carsat] Buffet",
+  "[CCI] PDJ standard",
+  "[CCI] PDJ Prestige",
+  "[CCI] PC"
+];
+
+async function lookupAddress(address) {
+  const r = await fetch("/api/addresses", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ action: "lookup", address })
+  });
+  return r.json();
+}
+
+async function saveAddress(address, client, sheetName) {
+  await fetch("/api/addresses", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ action: "save", address, client, sheetName })
+  });
+}
+
+function showAddressModal(address, typePrestation, callback) {
+  var overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = '<div class="modal">'
+    + '<div class="modal-title">Adresse non reconnue</div>'
+    + '<div class="modal-sub">Cette adresse n'est pas dans la base. Choisissez le bon de préparation à utiliser, puis confirmez pour mémoriser.</div>'
+    + '<div class="modal-addr">' + esc(address) + '</div>'
+    + '<div class="modal-label">Prestation détectée : ' + esc(typePrestation) + '</div>'
+    + '<div class="modal-label" style="margin-top:12px">Bon de préparation</div>'
+    + '<select id="modal-sheet">'
+    + ALL_SHEETS.map(function(s) { return '<option value="'+esc(s)+'">'+esc(s)+'</option>'; }).join("")
+    + '</select>'
+    + '<div class="modal-btns">'
+    + '<button class="btn" onclick="document.body.removeChild(document.querySelector('.modal-overlay'))">Annuler</button>'
+    + '<button class="btn primary" id="modal-confirm">→ Confirmer et mémoriser</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  document.getElementById("modal-confirm").onclick = function() {
+    var selected = document.getElementById("modal-sheet").value;
+    var clientName = selected.match(/\[(.+?)\]/);
+    document.body.removeChild(overlay);
+    callback(selected, clientName ? clientName[1] : "Inconnu");
+  };
+}
 
 function signIn() {
   const client = google.accounts.oauth2.initTokenClient({
@@ -210,9 +286,9 @@ function getPlainBody(payload) {
 }
 
 async function extractFromBody(body, subject) {
-  var prompt = "Analyse ce corps d'email de La Consignerie. Il peut y avoir plusieurs livraisons dans le même email.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nExtrait pour chaque livraison : date (JJ/MM/AAAA), heure de mise en place, heure événement, type de prestation, nombre de personnes (ignorer la vaisselle), lieu, salle, contact sur place.\nCLIENT depuis le nom dans le mail : UNIVERSITÉ DE LILLE=UnivLille, EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI.\nSHEET_KEY = client+prestation minuscules sans accents ex: univlille pdj / euratech pc simple / sciencespo pdj.\n\nRéponds UNIQUEMENT en JSON valide sans markdown :\n{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"UnivLille\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"06:00\",\"heure_evenement\":\"08:00\",\"type_prestation\":\"petit dejeuner\",\"sheet_key\":\"univlille pdj\",\"nombre_personnes\":42,\"lieu\":\"adresse\",\"salle\":\"nom salle\",\"contact\":\"nom — tel\"}]}";
+  var prompt = "Analyse ce corps d\'email de La Consignerie. Il peut y avoir plusieurs livraisons.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour chaque livraison, extrais :\n- date_evenement (JJ/MM/AAAA)\n- heure_mise_en_place (ex: 08:00)\n- heure_evenement (fin du créneau de livraison)\n- type_prestation : reprends EXACTEMENT le nom du produit dans le tableau Produit/Qté, en minuscules, sans accents. Ex: \'petit dejeuner elabore et sain\', \'pause cafe simple\', \'petit dejeuner simple\'\n- nombre_personnes : la quantité associée au produit principal (ignorer vaisselle)\n- lieu, salle, contact\n\nCLIENT : déduis depuis le nom dans le mail :\n- UNIVERSITÉ DE LILLE, univ lille, faculté → UnivLille\n- EURATECHNOLOGIES, euratech, 165 avenue de bretagne → EuraTech\n- SCIENCES PO → SciencePo\n- CARSAT → Carsat\n- CCI → CCI\nSi inconnu, mets \'Inconnu\'.\n\nRéponds UNIQUEMENT en JSON valide sans markdown :\n{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner elabore et sain\",\"nombre_personnes\":25,\"lieu\":\"165 Avenue de Bretagne, 59000 Lille\",\"salle\":null,\"contact\":\"Sandrine DESPREZ - 07 86 00 47 87\"}]}";
 
-  var resp = await fetch("/api/claude", {
+var resp = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -234,15 +310,40 @@ function normalize(s) {
 }
 
 function resolveSheet(liv) {
-  var key = normalize(liv.sheet_key || "");
-  if (SHEET_MAP[key]) return SHEET_MAP[key];
-  for (var k in SHEET_MAP) {
-    if (key.includes(k) || k.includes(key)) return SHEET_MAP[k];
-  }
   var tp = normalize(liv.type_prestation || "");
+  var client = normalize(liv.client || "");
+
+  // 1. Direct match on type_prestation
+  if (SHEET_MAP[tp]) return SHEET_MAP[tp];
+
+  // 2. Partial match on type_prestation
   for (var k in SHEET_MAP) {
-    if (tp.includes(k) || k.includes(tp)) return SHEET_MAP[k];
+    if (tp === k || tp.includes(k) || k.includes(tp)) return SHEET_MAP[k];
   }
+
+  // 3. Client + prestation combined key
+  var combined = normalize((liv.client || "") + " " + tp);
+  for (var k in SHEET_MAP) {
+    if (combined.includes(k) || k.includes(combined)) return SHEET_MAP[k];
+  }
+
+  // 4. Fallback by prestation family
+  if (tp.includes("elabore") || tp.includes("sain")) return "[EuraTech] PDJ élaboré & sain";
+  if (tp.includes("gourmande")) return "[EuraTech] PC Gourmande";
+  if (tp.includes("petit") || tp.includes("dejeuner") || tp.includes("pdj")) {
+    if (client.includes("univlille") || client.includes("univ")) return "[UnivLille] PDJ";
+    if (client.includes("sciencespo") || client.includes("sciences po")) return "[SciencePo] PDJ";
+    if (client.includes("carsat")) return "[Carsat] PDJ Classique";
+    if (client.includes("cci")) return "[CCI] PDJ standard";
+    return "[EuraTech] PDJ Simple";
+  }
+  if (tp.includes("pause") || tp.includes("cafe") || tp.includes("pc")) {
+    if (client.includes("univlille") || client.includes("univ")) return "[UnivLille] PC";
+    if (client.includes("carsat")) return "[Carsat] PC";
+    if (client.includes("cci")) return "[CCI] PC";
+    return "[EuraTech] PC Simple";
+  }
+  if (tp.includes("buffet")) return "[Carsat] Buffet";
   return null;
 }
 
@@ -299,6 +400,34 @@ async function processEmail(msg) {
       if (pdfPart) {
         try { blBase64 = await fetchAttachment(msg.id, pdfPart.body.attachmentId); }
         catch(e) { console.warn("BL fetch failed:", e); }
+      }
+
+      // Address lookup
+      var addrLookup = null;
+      if (liv.lieu) {
+        try { addrLookup = await lookupAddress(liv.lieu); } catch(e) {}
+      }
+
+      // If address known, use saved sheetName
+      if (addrLookup && addrLookup.found && addrLookup.data && addrLookup.data.sheetName) {
+        sheetName = addrLookup.data.sheetName;
+        liv.sheetName = sheetName;
+        console.log("Address known:", liv.lieu, "->", sheetName);
+      } else if (!sheetName || sheetName === null) {
+        // Address unknown: ask user
+        sheetName = await new Promise(function(resolve) {
+          showAddressModal(liv.lieu || "Adresse inconnue", liv.type_prestation || "", function(selectedSheet, selectedClient) {
+            liv.sheetName = selectedSheet;
+            saveAddress(liv.lieu, selectedClient, selectedSheet).catch(function(){});
+            resolve(selectedSheet);
+          });
+        });
+      } else {
+        // sheetName resolved from front mapping - save address for future
+        if (liv.lieu) {
+          var clientName = (sheetName.match(/\[(.+?)\]/) || [])[1] || "Inconnu";
+          saveAddress(liv.lieu, clientName, sheetName).catch(function(){});
+        }
       }
 
       try {
