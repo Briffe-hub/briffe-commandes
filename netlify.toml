@@ -1,6 +1,9 @@
 [build]
   functions = "netlify/functions"
 
+[functions]
+  external_node_modules = ["@netlify/blobs"]
+
 [[redirects]]
   from = "/api/claude"
   to = "/.netlify/functions/claude"
