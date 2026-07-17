@@ -474,13 +474,14 @@ async function processEmail(msg) {
     };
     renderEmailList();
 
-    // Auto-print: BL first, then sheet 2s later
-    for (var ri=0; ri<sheetResults.length; ri++) {
-      (function(r, baseDelay) {
-        if (r.blBase64) setTimeout(function() { autoPrint(r.blBase64); }, baseDelay);
-        if (r.sheetPdfBase64) setTimeout(function() { autoPrint(r.sheetPdfBase64); }, baseDelay + 2000);
-      })(sheetResults[ri], ri * 5000);
-    }
+    // Auto-print: BL first, then sheet sequentially
+    (async function() {
+      for (var ri=0; ri<sheetResults.length; ri++) {
+        var r = sheetResults[ri];
+        if (r.blBase64) { autoPrint(r.blBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
+        if (r.sheetPdfBase64) { autoPrint(r.sheetPdfBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
+      }
+    })();
 
   } catch(e) {
     console.error("processEmail error:", e);
@@ -611,10 +612,9 @@ async function reprintOrder(msgId) {
   var order = ORDERS[msgId];
   if (!order || !order.sheetResult) return;
   for (var i=0; i<order.sheetResult.length; i++) {
-    (function(r, baseDelay) {
-      if (r.blBase64) setTimeout(function() { autoPrint(r.blBase64); }, baseDelay);
-      if (r.sheetPdfBase64) setTimeout(function() { autoPrint(r.sheetPdfBase64); }, baseDelay + 2000);
-    })(order.sheetResult[i], i * 5000);
+    var r = order.sheetResult[i];
+    if (r.blBase64) { autoPrint(r.blBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
+    if (r.sheetPdfBase64) { autoPrint(r.sheetPdfBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
   }
 }
 
