@@ -451,8 +451,7 @@ async function processEmail(msg) {
             pdfFileId: result.pdfFileId,
             pdfFileName: result.pdfFileName,
             calEventLink: result.calEventLink,
-            sheetPdfBase64: result.sheetPdfBase64,
-            blBase64: blBase64
+            mergedPdfBase64: result.mergedPdfBase64
           });
         } else {
           sheetErrors.push(sheetName+": "+(result.error||"Erreur inconnue"));
@@ -474,20 +473,13 @@ async function processEmail(msg) {
     };
     renderEmailList();
 
-    // Auto-print: for each livraison, print BL then sheet
-    console.log("sheetResults count:", sheetResults.length);
+    // Auto-print: merged PDF (BL + sheet) for each livraison
     for (var ri=0; ri<sheetResults.length; ri++) {
-      (function(r, baseDelay) {
-        console.log("Print loop ri="+baseDelay+" blBase64:", r.blBase64 ? r.blBase64.length : "MISSING", "sheetPdf:", r.sheetPdfBase64 ? r.sheetPdfBase64.length : "MISSING");
-        // Print BL
-        if (r.blBase64) {
-          setTimeout(function() { console.log("Printing BL..."); autoPrint(r.blBase64); }, baseDelay);
+      (function(r, delay) {
+        if (r.mergedPdfBase64) {
+          setTimeout(function() { autoPrint(r.mergedPdfBase64); }, delay);
         }
-        // Print sheet 3s after BL
-        if (r.sheetPdfBase64) {
-          setTimeout(function() { console.log("Printing sheet..."); autoPrint(r.sheetPdfBase64); }, baseDelay + 3000);
-        }
-      })(sheetResults[ri], ri * 7000);
+      })(sheetResults[ri], ri * 3000);
     }
 
   } catch(e) {
@@ -619,10 +611,9 @@ async function reprintOrder(msgId) {
   var order = ORDERS[msgId];
   if (!order || !order.sheetResult) return;
   for (var i=0; i<order.sheetResult.length; i++) {
-    (function(r, baseDelay) {
-      if (r.blBase64) setTimeout(function() { autoPrint(r.blBase64); }, baseDelay);
-      if (r.sheetPdfBase64) setTimeout(function() { autoPrint(r.sheetPdfBase64); }, baseDelay + 3000);
-    })(order.sheetResult[i], i * 7000);
+    (function(r, delay) {
+      if (r.mergedPdfBase64) setTimeout(function() { autoPrint(r.mergedPdfBase64); }, delay);
+    })(order.sheetResult[i], i * 3000);
   }
 }
 
