@@ -190,13 +190,15 @@ exports.handler = async function(event) {
     );
     const calEvent = await calResp.json();
 
-    // Return merged PDF (BL + sheet) for single print
+    // Return both PDFs separately for printing
+    const sheetPdfBase64 = Buffer.from(sheetPdfBytes).toString("base64");
+
     return {
       statusCode: 200,
       headers: cors(),
       body: JSON.stringify({
         ok: true,
-        mergedPdfBase64: mergedBase64,
+        sheetPdfBase64: sheetPdfBase64,
         pdfFileId: uploadedFile.id,
         pdfFileName: fileName,
         calEventId: calEvent.id,
