@@ -209,7 +209,7 @@ async function onSignedIn() {
 }
 
 async function fetchUnreadEmails() {
-  const data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=is:unread+from:noreply@consignerie.com+has:attachment+in:inbox");
+  const data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
   if (!data.messages || !data.messages.length) return [];
   const details = await Promise.all(data.messages.map(function(m) {
     return gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+m.id+"?format=full");
