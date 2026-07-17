@@ -595,7 +595,8 @@ function renderEmailList() {
       }
 
       if (status === "success") html += pill("#22c55e", "Imprimé · archivé");
-      html += '<button class="btn" onclick="reprintOrder(\''+msg.id+'\')">⎙ Réimprimer</button>';
+      html += '<button class="btn" onclick="reprintBL(\''+msg.id+'\')">⎙ BL</button>';
+      html += '<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">⎙ Bon de prép.</button>';
       html += '</div>';
     }
 
@@ -608,12 +609,20 @@ function renderEmailList() {
   document.getElementById("main").innerHTML = html;
 }
 
-async function reprintOrder(msgId) {
+async function reprintBL(msgId) {
   var order = ORDERS[msgId];
   if (!order || !order.sheetResult) return;
   for (var i=0; i<order.sheetResult.length; i++) {
     var r = order.sheetResult[i];
     if (r.blBase64) { autoPrint(r.blBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
+  }
+}
+
+async function reprintSheet(msgId) {
+  var order = ORDERS[msgId];
+  if (!order || !order.sheetResult) return;
+  for (var i=0; i<order.sheetResult.length; i++) {
+    var r = order.sheetResult[i];
     if (r.sheetPdfBase64) { autoPrint(r.sheetPdfBase64); await new Promise(function(res){ setTimeout(res, 4000); }); }
   }
 }
