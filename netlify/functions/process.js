@@ -131,6 +131,7 @@ exports.handler = async function(event) {
       }
     );
     const uploadedFile = await uploadResp.json();
+    console.log("Drive upload status:", uploadResp.status, "file:", JSON.stringify(uploadedFile).substring(0, 200));
 
     // ── 6. Create Calendar event ──────────────────────────────────────────────
     let dateISO = new Date().toISOString().split("T")[0];
@@ -173,6 +174,7 @@ exports.handler = async function(event) {
     else if (tp.includes("pause") || tp.includes("cafe") || tp.includes("café") || tp.includes("pc")) emoji = "☕";
     else if (tp.includes("buffet") || tp.includes("repas") || tp.includes("diner") || tp.includes("dîner")) emoji = "🍽";
 
+    console.log("Creating calendar event for:", dateISO, startISO, endISO);
     const calResp = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`,
       {
