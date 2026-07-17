@@ -475,15 +475,17 @@ async function processEmail(msg) {
     renderEmailList();
 
     // Auto-print: for each livraison, print BL then sheet
+    console.log("sheetResults count:", sheetResults.length);
     for (var ri=0; ri<sheetResults.length; ri++) {
       (function(r, baseDelay) {
+        console.log("Print loop ri="+baseDelay+" blBase64:", r.blBase64 ? r.blBase64.length : "MISSING", "sheetPdf:", r.sheetPdfBase64 ? r.sheetPdfBase64.length : "MISSING");
         // Print BL
         if (r.blBase64) {
-          setTimeout(function() { autoPrint(r.blBase64); }, baseDelay);
+          setTimeout(function() { console.log("Printing BL..."); autoPrint(r.blBase64); }, baseDelay);
         }
         // Print sheet 3s after BL
         if (r.sheetPdfBase64) {
-          setTimeout(function() { autoPrint(r.sheetPdfBase64); }, baseDelay + 3000);
+          setTimeout(function() { console.log("Printing sheet..."); autoPrint(r.sheetPdfBase64); }, baseDelay + 3000);
         }
       })(sheetResults[ri], ri * 7000);
     }
