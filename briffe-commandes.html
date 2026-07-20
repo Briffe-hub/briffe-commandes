@@ -14,7 +14,12 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 .logo{font-size:12px;letter-spacing:.15em;color:#444;text-transform:uppercase}
 .logo span{color:#e8e8e0}
 .header-right{display:flex;gap:8px;align-items:center}
+#tab-bar{display:none;border-bottom:1px solid #1e1e1e;background:#111;padding:0 28px}
+.tab-btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 18px;background:transparent;border:none;border-bottom:2px solid transparent;color:#444;cursor:pointer}
+.tab-btn.active{color:#e8e8e0;border-bottom-color:#e8e8e0}
+.tab-btn:hover{color:#888}
 .main{padding:24px 28px;max-width:920px;margin:0 auto}
+#tab-admin-panel{display:none;padding:24px 28px;max-width:920px;margin:0 auto;min-height:200px}
 .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:20px}
 .dot{width:5px;height:5px;border-radius:50%}
 .btn{font-size:11px;letter-spacing:.1em;padding:8px 18px;border-radius:3px;text-transform:uppercase;border:1px solid #2a2a2a;background:transparent;color:#666;white-space:nowrap}
@@ -46,22 +51,18 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 .empty{padding:64px 0;text-align:center;color:#333;font-size:13px;line-height:2}
 .error-msg{color:#ef4444;font-size:12px;margin-top:12px}
 .hint{font-size:11px;color:#2a2a2a;line-height:1.8;margin-top:20px}
-.tab-btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:10px 18px;background:transparent;border:none;border-bottom:2px solid transparent;color:#444;cursor:pointer}
-.tab-btn.active{color:#e8e8e0;border-bottom-color:#e8e8e0}
-.tab-btn:hover{color:#888}
-#tab-admin-panel{}
-.addr-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #1a1a1a;font-size:12px}
-.addr-addr{flex:1;color:#888}
-.addr-sheet{min-width:200px;color:#e8e8e0}
-.addr-date{min-width:100px;color:#333;font-size:11px}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center}
 .modal{background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:28px;max-width:480px;width:90%;font-family:'DM Mono',monospace}
 .modal-title{font-size:13px;font-weight:500;color:#e8e8e0;margin-bottom:6px}
 .modal-sub{font-size:11px;color:#555;margin-bottom:20px;line-height:1.6}
 .modal-addr{font-size:12px;color:#f59e0b;background:#f59e0b0e;border:1px solid #f59e0b33;border-radius:3px;padding:6px 10px;margin-bottom:20px}
 .modal-label{font-size:10px;color:#444;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
-.modal select{font-family:'DM Mono',monospace;font-size:12px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:8px 10px;width:100%;margin-bottom:16px;appearance:none}
+.modal select{font-family:'DM Mono',monospace;font-size:12px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:8px 10px;width:100%;margin-bottom:16px}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.addr-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #1a1a1a;font-size:12px}
+.addr-addr{flex:1;color:#888}
+.addr-client{min-width:120px;color:#e8e8e0}
+.addr-date{min-width:100px;color:#333;font-size:11px}
 </style>
 </head>
 <body>
@@ -69,21 +70,21 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
   <div class="logo"><span>Briffe</span> · commandes appels d'offre</div>
   <div class="header-right" id="header-right"></div>
 </div>
-<div id="tab-bar" style="display:none;border-bottom:1px solid #1e1e1e;background:#111;padding:0 28px">
+<div id="tab-bar">
   <button class="tab-btn active" id="tab-emails" onclick="showTab('emails')">Commandes</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin')">Adresses</button>
 </div>
-<div id="tab-admin-panel" style="display:none;padding:24px 28px;max-width:920px;margin:0 auto;min-height:200px;background:#0f0f0f;color:#e8e8e0">
+<div id="tab-admin-panel">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-    <div style="font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase">Base d'adresses mémorisées</div>
-    <button class="btn" onclick="loadAddresses()">↻ Actualiser</button>
+    <div style="font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase">Base d'adresses memorisees</div>
+    <button class="btn" onclick="loadAddresses()">&#8635; Actualiser</button>
   </div>
-  <div id="addr-list"><div class="empty">Chargement…</div></div>
+  <div id="addr-list"><div class="empty">Chargement...</div></div>
 </div>
 <div class="main" id="main">
   <div class="connect-box">
     <div style="font-size:18px;margin-bottom:8px">Connexion Google requise</div>
-    <div style="font-size:13px;color:#555;margin-bottom:28px;line-height:1.7">Accès Gmail, Google Sheets et Google Drive.<br>Aucune donnée stockée hors de votre session.</div>
+    <div style="font-size:13px;color:#555;margin-bottom:28px;line-height:1.7">Acces Gmail, Google Sheets et Google Drive.<br>Aucune donnee stockee hors de votre session.</div>
     <button class="btn primary" onclick="signIn()">Connecter Google</button>
     <div id="auth-error" class="error-msg" style="display:none"></div>
     <div class="hint">Connectez-vous avec logistique@briffe.me</div>
@@ -93,131 +94,542 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 const CLIENT_ID = "846004846641-mh9q8v3mcr9c8n8keor84tfungsdn9bo.apps.googleusercontent.com";
 const SHEETS_ID = "1ySJ7ORWl_D50WX-0cyJAcrHBCq6orDcFFpGUSzL2GIU";
 const GMAIL_USER = "logistique%40briffe.me";
-const TRAITE_LABEL = "[CONSIGNERIE] traités";
-
-const SHEET_MAP = {
-  // Mapping par nom exact de prestation Consignerie (normalisé)
-  // EuraTech
-  "petit dejeuner simple": "[EuraTech] PDJ Simple",
-  "petit dejeuner elabore et sain": "[EuraTech] PDJ élaboré & sain",
-  "petit dejeuner elabore": "[EuraTech] PDJ élaboré & sain",
-  "pdj elabore et sain": "[EuraTech] PDJ élaboré & sain",
-  "pause cafe simple": "[EuraTech] PC Simple",
-  "pause cafe gourmande": "[EuraTech] PC Gourmande",
-  // UnivLille
-  "petit dejeuner univlille": "[UnivLille] PDJ",
-  "formule pdj": "[UnivLille] PDJ",
-  "formule pc": "[UnivLille] PC",
-  "pause cafe univlille": "[UnivLille] PC",
-  // SciencePo
-  "petit dejeuner sciencespo": "[SciencePo] PDJ",
-  "petit dejeuner sciences po": "[SciencePo] PDJ",
-  // Carsat
-  "petit dejeuner classique": "[Carsat] PDJ Classique",
-  "carsat pdj classique": "[Carsat] PDJ Classique",
-  "pause cafe carsat": "[Carsat] PC",
-  "buffet carsat": "[Carsat] Buffet",
-  // CCI
-  "pdj standard": "[CCI] PDJ standard",
-  "pdj prestige": "[CCI] PDJ Prestige",
-  "pause cafe cci": "[CCI] PC",
-};
-
-let TOKEN=null, LABEL_ID=null, EMAILS=[], ORDERS={};
-
-const ALL_SHEETS = [
-  "[UnivLille] PDJ",
-  "[UnivLille] PC",
-  "[EuraTech] PDJ Simple",
-  "[EuraTech] PDJ élaboré & sain",
-  "[EuraTech] PC Simple",
-  "[EuraTech] PC Gourmande",
-  "[SciencePo] PDJ",
-  "[Carsat] PDJ Classique",
-  "[Carsat] PC",
-  "[Carsat] Buffet",
-  "[CCI] PDJ standard",
-  "[CCI] PDJ Prestige",
-  "[CCI] PC"
-];
+const TRAITE_LABEL = "[CONSIGNERIE] traites";
 
 const ALL_CLIENTS = ["EuraTech", "UnivLille", "SciencePo", "Carsat", "CCI", "Autre"];
 
-// client (normalized) + prestation keywords -> sheetName
 const CLIENT_PRESTATION_MAP = {
   "euratech": [
-    { keywords: ["elabore", "sain"],    sheet: "[EuraTech] PDJ élaboré & sain" },
+    { keywords: ["elabore", "sain"],    sheet: "[EuraTech] PDJ elabore & sain" },
     { keywords: ["gourmande"],           sheet: "[EuraTech] PC Gourmande" },
     { keywords: ["pause", "cafe", "pc"], sheet: "[EuraTech] PC Simple" },
-    { keywords: ["dejeuner", "pdj"],     sheet: "[EuraTech] PDJ Simple" },
+    { keywords: ["dejeuner", "pdj"],     sheet: "[EuraTech] PDJ Simple" }
   ],
   "univlille": [
     { keywords: ["pause", "cafe", "pc"], sheet: "[UnivLille] PC" },
-    { keywords: ["dejeuner", "pdj"],     sheet: "[UnivLille] PDJ" },
+    { keywords: ["dejeuner", "pdj"],     sheet: "[UnivLille] PDJ" }
   ],
   "sciencespo": [
-    { keywords: ["dejeuner", "pdj"],     sheet: "[SciencePo] PDJ" },
+    { keywords: ["dejeuner", "pdj"],     sheet: "[SciencePo] PDJ" }
   ],
   "carsat": [
     { keywords: ["buffet"],              sheet: "[Carsat] Buffet" },
     { keywords: ["pause", "cafe", "pc"], sheet: "[Carsat] PC" },
-    { keywords: ["dejeuner", "pdj"],     sheet: "[Carsat] PDJ Classique" },
+    { keywords: ["dejeuner", "pdj"],     sheet: "[Carsat] PDJ Classique" }
   ],
   "cci": [
     { keywords: ["prestige"],            sheet: "[CCI] PDJ Prestige" },
     { keywords: ["pause", "cafe", "pc"], sheet: "[CCI] PC" },
-    { keywords: ["dejeuner", "pdj"],     sheet: "[CCI] PDJ standard" },
-  ],
+    { keywords: ["dejeuner", "pdj"],     sheet: "[CCI] PDJ standard" }
+  ]
 };
 
 function resolveSheetFromClientAndPrestation(client, typePrestation) {
   var clientKey = normalize(client || "");
   var tp = normalize(typePrestation || "");
   var rules = CLIENT_PRESTATION_MAP[clientKey] || [];
-  for (var r of rules) {
-    if (r.keywords.some(function(k) { return tp.includes(k); })) return r.sheet;
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    for (var j = 0; j < r.keywords.length; j++) {
+      if (tp.includes(r.keywords[j])) return r.sheet;
+    }
   }
   return null;
 }
 
+let TOKEN=null, LABEL_ID=null, EMAILS=[], ORDERS={};
+
+function signIn() {
+  var client = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: [
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/calendar"
+    ].join(" "),
+    callback: function(resp) {
+      if (resp.error) {
+        document.getElementById("auth-error").textContent = resp.error;
+        document.getElementById("auth-error").style.display = "block";
+        return;
+      }
+      TOKEN = resp.access_token;
+      onSignedIn();
+    }
+  });
+  client.requestAccessToken({});
+}
+
+async function gFetch(url, opts) {
+  opts = opts || {};
+  var r = await fetch(url, {
+    method: opts.method || "GET",
+    headers: Object.assign({"Authorization":"Bearer "+TOKEN,"Content-Type":"application/json"}, opts.headers||{}),
+    body: opts.body || undefined
+  });
+  return r.json();
+}
+
+async function onSignedIn() {
+  renderHeader();
+  document.getElementById("main").innerHTML = '<div class="empty">Recuperation des emails...</div>';
+  try {
+    LABEL_ID = await getOrCreateLabel(TRAITE_LABEL);
+    EMAILS = await fetchEmails();
+    renderEmailList();
+  } catch(e) {
+    document.getElementById("main").innerHTML = '<div class="empty">Erreur : '+e.message+'</div>';
+  }
+}
+
+async function fetchEmails() {
+  var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
+  if (!data.messages || !data.messages.length) return [];
+  var details = await Promise.all(data.messages.map(function(m) {
+    return gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+m.id+"?format=full");
+  }));
+  return details.filter(function(m) { return findPdfParts(m.payload&&m.payload.parts).length > 0; });
+}
+
+async function fetchAttachment(messageId, attachmentId) {
+  var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+messageId+"/attachments/"+attachmentId);
+  return data.data.replace(/-/g,"+").replace(/_/g,"/");
+}
+
+async function getOrCreateLabel(name) {
+  var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/labels");
+  var existing = (data.labels||[]).find(function(l){return l.name===name;});
+  if (existing) return existing.id;
+  var created = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/labels",{
+    method:"POST",body:JSON.stringify({name:name,labelListVisibility:"labelShow",messageListVisibility:"show"})
+  });
+  return created.id;
+}
+
+async function archiveEmail(messageId) {
+  await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+messageId+"/modify",{
+    method:"POST",body:JSON.stringify({addLabelIds:[LABEL_ID],removeLabelIds:["UNREAD","INBOX"]})
+  });
+}
+
+function getHeader(msg, name) {
+  var headers = (msg.payload&&msg.payload.headers)||[];
+  var h = headers.find(function(h){return h.name.toLowerCase()===name.toLowerCase();});
+  return h ? h.value : "";
+}
+
+function findPdfParts(parts, acc) {
+  acc = acc||[];
+  if (!parts) return acc;
+  for (var i=0;i<parts.length;i++) {
+    var p = parts[i];
+    if (p.mimeType==="application/pdf"&&p.body&&p.body.attachmentId) acc.push(p);
+    if (p.parts) findPdfParts(p.parts,acc);
+  }
+  return acc;
+}
+
+function b64decode(data) {
+  var bin = atob(data.replace(/-/g,"+").replace(/_/g,"/"));
+  var bytes = new Uint8Array(bin.length);
+  for (var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function getPlainBody(payload) {
+  if (!payload) return "";
+  function dig(parts) {
+    if (!parts) return "";
+    var txt="";
+    for (var i=0;i<parts.length;i++) {
+      var p=parts[i];
+      if (p.mimeType==="text/plain"&&p.body&&p.body.data){try{txt+=b64decode(p.body.data);}catch(e){}}
+      if (p.parts) txt+=dig(p.parts);
+    }
+    return txt;
+  }
+  var body=dig(payload.parts);
+  if (!body&&payload.body&&payload.body.data){try{body=b64decode(payload.body.data);}catch(e){}}
+  return body;
+}
+
+function normalize(s) {
+  return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+}
+
+async function extractFromBody(body, subject) {
+  var prompt = "Analyse ce corps d'email de La Consignerie. Il peut y avoir plusieurs livraisons.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nExtrait pour chaque livraison : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}";
+
+  var resp = await fetch("/api/claude", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:"claude-sonnet-4-5",
+      max_tokens:1500,
+      messages:[{role:"user",content:[{type:"text",text:prompt}]}]
+    })
+  });
+  var data = await resp.json();
+  console.log("Claude raw:", JSON.stringify(data).substring(0,300));
+  var text = ((data.content||[]).find(function(b){return b.type==="text";})||{}).text||"{}";
+  console.log("Claude text:", text.substring(0,300));
+  try{return JSON.parse(text.replace(/```json|```/g,"").trim());}
+  catch(e){console.error("Parse error:",e);return null;}
+}
+
 async function lookupAddress(address) {
-  const r = await fetch("/api/addresses", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ action: "lookup", address })
+  var r = await fetch("/api/addresses",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action:"lookup",address:address})
   });
   return r.json();
 }
 
 async function saveAddress(address, client) {
-  await fetch("/api/addresses", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ action: "save", address: address, client: client })
+  await fetch("/api/addresses",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action:"save",address:address,client:client})
   });
 }
 
 function showAddressModal(address, typePrestation, callback) {
   var overlay = document.createElement("div");
   overlay.className = "modal-overlay";
+  var opts = ALL_CLIENTS.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join("");
   overlay.innerHTML = '<div class="modal">'
-    + '<div class="modal-title">Adresse non reconnue</div>'
-    + '<div class="modal-sub">Choisissez le client associ&#233; &#224; cette adresse. Il sera m&#233;moris&#233; pour les prochaines commandes.</div>'
-    + '<div class="modal-addr">' + esc(address) + '</div>'
-    + '<div class="modal-label">Prestation : ' + esc(typePrestation) + '</div>'
-    + '<div class="modal-label" style="margin-top:12px">Client</div>'
-    + '<select id="modal-client">'
-    + ALL_CLIENTS.map(function(c){ return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join("")
-    + '</select>'
-    + '<div class="modal-btns">'
-    + '<button class="btn" id="modal-cancel">Annuler</button>'
-    + '<button class="btn primary" id="modal-confirm">&#8594; Confirmer et m&#233;moriser</button>'
-    + '</div></div>';
+    +'<div class="modal-title">Adresse non reconnue</div>'
+    +'<div class="modal-sub">Choisissez le client associe a cette adresse. Il sera memorise pour les prochaines commandes.</div>'
+    +'<div class="modal-addr">'+esc(address)+'</div>'
+    +'<div class="modal-label">Prestation : '+esc(typePrestation)+'</div>'
+    +'<div class="modal-label" style="margin-top:12px">Client</div>'
+    +'<select id="modal-client">'+opts+'</select>'
+    +'<div class="modal-btns">'
+    +'<button class="btn" id="modal-cancel">Annuler</button>'
+    +'<button class="btn primary" id="modal-confirm">Confirmer et memoriser</button>'
+    +'</div></div>';
   document.body.appendChild(overlay);
-  document.getElementById("modal-cancel").onclick = function() { document.body.removeChild(overlay); };
-  document.getElementById("modal-confirm").onclick = function() {
-    var selectedClient = document.getElementById("modal-client").value;
+  document.getElementById("modal-cancel").onclick = function(){document.body.removeChild(overlay);};
+  document.getElementById("modal-confirm").onclick = function(){
+    var sel = document.getElementById("modal-client").value;
     document.body.removeChild(overlay);
-    callback(selectedClient);
+    callback(sel);
   };
 }
+
+function autoPrint(base64) {
+  var bytes = Uint8Array.from(atob(base64),function(c){return c.charCodeAt(0);});
+  var blob = new Blob([bytes],{type:"application/pdf"});
+  var url = URL.createObjectURL(blob);
+  var iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = function(){
+    setTimeout(function(){
+      try{iframe.contentWindow.focus();iframe.contentWindow.print();}
+      catch(e){window.open(url,"_blank");}
+      setTimeout(function(){document.body.removeChild(iframe);URL.revokeObjectURL(url);},3000);
+    },800);
+  };
+}
+
+async function processEmail(msg) {
+  var id = msg.id;
+  ORDERS[id] = {status:"loading"};
+  renderEmailList();
+  try {
+    var body = getPlainBody(msg.payload);
+    var subject = getHeader(msg,"subject");
+    var extracted = await extractFromBody(body, subject);
+    if (!extracted||!extracted.livraisons||!extracted.livraisons.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
+
+    var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
+    var sheetResults=[], sheetErrors=[];
+
+    for (var li=0;li<extracted.livraisons.length;li++) {
+      var liv = extracted.livraisons[li];
+
+      // Fetch BL PDF
+      var blBase64 = null;
+      var pdfPart = pdfParts[li]||pdfParts[0];
+      if (pdfPart){try{blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId);}catch(e){}}
+
+      // Address lookup
+      var addrLookup = null;
+      if (liv.lieu){try{addrLookup=await lookupAddress(liv.lieu);}catch(e){}}
+
+      // Resolve client
+      var resolvedClient = null;
+      if (addrLookup&&addrLookup.found&&addrLookup.data&&addrLookup.data.client) {
+        resolvedClient = addrLookup.data.client;
+        console.log("Address known:", liv.lieu, "-> client:", resolvedClient);
+      } else {
+        resolvedClient = await new Promise(function(resolve){
+          showAddressModal(liv.lieu||"Adresse inconnue", liv.type_prestation||"", function(selectedClient){
+            saveAddress(liv.lieu, selectedClient).catch(function(){});
+            resolve(selectedClient);
+          });
+        });
+      }
+
+      // Resolve sheet from client + prestation
+      var sheetName = resolveSheetFromClientAndPrestation(resolvedClient, liv.type_prestation);
+      console.log("Resolved sheet:", sheetName, "client:", resolvedClient, "prestation:", liv.type_prestation);
+      if (!sheetName) {
+        sheetErrors.push("Onglet introuvable pour "+resolvedClient+" / "+liv.type_prestation);
+        continue;
+      }
+      liv.sheetName = sheetName;
+
+      try {
+        var resp = await fetch("/api/process",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            googleToken:TOKEN,
+            livraison:liv,
+            numero_commande:extracted.numero_commande,
+            client:resolvedClient,
+            blBase64:blBase64
+          })
+        });
+        var result = await resp.json();
+        console.log("process result:", result.pdfFileId, "calEvent:", result.calEventLink, "sheetPdf:", result.sheetPdfBase64?result.sheetPdfBase64.length:"MISSING");
+        if (result.ok) {
+          sheetResults.push({
+            sheetName:sheetName,
+            nb:liv.nombre_personnes,
+            pdfFileId:result.pdfFileId,
+            pdfFileName:result.pdfFileName,
+            calEventLink:result.calEventLink,
+            sheetPdfBase64:result.sheetPdfBase64,
+            blBase64:blBase64
+          });
+        } else {
+          sheetErrors.push(sheetName+": "+(result.error||"Erreur"));
+        }
+      } catch(e) {
+        sheetErrors.push(sheetName+": "+e.message);
+      }
+    }
+
+    // try { await archiveEmail(msg.id); } catch(e) {} // DISABLED FOR TESTING
+
+    ORDERS[id] = {
+      status:sheetResults.length?"success":"partial",
+      data:extracted,
+      sheetResult:sheetResults.length?sheetResults:null,
+      error:sheetErrors.length?sheetErrors.join(" | "):null,
+      pdfParts:pdfParts,
+      msgId:msg.id
+    };
+    renderEmailList();
+
+    // Auto-print: BL then sheet sequentially
+    (async function(){
+      for (var ri=0;ri<sheetResults.length;ri++) {
+        var r = sheetResults[ri];
+        if (r.blBase64){autoPrint(r.blBase64);await new Promise(function(res){setTimeout(res,4000);});}
+        if (r.sheetPdfBase64){autoPrint(r.sheetPdfBase64);await new Promise(function(res){setTimeout(res,4000);});}
+      }
+    })();
+
+  } catch(e) {
+    console.error("processEmail error:",e);
+    ORDERS[id]={status:"error",error:e.message};
+    renderEmailList();
+  }
+}
+
+async function processAll() {
+  var btn = document.getElementById("btn-all");
+  if (btn){btn.disabled=true;btn.textContent="Traitement en cours...";}
+  for (var i=0;i<EMAILS.length;i++) {
+    var msg=EMAILS[i];
+    var st=ORDERS[msg.id]&&ORDERS[msg.id].status;
+    if (!st||st==="error"){await processEmail(msg);await new Promise(function(r){setTimeout(r,500);});}
+  }
+  if (btn){btn.disabled=false;btn.textContent="Tout traiter ("+EMAILS.length+")";}
+}
+
+var STATUS = {
+  idle:   {label:"En attente", color:"#555"},
+  loading:{label:"Traitement...",color:"#f59e0b"},
+  success:{label:"Traite",    color:"#22c55e"},
+  partial:{label:"Partiel",   color:"#f59e0b"},
+  error:  {label:"Erreur",    color:"#ef4444"}
+};
+
+function pill(color,label){
+  return '<span class="pill" style="border:1px solid '+color+'44;background:'+color+'11;color:'+color+'"><span class="dot" style="background:'+color+'"></span>'+label+'</span>';
+}
+
+function field(label,value){
+  if (!value&&value!==0) return "";
+  return '<div><div class="f-label">'+label+'</div><div class="f-value">'+esc(String(value))+'</div></div>';
+}
+
+function esc(s){
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function renderHeader(){
+  document.getElementById("header-right").innerHTML =
+    pill("#22c55e","Connecte") +
+    '<button class="btn" onclick="refresh()">&#8635; Actualiser</button>';
+  document.getElementById("tab-bar").style.display = "flex";
+}
+
+function showTab(tab){
+  document.getElementById("tab-emails").className = "tab-btn"+(tab==="emails"?" active":"");
+  document.getElementById("tab-admin").className = "tab-btn"+(tab==="admin"?" active":"");
+  document.getElementById("main").style.display = tab==="emails"?"":"none";
+  document.getElementById("tab-admin-panel").style.display = tab==="admin"?"block":"none";
+  window.scrollTo(0,0);
+  if (tab==="admin") loadAddresses();
+}
+
+async function loadAddresses(){
+  document.getElementById("addr-list").innerHTML = '<div class="empty">Chargement...</div>';
+  try {
+    var r = await fetch("/api/addresses");
+    var data = await r.json();
+    var keys = Object.keys(data);
+    if (!keys.length){document.getElementById("addr-list").innerHTML='<div class="empty">Aucune adresse memorisee.</div>';return;}
+    var html = '<div class="addr-row" style="border-bottom:1px solid #2a2a2a;margin-bottom:4px">'
+      +'<div class="addr-addr" style="color:#555">Adresse</div>'
+      +'<div class="addr-client" style="color:#555">Client</div>'
+      +'<div class="addr-date" style="color:#555">Memorise le</div>'
+      +'<div style="width:200px"></div></div>';
+    for (var i=0;i<keys.length;i++){
+      var k=keys[i], d=data[k];
+      if (!d) continue;
+      var date = d.savedAt?new Date(d.savedAt).toLocaleDateString("fr-FR"):"—";
+      var opts = ALL_CLIENTS.map(function(c){return '<option value="'+esc(c)+'"'+(c===d.client?' selected':'')+'>'+esc(c)+'</option>';}).join("");
+      html += '<div class="addr-row">'
+        +'<div class="addr-addr">'+esc(d.address||k)+'</div>'
+        +'<div class="addr-client">'+esc(d.client||"—")+'</div>'
+        +'<div class="addr-date">'+date+'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<select data-key="'+esc(k)+'" data-addr="'+esc(d.address||k)+'" style="font-family:monospace;font-size:11px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:4px 6px">'+opts+'</select>'
+        +'<button class="btn" data-key="'+esc(k)+'" data-addr="'+esc(d.address||k)+'" onclick="updateAddressFromBtn(this)">&#10003;</button>'
+        +'<button class="btn" data-addr="'+esc(d.address||k)+'" style="color:#ef4444;border-color:#ef444433" onclick="deleteAddressFromBtn(this)">&#10005;</button>'
+        +'</div></div>';
+    }
+    document.getElementById("addr-list").innerHTML = html;
+  } catch(e){
+    document.getElementById("addr-list").innerHTML='<div class="empty">Erreur : '+esc(e.message)+'</div>';
+  }
+}
+
+async function updateAddressFromBtn(btn){
+  var addr = btn.dataset.addr;
+  var sel = btn.previousElementSibling;
+  var newClient = sel.value;
+  await fetch("/api/addresses",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action:"save",address:addr,client:newClient})});
+  loadAddresses();
+}
+
+async function deleteAddressFromBtn(btn){
+  var addr = btn.dataset.addr;
+  if (!confirm("Supprimer cette adresse ?")) return;
+  await fetch("/api/addresses",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action:"delete",address:addr})});
+  loadAddresses();
+}
+
+async function reprintBL(msgId){
+  var order=ORDERS[msgId];
+  if (!order||!order.sheetResult) return;
+  for (var i=0;i<order.sheetResult.length;i++){
+    var r=order.sheetResult[i];
+    if (r.blBase64){autoPrint(r.blBase64);await new Promise(function(res){setTimeout(res,4000);});}
+  }
+}
+
+async function reprintSheet(msgId){
+  var order=ORDERS[msgId];
+  if (!order||!order.sheetResult) return;
+  for (var i=0;i<order.sheetResult.length;i++){
+    var r=order.sheetResult[i];
+    if (r.sheetPdfBase64){autoPrint(r.sheetPdfBase64);await new Promise(function(res){setTimeout(res,4000);});}
+  }
+}
+
+function renderEmailList(){
+  if (!EMAILS.length){
+    document.getElementById("main").innerHTML='<div class="empty">Aucun email de noreply@consignerie.com dans la boite de reception.</div>';
+    return;
+  }
+  var html='<div class="toolbar"><div style="display:flex;align-items:center"><span class="section-label">Emails</span><span class="count">'+EMAILS.length+'</span></div>'
+    +'<button id="btn-all" class="btn primary" onclick="processAll()">Tout traiter ('+EMAILS.length+')</button></div>';
+  for (var i=0;i<EMAILS.length;i++){
+    var msg=EMAILS[i];
+    var order=ORDERS[msg.id];
+    var status=(order&&order.status)||"idle";
+    var st=STATUS[status];
+    var from=getHeader(msg,"from").replace(/<.*>/,"").trim();
+    var subj=getHeader(msg,"subject");
+    var date=new Date(getHeader(msg,"date")).toLocaleDateString("fr-FR");
+    html+='<div class="email-row"><div class="email-head">'+pill(st.color,st.label);
+    html+='<span class="from">'+esc(from)+'</span>';
+    html+='<span class="subj">'+esc(subj)+'</span>';
+    html+='<span class="date">'+date+'</span>';
+    if (!order||status==="error") html+='<button class="btn" onclick="processEmail(EMAILS.find(function(m){return m.id===\''+msg.id+'\';}))">Traiter</button>';
+    html+='</div>';
+    if (status==="loading") html+='<div class="loading-row">Extraction en cours...</div>';
+    if (order&&order.data){
+      var d=order.data, livs=d.livraisons||[];
+      html+='<div class="result-box">';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px">'+field("Client",d.client)+field("N° commande",d.numero_commande)+'</div>';
+      for (var li=0;li<livs.length;li++){
+        var l=livs[li];
+        html+='<div class="liv-block"><div class="liv-title">Livraison '+(li+1)+'</div><div class="grid3">';
+        html+=field("Prestation",l.type_prestation)+field("Personnes",l.nombre_personnes)+field("Date",l.date_evenement);
+        html+=field("Mise en place",l.heure_mise_en_place)+field("Lieu",l.lieu)+field("Salle",l.salle);
+        html+=field("Contact",l.contact);
+        html+='</div></div>';
+      }
+      html+='</div><div class="action-bar">';
+      if (order.sheetResult&&order.sheetResult.length){
+        var tags=order.sheetResult.map(function(r){
+          var t='"'+esc(r.sheetName)+'" '+r.nb+' pers.';
+          if (r.calEventLink) t+=' <a href="'+r.calEventLink+'" target="_blank" style="color:#22c55e;text-decoration:none">&#128197;</a>';
+          if (r.pdfFileId) t+=' <a href="https://drive.google.com/file/d/'+r.pdfFileId+'" target="_blank" style="color:#22c55e;text-decoration:none">&#128196;</a>';
+          return t;
+        }).join(" | ");
+        html+='<span class="tag ok">&#10003; '+tags+'</span>';
+      } else {
+        html+='<span class="tag warn">&#9888; '+esc(order.error||"Onglet non mis a jour")+'</span>';
+      }
+      if (status==="success") html+=pill("#22c55e","Imprime · archive");
+      html+='<button class="btn" onclick="reprintBL(\''+msg.id+'\')">&#10697; BL</button>';
+      html+='<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">&#10697; Bon de prep.</button>';
+      html+='</div>';
+    }
+    if (status==="error"&&!(order&&order.data)){
+      html+='<div class="loading-row" style="color:#ef4444">&#10007; '+esc(order&&order.error)+'</div>';
+    }
+    html+='</div>';
+  }
+  document.getElementById("main").innerHTML=html;
+}
+
+async function refresh(){
+  EMAILS=[];ORDERS={};
+  document.getElementById("main").innerHTML='<div class="empty">Actualisation...</div>';
+  try {
+    LABEL_ID=LABEL_ID||await getOrCreateLabel(TRAITE_LABEL);
+    EMAILS=await fetchEmails();
+    renderEmailList();
+  } catch(e){
+    document.getElementById("main").innerHTML='<div class="empty">Erreur : '+e.message+'</div>';
+  }
+}
+</script>
+</body>
+</html>
