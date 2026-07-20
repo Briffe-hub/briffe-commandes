@@ -663,11 +663,11 @@ async function loadAddresses() {
         + '<div class="addr-sheet">'+esc(d.sheetName || "—")+'</div>'
         + '<div class="addr-date">'+date+'</div>'
         + '<div style="display:flex;gap:6px">'
-        + '<select id="edit-'+esc(k)+'" style="font-family:'DM Mono',monospace;font-size:11px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:4px 6px">'
+        + '<select id="edit-'+esc(k)+'" style="font-family:monospace;font-size:11px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:4px 6px">'
         + ALL_SHEETS.map(function(s){ return '<option value="'+esc(s)+'"'+(s===d.sheetName?' selected':'')+'>'+esc(s)+'</option>'; }).join("")
         + '</select>'
-        + '<button class="btn" onclick="updateAddress(''+esc(k)+'',''+esc(d.address || k)+'')">✓</button>'
-        + '<button class="btn" style="color:#ef4444;border-color:#ef444433" onclick="deleteAddress(''+esc(k)+'',''+esc(d.address || k)+'')">✕</button>'
+        + '<button class="btn" onclick="updateAddress(this,\'' + esc(k) + '\',\'' + esc(d.address || k) + '\')">✓</button>'
+        + '<button class="btn" style="color:#ef4444;border-color:#ef444433" onclick="deleteAddress(\'' + esc(k) + '\',\'' + esc(d.address || k) + '\')">✕</button>'
         + '</div></div>';
     }
     document.getElementById("addr-list").innerHTML = html;
@@ -676,8 +676,8 @@ async function loadAddresses() {
   }
 }
 
-async function updateAddress(key, address) {
-  var sel = document.getElementById("edit-"+key);
+async function updateAddress(btn, key, address) {
+  var sel = btn ? btn.previousElementSibling : document.getElementById("edit-"+key);
   if (!sel) return;
   var newSheet = sel.value;
   var clientName = (newSheet.match(/\[(.+?)\]/) || [])[1] || "Inconnu";
