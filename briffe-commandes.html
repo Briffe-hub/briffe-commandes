@@ -542,6 +542,93 @@ async function deleteAddressFromBtn(btn){
   loadAddresses();
 }
 
+async function regenerate(msgId) {
+  var order = ORDERS[msgId];
+  if (!order || !order.data || !order.data.livraisons) return;
+  var msg = EMAILS.find(function(m){return m.id===msgId;});
+  if (!msg) return;
+
+  ORDERS[msgId] = {status:"loading"};
+  renderEmailList();
+
+  var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
+  var sheetResults=[], sheetErrors=[];
+
+  for (var li=0;li<order.data.livraisons.length;li++){
+    var liv = order.data.livraisons[li];
+
+    // Re-lookup address (may have been corrected)
+    var addrLookup = null;
+    if (liv.lieu){try{addrLookup=await lookupAddress(liv.lieu);}catch(e){}}
+
+    var resolvedClient = null;
+    if (addrLookup&&addrLookup.found&&addrLookup.data&&addrLookup.data.client){
+      resolvedClient = addrLookup.data.client;
+    } else {
+      resolvedClient = await new Promise(function(resolve){
+        showAddressModal(liv.lieu||"Adresse inconnue", liv.type_prestation||"", function(selectedClient){
+          saveAddress(liv.lieu,selectedClient).catch(function(){});
+          resolve(selectedClient);
+        });
+      });
+    }
+
+    var sheetName = resolveSheetFromClientAndPrestation(resolvedClient, liv.type_prestation);
+    if (!sheetName){sheetErrors.push("Onglet introuvable pour "+resolvedClient+" / "+liv.type_prestation);continue;}
+    liv.sheetName = sheetName;
+
+    var blBase64 = null;
+    var pdfPart = pdfParts[li]||pdfParts[0];
+    if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){}}
+
+    try {
+      var resp = await fetch("/api/process",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          googleToken:TOKEN,
+          livraison:liv,
+          numero_commande:order.data.numero_commande,
+          client:resolvedClient,
+          blBase64:blBase64
+        })
+      });
+      var result = await resp.json();
+      if (result.ok){
+        sheetResults.push({
+          sheetName:sheetName,
+          nb:liv.nombre_personnes,
+          pdfFileId:result.pdfFileId,
+          pdfFileName:result.pdfFileName,
+          calEventLink:result.calEventLink,
+          sheetPdfBase64:result.sheetPdfBase64,
+          blBase64:blBase64
+        });
+      } else {
+        sheetErrors.push(sheetName+": "+(result.error||"Erreur"));
+      }
+    } catch(e){sheetErrors.push(sheetName+": "+e.message);}
+  }
+
+  ORDERS[msgId] = {
+    status:sheetResults.length?"success":"partial",
+    data:order.data,
+    sheetResult:sheetResults.length?sheetResults:null,
+    error:sheetErrors.length?sheetErrors.join(" | "):null,
+    pdfParts:pdfParts,
+    msgId:msgId
+  };
+  renderEmailList();
+
+  (async function(){
+    for (var ri=0;ri<sheetResults.length;ri++){
+      var r=sheetResults[ri];
+      if (r.blBase64){autoPrint(r.blBase64);await new Promise(function(res){setTimeout(res,4000);});}
+      if (r.sheetPdfBase64){autoPrint(r.sheetPdfBase64);await new Promise(function(res){setTimeout(res,4000);});}
+    }
+  })();
+}
+
 async function reprintBL(msgId){
   var order=ORDERS[msgId];
   if (!order||!order.sheetResult) return;
@@ -609,6 +696,7 @@ function renderEmailList(){
       if (status==="success") html+=pill("#22c55e","Imprime · archive");
       html+='<button class="btn" onclick="reprintBL(\''+msg.id+'\')">&#10697; BL</button>';
       html+='<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">&#10697; Bon de prep.</button>';
+      html+='<button class="btn" onclick="regenerate(\''+msg.id+'\')">&#8635; Reg&#233;n&#233;rer</button>';
       html+='</div>';
     }
     if (status==="error"&&!(order&&order.data)){
