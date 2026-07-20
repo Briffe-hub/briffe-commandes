@@ -406,6 +406,7 @@ async function processEmail(msg) {
     for (var li=0; li<extracted.livraisons.length; li++) {
       var liv = extracted.livraisons[li];
       var sheetName = null; // Determined by address DB or user input only
+      console.log("Processing livraison", li, "lieu:", liv.lieu, "sheetName starts null");
 
       // Fetch matching BL PDF
       var blBase64 = null;
@@ -422,6 +423,7 @@ async function processEmail(msg) {
       }
 
       // If address known in DB, use saved sheetName
+      console.log("addrLookup result:", JSON.stringify(addrLookup));
       if (addrLookup && addrLookup.found && addrLookup.data && addrLookup.data.sheetName) {
         sheetName = addrLookup.data.sheetName;
         liv.sheetName = sheetName;
