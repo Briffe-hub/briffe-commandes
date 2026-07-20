@@ -408,13 +408,13 @@ async function processEmail(msg) {
         try { addrLookup = await lookupAddress(liv.lieu); } catch(e) {}
       }
 
-      // If address known, use saved sheetName
+      // If address known in DB, use saved sheetName
       if (addrLookup && addrLookup.found && addrLookup.data && addrLookup.data.sheetName) {
         sheetName = addrLookup.data.sheetName;
         liv.sheetName = sheetName;
         console.log("Address known:", liv.lieu, "->", sheetName);
-      } else if (!sheetName || sheetName === null) {
-        // Address unknown: ask user
+      } else {
+        // Address unknown: ALWAYS ask user, ignore fallback
         sheetName = await new Promise(function(resolve) {
           showAddressModal(liv.lieu || "Adresse inconnue", liv.type_prestation || "", function(selectedSheet, selectedClient) {
             liv.sheetName = selectedSheet;
@@ -422,12 +422,6 @@ async function processEmail(msg) {
             resolve(selectedSheet);
           });
         });
-      } else {
-        // sheetName resolved from front mapping - save address for future
-        if (liv.lieu) {
-          var clientName = (sheetName.match(/\[(.+?)\]/) || [])[1] || "Inconnu";
-          saveAddress(liv.lieu, clientName, sheetName).catch(function(){});
-        }
       }
 
       try {
