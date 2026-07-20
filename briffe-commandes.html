@@ -690,7 +690,7 @@ async function updateAddress(btn, key, address) {
 }
 
 async function deleteAddress(key, address) {
-  if (!confirm("Supprimer l'adresse ""+address+"" ?")) return;
+  if (!confirm("Supprimer cette adresse ?")) return;
   await fetch("/api/addresses", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
