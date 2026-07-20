@@ -67,10 +67,16 @@ exports.handler = async function(event) {
   try {
     if (event.httpMethod === "GET") {
       const blobs = await blobList();
+      console.log("blobList result:", JSON.stringify(blobs).substring(0, 300));
       const result = {};
       for (const b of blobs) {
-        try { result[b.key] = await blobGet(b.key); } catch(e) {}
+        try {
+          const val = await blobGet(b.key);
+          console.log("blobGet", b.key, "->", JSON.stringify(val).substring(0, 100));
+          result[b.key] = val;
+        } catch(e) { console.error("blobGet error:", b.key, e.message); }
       }
+      console.log("Returning", Object.keys(result).length, "addresses");
       return { statusCode: 200, headers: cors(), body: JSON.stringify(result) };
     }
 
