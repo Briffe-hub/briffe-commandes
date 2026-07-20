@@ -471,7 +471,7 @@ async function processEmail(msg) {
       }
     }
 
-    try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); }
+    // try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); } // DISABLED FOR TESTING
 
     ORDERS[id] = {
       status: sheetResults.length ? "success" : "partial",
