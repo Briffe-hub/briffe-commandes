@@ -51,6 +51,33 @@ exports.handler = async function (event) {
     }) };
   }
 
+  // Mode diagnostic 2 : teste 3 façons de s'authentifier + préfixe public du token
+  if (q.debug === "2") {
+    const k = API_KEY || "";
+    const rpcBody = JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/call",
+      params:{ name:"event_details", arguments:{ id: 1080 } } });
+    async function tryAuth(headers) {
+      try {
+        const r = await fetch(MCP_URL, { method:"POST",
+          headers: Object.assign({ "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, headers),
+          body: rpcBody });
+        const t = await r.text();
+        return { status: r.status, body: t.slice(0, 220) };
+      } catch (e) { return { error: e.message }; }
+    }
+    const [bearer, apikey, both] = await Promise.all([
+      tryAuth({ "Authorization": "Bearer " + k }),
+      tryAuth({ "X-API-Key": k }),
+      tryAuth({ "Authorization": "Bearer " + k, "X-API-Key": k })
+    ]);
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({
+      tokenPrefixPublic: k.slice(0, 12),   // ex "sxt_c8e6ada9" — non secret, visible dans Sextan
+      bearer_only: bearer,
+      xapikey_only: apikey,
+      both: both
+    }) };
+  }
+
   const id = q.id || "";
   if (!id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
 
