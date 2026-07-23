@@ -95,6 +95,7 @@ const CLIENT_ID = "31703629214-ej72ursr2609cfnbun5se5vf2clrmptn.apps.googleuserc
 const SHEETS_ID = "1ySJ7ORWl_D50WX-0cyJAcrHBCq6orDcFFpGUSzL2GIU";
 const GMAIL_USER = "logistique%40briffe.me";
 const TRAITE_LABEL = "[CONSIGNERIE] traites";
+const ANNULE_LABEL = "[CONSIGNERIE] annules";
 
 const ALL_CLIENTS = ["EuraTech", "UnivLille", "SciencePo", "Carsat", "CCI", "Autre"];
 
@@ -137,7 +138,7 @@ function resolveSheetFromClientAndPrestation(client, typePrestation) {
   return null;
 }
 
-let TOKEN=null, LABEL_ID=null, EMAILS=[], ORDERS={};
+let TOKEN=null, LABEL_ID=null, ANNULE_LABEL_ID=null, EMAILS=[], ORDERS={};
 
 function signIn() {
   var client = google.accounts.oauth2.initTokenClient({
@@ -176,6 +177,7 @@ async function onSignedIn() {
   document.getElementById("main").innerHTML = '<div class="empty">Recuperation des emails...</div>';
   try {
     LABEL_ID = await getOrCreateLabel(TRAITE_LABEL);
+    ANNULE_LABEL_ID = await getOrCreateLabel(ANNULE_LABEL);
     EMAILS = await fetchEmails();
     renderEmailList();
   } catch(e) {
@@ -683,8 +685,11 @@ function renderEmailList(){
       html+='<span class="from">'+esc(from)+'</span>';
       html+='<span class="subj" style="color:#ef4444">'+esc(subj)+'</span>';
       html+='<span class="date">'+date+'</span>';
-      if (!order||status==="idle") html+='<button class="btn" style="color:#ef4444;border-color:#ef444433" onclick="archiveCancellation(\''+msg.id+'\')">&#10003; Lu</button>';
-      if (status==="success") html+=pill("#22c55e","Archive");
+      if (!order||status==="idle") html+='<button class="btn" style="color:#ef4444;border-color:#ef444433" onclick="archiveCancellation(\''+msg.id+'\')">&#10003; Archiver</button>';
+      if (status==="success") {
+        var devInfo = order.devNum ? " · "+esc(order.devNum) : "";
+        html+=pill("#22c55e","Archive"+devInfo);
+      }
       html+='</div></div>';
       continue;
     }
@@ -734,8 +739,40 @@ function renderEmailList(){
 }
 
 async function archiveCancellation(msgId) {
-  try { await archiveEmail(msgId); } catch(e) { console.warn("Archive failed:", e); }
-  ORDERS[msgId] = {status:"success"};
+  var msg = EMAILS.find(function(m){return m.id===msgId;});
+  var body = msg ? getPlainBody(msg.payload) : "";
+  var subject = msg ? getHeader(msg,"subject") : "";
+
+  // Extract DEV number
+  var devMatch = (body + " " + subject).match(/DEV-\d+/);
+  var devNum = devMatch ? devMatch[0] : null;
+  console.log("Annulation DEV:", devNum);
+
+  // Archive annulation email to [CONSIGNERIE] annules
+  try {
+    await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+msgId+"/modify",{
+      method:"POST",body:JSON.stringify({addLabelIds:[ANNULE_LABEL_ID],removeLabelIds:["UNREAD","INBOX"]})
+    });
+  } catch(e) { console.warn("Archive annulation failed:", e); }
+
+  // Find and archive original commande email
+  if (devNum) {
+    try {
+      var search = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:"+devNum);
+      if (search.messages && search.messages.length) {
+        for (var i=0;i<search.messages.length;i++) {
+          var m = search.messages[i];
+          if (m.id !== msgId) {
+            await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+m.id+"/modify",{
+              method:"POST",body:JSON.stringify({addLabelIds:[ANNULE_LABEL_ID],removeLabelIds:["UNREAD","INBOX",LABEL_ID]})
+            });
+          }
+        }
+      }
+    } catch(e) { console.warn("Archive original failed:", e); }
+  }
+
+  ORDERS[msgId] = {status:"success", devNum:devNum};
   renderEmailList();
 }
 
