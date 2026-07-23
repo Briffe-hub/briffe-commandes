@@ -36,7 +36,22 @@ exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
   if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée dans Netlify." }) };
 
-  const id = (event.queryStringParameters && event.queryStringParameters.id) || "";
+  const q = event.queryStringParameters || {};
+
+  // Mode diagnostic : ne révèle PAS la clé, seulement sa présence / forme
+  if (q.debug === "1") {
+    const k = API_KEY || "";
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({
+      has_SEXTAN_API_KEY: !!process.env.SEXTAN_API_KEY,
+      keyLength: k.length,
+      keyPrefix: k.slice(0, 4),
+      startsWithSxt: k.startsWith("sxt_"),
+      hasWhitespace: /\s/.test(k),
+      mcpUrl: MCP_URL
+    }) };
+  }
+
+  const id = q.id || "";
   if (!id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
 
   try {
