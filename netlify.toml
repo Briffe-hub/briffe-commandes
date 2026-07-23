@@ -1,0 +1,32 @@
+[build]
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/"
+  to = "/briffe-commandes.html"
+  status = 301
+
+[[redirects]]
+  from = "/api/claude"
+  to = "/.netlify/functions/claude"
+  status = 200
+
+[[redirects]]
+  from = "/api/process"
+  to = "/.netlify/functions/process"
+  status = 200
+
+[[redirects]]
+  from = "/api/addresses"
+  to = "/.netlify/functions/addresses"
+  status = 200
+
+[[redirects]]
+  from = "/api/sextan"
+  to = "/.netlify/functions/sextan"
+  status = 200
+
+[[redirects]]
+  from = "/prepa"
+  to = "/briffe-prepa.html"
+  status = 301
