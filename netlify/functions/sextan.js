@@ -78,6 +78,32 @@ exports.handler = async function (event) {
     }) };
   }
 
+  // Mode diagnostic 3 : teste de nombreuses variantes d'en-tête d'auth
+  if (q.debug === "3") {
+    const k = API_KEY || "";
+    const hex = k.replace(/^sxt_/, "");
+    const body = JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/call", params:{ name:"event_details", arguments:{ id:1080 } } });
+    async function t(label, headers) {
+      try {
+        const r = await fetch(MCP_URL, { method:"POST",
+          headers: Object.assign({ "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, headers),
+          body });
+        const tx = await r.text();
+        return { label, status: r.status, ok: r.ok, body: tx.slice(0, 140) };
+      } catch (e) { return { label, error: e.message }; }
+    }
+    const variants = await Promise.all([
+      t("bearer_sxt",    { "Authorization": "Bearer " + k }),
+      t("bearer_hex",    { "Authorization": "Bearer " + hex }),
+      t("xapikey_upper", { "X-API-Key": k }),
+      t("xapikey_lower", { "x-api-key": k }),
+      t("apikey_header", { "Api-Key": k }),
+      t("auth_raw",      { "Authorization": k }),
+      t("both_lower",    { "Authorization": "Bearer " + k, "x-api-key": k })
+    ]);
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({ variants }) };
+  }
+
   const id = q.id || "";
   if (!id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
 
