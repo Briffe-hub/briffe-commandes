@@ -187,7 +187,7 @@ async function fetchEmails() {
   // Fetch commandes (with PDF)
   var d1 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
   // Fetch annulations (no PDF, subject contains ANNUL)
-  var d2 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:ANNUL+in:inbox");
+  var d2 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+in:inbox+-has:attachment");
 
   var ids = new Set();
   var msgs = [];
