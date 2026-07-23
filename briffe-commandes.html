@@ -184,12 +184,21 @@ async function onSignedIn() {
 }
 
 async function fetchEmails() {
-  var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
-  if (!data.messages || !data.messages.length) return [];
-  var details = await Promise.all(data.messages.map(function(m) {
+  // Fetch commandes (with PDF)
+  var d1 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
+  // Fetch annulations (no PDF, subject contains ANNUL)
+  var d2 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:ANNUL+in:inbox");
+
+  var ids = new Set();
+  var msgs = [];
+  for (var m of (d1.messages||[]).concat(d2.messages||[])) {
+    if (!ids.has(m.id)) { ids.add(m.id); msgs.push(m); }
+  }
+  if (!msgs.length) return [];
+  var details = await Promise.all(msgs.map(function(m) {
     return gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+m.id+"?format=full");
   }));
-  return details.filter(function(m) { return findPdfParts(m.payload&&m.payload.parts).length > 0; });
+  return details;
 }
 
 async function fetchAttachment(messageId, attachmentId) {
@@ -252,6 +261,11 @@ function getPlainBody(payload) {
   var body=dig(payload.parts);
   if (!body&&payload.body&&payload.body.data){try{body=b64decode(payload.body.data);}catch(e){}}
   return body;
+}
+
+function isCancellation(msg) {
+  var subj = getHeader(msg, "subject").toUpperCase();
+  return subj.includes("ANNUL");
 }
 
 function normalize(s) {
@@ -662,6 +676,18 @@ function renderEmailList(){
     var from=getHeader(msg,"from").replace(/<.*>/,"").trim();
     var subj=getHeader(msg,"subject");
     var date=new Date(getHeader(msg,"date")).toLocaleDateString("fr-FR");
+    var cancelled=isCancellation(msg);
+    if (cancelled) {
+      html+='<div class="email-row" style="border-color:#ef444433"><div class="email-head">';
+      html+=pill("#ef4444","ANNULATION");
+      html+='<span class="from">'+esc(from)+'</span>';
+      html+='<span class="subj" style="color:#ef4444">'+esc(subj)+'</span>';
+      html+='<span class="date">'+date+'</span>';
+      if (!order||status==="idle") html+='<button class="btn" style="color:#ef4444;border-color:#ef444433" onclick="archiveCancellation(\''+msg.id+'\')">&#10003; Lu</button>';
+      if (status==="success") html+=pill("#22c55e","Archive");
+      html+='</div></div>';
+      continue;
+    }
     html+='<div class="email-row"><div class="email-head">'+pill(st.color,st.label);
     html+='<span class="from">'+esc(from)+'</span>';
     html+='<span class="subj">'+esc(subj)+'</span>';
@@ -705,6 +731,12 @@ function renderEmailList(){
     html+='</div>';
   }
   document.getElementById("main").innerHTML=html;
+}
+
+async function archiveCancellation(msgId) {
+  try { await archiveEmail(msgId); } catch(e) { console.warn("Archive failed:", e); }
+  ORDERS[msgId] = {status:"success"};
+  renderEmailList();
 }
 
 async function refresh(){
