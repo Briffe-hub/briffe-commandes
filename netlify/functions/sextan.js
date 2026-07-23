@@ -45,6 +45,7 @@ exports.handler = async function (event) {
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
+        "Authorization": "Bearer " + API_KEY,
         "X-API-Key": API_KEY
       },
       body: JSON.stringify({
