@@ -82,10 +82,18 @@ input,select{font-family:'DM Mono',monospace}
 .file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
 .grp-title{font-size:10px;color:#666;letter-spacing:.12em;text-transform:uppercase;margin:22px 0 2px}
 </style>
+<style>
+/* Bouton retour menu principal */
+.bt-back{display:inline-flex;align-items:center;gap:6px;margin-right:16px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8a8a82;text-decoration:none;border:1px solid #2a2a2a;border-radius:8px;padding:7px 12px;background:#141414;transition:color .18s ease,border-color .18s ease,background .18s ease;white-space:nowrap;flex:0 0 auto}
+.bt-back:hover{color:#e8e8e0;border-color:#921821;background:#181818}
+.bt-back .ar{display:inline-block;transition:transform .18s ease}
+.bt-back:hover .ar{transform:translateX(-3px)}
+</style>
 </head>
 <body>
 <div class="header">
-  <div class="logo"><span>Briffe</span> · signature &amp; cachet</div>
+  <a class="bt-back" href="index.html" title="Retour au menu principal"><span class="ar">&larr;</span>&nbsp;Menu</a>
+  <div class="logo" style="margin-right:auto"><span>Briffe</span> · signature &amp; cachet</div>
   <div class="header-right">
     <a class="navlink" href="/briffe-commandes.html">Commandes</a>
     <a class="navlink" href="/briffe-prepa.html">Prépa</a>
