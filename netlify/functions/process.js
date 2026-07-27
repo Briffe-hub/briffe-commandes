@@ -8,7 +8,7 @@
 // Returns merged PDF as base64 for auto-print
 
 const SHEETS_ID = "1ySJ7ORWl_D50WX-0cyJAcrHBCq6orDcFFpGUSzL2GIU";
-const DRIVE_FOLDER_ID = "16VCSkD551XBNVgy0q48n4PeNVKxFcwpK";
+const DRIVE_FOLDER_ID = "1qrOcZO7hhKcu9hmFEbBC8M8TOSn6EyDW";
 const CALENDAR_ID = "logistique@briffe.me";
 
 exports.handler = async function(event) {
