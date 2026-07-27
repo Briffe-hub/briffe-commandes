@@ -155,17 +155,17 @@ exports.handler = async function(event) {
     const mapsUrl = lieu ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(lieu + (salle ? " " + salle : "")) : null;
 
     const description = [
-      "<b>N° Commande :</b> " + (numero_commande || "—"),
-      "<b>Client :</b> " + (client || "—"),
-      "<b>Prestation :</b> " + (livraison.type_prestation || "—"),
-      "<b>Nombre de personnes :</b> " + nb,
-      "<b>Mise en place à partir de :</b> " + heureMep,
-      "<b>Événement :</b> " + heureEv,
-      lieu ? '<b>Adresse :</b> <a href="' + mapsUrl + '">' + lieu + '</a>' : "",
-      salle ? "<b>Salle :</b> " + salle : "",
-      contact ? "<b>Contact :</b> " + contactHtml : "",
-      uploadedFile.id ? '<b>Document :</b> <a href="https://drive.google.com/file/d/' + uploadedFile.id + '">Ouvrir le PDF</a>' : ""
-    ].filter(Boolean).join("<br>");
+      "N° Commande : " + (numero_commande || "—"),
+      "Client : " + (client || "—"),
+      "Prestation : " + (livraison.type_prestation || "—"),
+      "Nombre de personnes : " + nb,
+      "Mise en place : " + heureMep,
+      "Événement : " + heureEv,
+      lieu ? "Adresse : " + lieu : "",
+      salle ? "Salle : " + salle : "",
+      contact ? "Contact : " + (contact.replace(/<[^>]+>/g, "")) : "",
+      uploadedFile.id ? "PDF : https://drive.google.com/file/d/" + uploadedFile.id : ""
+    ].filter(Boolean).join("\n");
 
     // Choose emoji based on prestation type
     const tp = (livraison.type_prestation || "").toLowerCase();
