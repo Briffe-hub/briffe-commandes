@@ -85,7 +85,7 @@ exports.handler = async function(event) {
         if (!body.dataUrl || !/^data:image\/(png|jpe?g);base64,/.test(body.dataUrl)) {
           return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "dataUrl PNG/JPEG requis" }) };
         }
-        const type = body.type === "cachet" ? "cachet" : "signature";
+        const type = ["signature", "cachet", "accord"].includes(body.type) ? body.type : "signature";
         const id   = normalizeId(body.id || (type + "_" + Date.now()));
         await blobSet(id, {
           name:    (body.name || "Sans nom").substring(0, 80),
