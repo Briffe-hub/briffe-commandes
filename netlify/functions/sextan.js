@@ -1,6 +1,6 @@
 // Netlify Function: /api/sextan?id=NUM
-// Récupère une réception via l'API REST Sextan.
-// Résumé via /api/events/search ; menu/facturation via routes dédiées (en cours de calage).
+// Détail d'une réception via l'API REST Sextan (POST /api/events/details),
+// repli sur /api/events/search (résumé). Appels bornés par un délai.
 
 const BASE = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
 const API_KEY = process.env.SEXTAN_API_KEY || "";
@@ -8,27 +8,20 @@ const AUTH = { "X-API-Key": API_KEY };
 
 function cors() { return { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }; }
 
-async function call(method, path, body) {
-  const opts = { method, headers: Object.assign({ "Accept": "application/json" }, AUTH)// Netlify Function: /api/sextan?id=NUM
-// Récupère le détail complet d'une réception via l'API REST Sextan :
-//   POST /api/events/details  { id, include:[menu,billing,staff,packs] }
-// Repli : POST /api/events/search (résumé) si le détail n'est pas disponible.
-
-const BASE = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
-const API_KEY = process.env.SEXTAN_API_KEY || "";
-const AUTH = { "X-API-Key": API_KEY };
-
-function cors() { return { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }; }
-
-async function call(path, body) {
-  const r = await fetch(BASE + path, {
-    method: "POST",
-    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, AUTH),
-    body: JSON.stringify(body)
-  });
-  const txt = await r.text();
-  let json = null; try { json = JSON.parse(txt); } catch (e) {}
-  return { status: r.status, json, txt };
+async function call(path, body, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || 7000);
+  try {
+    const r = await fetch(BASE + path, {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, AUTH),
+      body: JSON.stringify(body),
+      signal: ctrl.signal
+    });
+    const txt = await r.text();
+    let json = null; try { json = JSON.parse(txt); } catch (e) {}
+    return { status: r.status, json, len: txt.length };
+  } finally { clearTimeout(t); }
 }
 
 function firstEvent(json) {
@@ -38,120 +31,44 @@ function firstEvent(json) {
   if (json.id) return json;
   return null;
 }
-function hasDetail(ev) { return ev && (ev.menu || ev.billing || ev.content || ev.products); }
-
-async function getEvent(id) {
-  const n = parseInt(id, 10);
-  const inc = ["menu", "billing", "staff", "packs"];
-  const attempts = [
-    ["/api/events/details", { id: n, include: inc }],
-    ["/api/events/details", { id: n }],
-    ["/api/events/search",  { id: n, include: inc }],
-    ["/api/events/search",  { id: n }]
-  ];
-  let summary = null;
-  for (const [path, body] of attempts) {
-    let r; try { r = await call(path, body); } catch (e) { continue; }
-    const ev = firstEvent(r.json);
-    if (ev && hasDetail(ev)) return ev;
-    if (ev && !summary) summary = ev;
-  }
-  return summary;
-}
+const hasDetail = ev => !!(ev && (ev.menu || ev.billing || ev.content || ev.products));
 
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
   if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée." }) };
   const q = event.queryStringParameters || {};
   const id = q.id || "1550";
+  const n = parseInt(id, 10);
 
-  // Diagnostic : structure de /api/events/details
+  // santé (aucun réseau)
+  if (q.debug === "1") {
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({ alive: true, base: BASE, keyLen: API_KEY.length }) };
+  }
+  // détail : un seul appel, on renvoie la forme
   if (q.debug === "7") {
-    const n = parseInt(id, 10);
-    const out = {};
-    for (const [lbl, body] of [["with_include", { id: n, include: ["menu", "billing", "staff", "packs"] }], ["plain", { id: n }]]) {
-      try {
-        const r = await call("/api/events/details", body);
-        const ev = firstEvent(r.json);
-        out[lbl] = {
-          status: r.status,
-          allKeys: ev ? Object.keys(ev) : null,
-          hasMenu: !!(ev && ev.menu), hasBilling: !!(ev && ev.billing), hasContent: !!(ev && ev.content),
-          menuSample: ev && ev.menu ? JSON.stringify(ev.menu).slice(0, 300) : null,
-          billingSample: ev && ev.billing ? JSON.stringify(ev.billing).slice(0, 200) : null
-        };
-      } catch (e) { out[lbl] = { error: e.message }; }
-    }
-    return { statusCode: 200, headers: cors(), body: JSON.stringify(out) };
+    try {
+      const r = await call("/api/events/details", { id: n, include: ["menu", "billing", "staff", "packs"] }, 8000);
+      const ev = firstEvent(r.json);
+      return { statusCode: 200, headers: cors(), body: JSON.stringify({
+        status: r.status, len: r.len,
+        allKeys: ev ? Object.keys(ev) : null,
+        hasMenu: !!(ev && ev.menu), hasBilling: !!(ev && ev.billing),
+        menuType: ev && ev.menu ? (Array.isArray(ev.menu) ? "array" : typeof ev.menu) : null,
+        stepsLen: ev && ev.menu && ev.menu.steps ? ev.menu.steps.length : null,
+        firstProduct: (ev && ev.menu && ev.menu.steps && ev.menu.steps[0] && ev.menu.steps[0].products && ev.menu.steps[0].products[0]) || null,
+        firstBilling: (ev && ev.billing && ev.billing.items && ev.billing.items[0]) || null
+      }) };
+    } catch (e) { return { statusCode: 200, headers: cors(), body: JSON.stringify({ error: e.name + ": " + e.message }) }; }
   }
 
   if (!q.id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
   try {
-    const ev = await getEvent(id);
-    if (!ev) return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Réception introuvable." }) };
-    return { statusCode: 200, headers: cors(), body: JSON.stringify({ data: [ev] }) };
-  } catch (e) {
-    return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
-  }
-}; };
-  if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
-  const r = await fetch(BASE + path, opts);
-  const txt = await r.text();
-  let json = null; try { json = JSON.parse(txt); } catch (e) {}
-  return { status: r.status, ct: (r.headers.get("content-type") || "").split(";")[0], json, txt };
-}
-
-async function summary(id) {
-  const r = await call("POST", "/api/events/search", { id: parseInt(id, 10) });
-  return r.json && r.json.data && r.json.data[0];
-}
-
-exports.handler = async function (event) {
-  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
-  if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée." }) };
-  const q = event.queryStringParameters || {};
-  const id = q.id || "1550";
-  const n = parseInt(id, 10);
-
-  // Sonde d'endpoints menu/facturation
-  if (q.debug === "6") {
-    const probes = [
-      ["GET",  "/api/events/" + n],
-      ["GET",  "/api/events/" + n + "?include=menu,billing,staff"],
-      ["POST", "/api/events/get", { id: n, include: ["menu", "billing", "staff"] }],
-      ["POST", "/api/events/details", { id: n }],
-      ["POST", "/api/products/search", { event: n }],
-      ["POST", "/api/products/search", { event_id: n }],
-      ["POST", "/api/products/search", { reception: n }],
-      ["POST", "/api/event-products/search", { event: n }],
-      ["POST", "/api/billing/search", { event: n }],
-      ["POST", "/api/steps/search", { event: n }],
-      ["POST", "/api/menus/search", { event: n }],
-      ["GET",  "/api/events/" + n + "/products"],
-      ["GET",  "/api/events/" + n + "/menu"],
-      ["GET",  "/api/events/" + n + "/billing"]
-    ];
-    const out = [];
-    for (const [m, p, b] of probes) {
-      try {
-        const r = await call(m, p, b);
-        let shape = null;
-        if (r.json) {
-          if (Array.isArray(r.json)) shape = { array: r.json.length, first: r.json[0] ? Object.keys(r.json[0]).slice(0, 12) : null };
-          else if (Array.isArray(r.json.data)) shape = { dataArray: r.json.data.length, first: r.json.data[0] ? Object.keys(r.json.data[0]).slice(0, 12) : null };
-          else shape = { keys: Object.keys(r.json).slice(0, 15) };
-        }
-        out.push({ ep: m + " " + p + (b ? " " + Object.keys(b).join(",") : ""), status: r.status, ct: r.ct, shape });
-      } catch (e) { out.push({ ep: m + " " + p, error: e.message }); }
+    let ev = null;
+    try { const r = await call("/api/events/details", { id: n, include: ["menu", "billing", "staff", "packs"] }, 8000); ev = firstEvent(r.json); } catch (e) {}
+    if (!hasDetail(ev)) {
+      try { const r2 = await call("/api/events/search", { id: n }, 6000); const s = firstEvent(r2.json); if (s) ev = ev || s; } catch (e) {}
     }
-    return { statusCode: 200, headers: cors(), body: JSON.stringify(out) };
-  }
-
-  // Chemin normal : résumé (toujours), enrichi si on trouve mieux plus tard
-  if (!q.id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
-  try {
-    const ev = await summary(id);
-    if (!ev) return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Réception introuvable." }) };
+    if (!ev) return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Réception introuvable ou service indisponible." }) };
     return { statusCode: 200, headers: cors(), body: JSON.stringify({ data: [ev] }) };
   } catch (e) {
     return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
