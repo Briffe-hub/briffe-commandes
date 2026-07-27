@@ -1,10 +1,10 @@
 // Netlify Function: /api/sextan?id=NUM
-// Récupère une réception depuis le serveur Sextan (MCP, mais STATELESS : un seul POST).
-// Renvoie { success, data:[event] } au front (briffe-prepa).
+// Récupère une réception depuis le serveur Sextan (MCP, stateless).
+// Essaie plusieurs méthodes d'authentification et garde celle qui répond.
 //
 // Réglages (Netlify → Environment variables) :
 //   SEXTAN_API_KEY  = clé "sxt_..."   (obligatoire)
-//   SEXTAN_MCP_URL  = URL du serveur  (optionnel, défaut ci-dessous)
+//   SEXTAN_MCP_URL  = URL du serveur  (optionnel)
 
 const MCP_URL = process.env.SEXTAN_MCP_URL || "https://briffe.sextan.catering/mcp";
 const API_KEY = process.env.SEXTAN_API_KEY;
@@ -17,7 +17,6 @@ function cors() {
   };
 }
 
-// Extrait l'objet JSON-RPC (réponse JSON simple OU flux SSE "data: ...")
 function parseRpc(text, contentType) {
   const ct = (contentType || "").toLowerCase();
   if (ct.includes("text/event-stream") || text.startsWith("event:") || text.startsWith("data:")) {
@@ -32,121 +31,93 @@ function parseRpc(text, contentType) {
   try { return JSON.parse(text); } catch (e) { return null; }
 }
 
+function bodyFor(id) {
+  return JSON.stringify({
+    jsonrpc: "2.0", id: 1, method: "tools/call",
+    params: { name: "event_details", arguments: { id: parseInt(id, 10), include: ["menu", "billing", "staff", "packs"] } }
+  });
+}
+
+// Liste des méthodes d'auth à tenter, dans l'ordre
+function authVariants(k) {
+  const hex = k.replace(/^sxt_/, "");
+  return [
+    { label: "bearer",        headers: { "Authorization": "Bearer " + k } },
+    { label: "xapikey_lower", headers: { "x-api-key": k } },
+    { label: "xapikey_upper", headers: { "X-API-Key": k } },
+    { label: "bearer+xapikey",headers: { "Authorization": "Bearer " + k, "x-api-key": k } },
+    { label: "bearer_hex",    headers: { "Authorization": "Bearer " + hex } },
+    { label: "auth_raw",      headers: { "Authorization": k } }
+  ];
+}
+
+function isAuthError(rpc) {
+  const m = (rpc && rpc.error && rpc.error.message || "").toLowerCase();
+  return /bearer|token|unauthor|expired|invalid|forbidden|api.?key/.test(m);
+}
+
+async function callSextan(id, headers) {
+  const resp = await fetch(MCP_URL, {
+    method: "POST",
+    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json, text/event-stream" }, headers),
+    body: bodyFor(id)
+  });
+  const txt = await resp.text();
+  return { status: resp.status, rpc: parseRpc(txt, resp.headers.get("content-type")), raw: txt };
+}
+
+function extractPayload(rpc) {
+  const res = rpc.result || {};
+  let payload = res.structuredContent || null;
+  if (!payload && Array.isArray(res.content)) {
+    const t = res.content.find(c => c.type === "text");
+    if (t) { try { payload = JSON.parse(t.text); } catch (e) { payload = { raw: t.text }; } }
+  }
+  return payload || res;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
   if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée dans Netlify." }) };
 
   const q = event.queryStringParameters || {};
 
-  // Mode diagnostic : ne révèle PAS la clé, seulement sa présence / forme
+  // Diagnostic : forme de la clé (jamais la clé elle-même)
   if (q.debug === "1") {
     const k = API_KEY || "";
     return { statusCode: 200, headers: cors(), body: JSON.stringify({
-      has_SEXTAN_API_KEY: !!process.env.SEXTAN_API_KEY,
-      keyLength: k.length,
-      keyPrefix: k.slice(0, 4),
-      startsWithSxt: k.startsWith("sxt_"),
-      hasWhitespace: /\s/.test(k),
-      mcpUrl: MCP_URL
+      has_key: !!process.env.SEXTAN_API_KEY, keyLength: k.length, keyPrefixPublic: k.slice(0, 12),
+      startsWithSxt: k.startsWith("sxt_"), hasWhitespace: /\s/.test(k), mcpUrl: MCP_URL
     }) };
   }
-
-  // Mode diagnostic 2 : teste 3 façons de s'authentifier + préfixe public du token
+  // Diagnostic : essaie toutes les méthodes et renvoie le résultat de chacune
   if (q.debug === "2") {
-    const k = API_KEY || "";
-    const rpcBody = JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/call",
-      params:{ name:"event_details", arguments:{ id: 1080 } } });
-    async function tryAuth(headers) {
-      try {
-        const r = await fetch(MCP_URL, { method:"POST",
-          headers: Object.assign({ "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, headers),
-          body: rpcBody });
-        const t = await r.text();
-        return { status: r.status, body: t.slice(0, 220) };
-      } catch (e) { return { error: e.message }; }
+    const results = {};
+    for (const v of authVariants(API_KEY)) {
+      try { const r = await callSextan(q.id || 1080, v.headers);
+        results[v.label] = { status: r.status, body: (r.raw || "").slice(0, 140) }; }
+      catch (e) { results[v.label] = { error: e.message }; }
     }
-    const [bearer, apikey, both] = await Promise.all([
-      tryAuth({ "Authorization": "Bearer " + k }),
-      tryAuth({ "X-API-Key": k }),
-      tryAuth({ "Authorization": "Bearer " + k, "X-API-Key": k })
-    ]);
-    return { statusCode: 200, headers: cors(), body: JSON.stringify({
-      tokenPrefixPublic: k.slice(0, 12),   // ex "sxt_c8e6ada9" — non secret, visible dans Sextan
-      bearer_only: bearer,
-      xapikey_only: apikey,
-      both: both
-    }) };
-  }
-
-  // Mode diagnostic 3 : teste de nombreuses variantes d'en-tête d'auth
-  if (q.debug === "3") {
-    const k = API_KEY || "";
-    const hex = k.replace(/^sxt_/, "");
-    const body = JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/call", params:{ name:"event_details", arguments:{ id:1080 } } });
-    async function t(label, headers) {
-      try {
-        const r = await fetch(MCP_URL, { method:"POST",
-          headers: Object.assign({ "Content-Type":"application/json", "Accept":"application/json, text/event-stream" }, headers),
-          body });
-        const tx = await r.text();
-        return { label, status: r.status, ok: r.ok, body: tx.slice(0, 140) };
-      } catch (e) { return { label, error: e.message }; }
-    }
-    const variants = await Promise.all([
-      t("bearer_sxt",    { "Authorization": "Bearer " + k }),
-      t("bearer_hex",    { "Authorization": "Bearer " + hex }),
-      t("xapikey_upper", { "X-API-Key": k }),
-      t("xapikey_lower", { "x-api-key": k }),
-      t("apikey_header", { "Api-Key": k }),
-      t("auth_raw",      { "Authorization": k }),
-      t("both_lower",    { "Authorization": "Bearer " + k, "x-api-key": k })
-    ]);
-    return { statusCode: 200, headers: cors(), body: JSON.stringify({ variants }) };
+    return { statusCode: 200, headers: cors(), body: JSON.stringify(results) };
   }
 
   const id = q.id || "";
   if (!id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
 
   try {
-    const resp = await fetch(MCP_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-        "Authorization": "Bearer " + API_KEY,
-        "X-API-Key": API_KEY
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "event_details",
-          arguments: { id: parseInt(id, 10), include: ["menu", "billing", "staff", "packs"] }
-        }
-      })
-    });
-
-    const txt = await resp.text();
-    const rpc = parseRpc(txt, resp.headers.get("content-type"));
-
-    if (!rpc) {
-      return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Réponse Sextan illisible (HTTP " + resp.status + ")", raw: txt.slice(0, 400) }) };
+    let lastErr = null;
+    for (const v of authVariants(API_KEY)) {
+      const r = await callSextan(id, v.headers);
+      if (r.rpc && r.rpc.result) {
+        return { statusCode: 200, headers: cors(), body: JSON.stringify(extractPayload(r.rpc)) };
+      }
+      if (r.rpc && r.rpc.error && !isAuthError(r.rpc)) {
+        // erreur "métier" (ex. réception introuvable) : inutile de tenter d'autres auth
+        return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: r.rpc.error.message || "Erreur Sextan", code: r.rpc.error.code }) };
+      }
+      lastErr = (r.rpc && r.rpc.error && r.rpc.error.message) || ("HTTP " + r.status);
     }
-    if (rpc.error) {
-      return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: rpc.error.message || "Erreur Sextan", code: rpc.error.code }) };
-    }
-
-    // Le résultat MCP encapsule le JSON dans content[].text (ou structuredContent)
-    const res = rpc.result || {};
-    let payload = res.structuredContent || null;
-    if (!payload && Array.isArray(res.content)) {
-      const t = res.content.find(c => c.type === "text");
-      if (t) { try { payload = JSON.parse(t.text); } catch (e) { payload = { raw: t.text }; } }
-    }
-    if (!payload) payload = res;
-
-    return { statusCode: 200, headers: cors(), body: JSON.stringify(payload) };
+    return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Authentification Sextan refusée (" + lastErr + ")" }) };
   } catch (e) {
     return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
   }
