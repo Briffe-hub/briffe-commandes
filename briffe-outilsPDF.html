@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Briffe · Signature & cachet</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:#0f0f0f;color:#e8e8e0;min-height:100vh}
+button{font-family:'DM Mono',monospace;cursor:pointer}
+input,select{font-family:'DM Mono',monospace}
+.header{border-bottom:1px solid #1e1e1e;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;background:#111;position:sticky;top:0;z-index:10}
+.logo{font-size:12px;letter-spacing:.15em;color:#444;text-transform:uppercase}
+.logo span{color:#e8e8e0}
+.header-right{display:flex;gap:14px;align-items:center}
+.navlink{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#444;text-decoration:none}
+.navlink:hover{color:#888}
+#tab-bar{display:flex;border-bottom:1px solid #1e1e1e;background:#111;padding:0 28px}
+.tab-btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:12px 18px;background:transparent;border:none;border-bottom:2px solid transparent;color:#444}
+.tab-btn.active{color:#e8e8e0;border-bottom-color:#e8e8e0}
+.tab-btn:hover{color:#888}
+.panel{padding:24px 28px;max-width:1100px;margin:0 auto}
+.hidden{display:none!important}
+.section-label{font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase}
+.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+.btn{font-size:11px;letter-spacing:.1em;padding:8px 16px;border-radius:3px;text-transform:uppercase;border:1px solid #2a2a2a;background:transparent;color:#888;white-space:nowrap}
+.btn:hover{border-color:#444;color:#ccc}
+.btn.primary{border-color:#e8e8e0;background:#e8e8e0;color:#0f0f0f}
+.btn.primary:hover{opacity:.85}
+.btn.danger:hover{border-color:#ef4444;color:#ef4444}
+.btn:disabled{opacity:.35;cursor:default}
+.btn.small{padding:5px 10px;font-size:10px}
+.hint{font-size:11px;color:#3a3a3a;line-height:1.9;margin-top:8px}
+.status{font-size:11px;color:#555;min-height:16px}
+.status.ok{color:#22c55e}
+.status.err{color:#ef4444}
+
+/* --- Dropzone --- */
+.drop{border:1px dashed #2a2a2a;border-radius:8px;padding:56px 32px;text-align:center;background:#111;color:#555;transition:border-color .15s}
+.drop.hot{border-color:#e8e8e0;color:#aaa}
+.drop b{color:#e8e8e0;font-weight:500}
+
+/* --- Signer layout --- */
+.signer{display:grid;grid-template-columns:230px 1fr;gap:20px;align-items:start}
+@media(max-width:820px){.signer{grid-template-columns:1fr}}
+.palette{border:1px solid #1a1a1a;border-radius:8px;background:#111;padding:14px}
+.palette h3{font-size:10px;color:#444;letter-spacing:.12em;text-transform:uppercase;margin:6px 0 10px}
+.thumbs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.thumb{border:1px solid #1e1e1e;border-radius:6px;background:#0c0c0c;padding:8px;cursor:pointer;text-align:center;transition:border-color .15s}
+.thumb:hover{border-color:#e8e8e0}
+.thumb img{max-width:100%;max-height:52px;object-fit:contain;display:block;margin:0 auto 5px;background:repeating-conic-gradient(#161616 0 25%,#0c0c0c 0 50%) 50%/12px 12px;border-radius:3px}
+.thumb .nm{font-size:9px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.palette .empty-lib{font-size:10px;color:#333;line-height:1.7;padding:8px 2px}
+
+.stage-wrap{border:1px solid #1a1a1a;border-radius:8px;background:#0c0c0c;padding:16px;overflow:auto}
+.pager{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.pager .pg{font-size:11px;color:#666}
+.page-scroll{display:flex;justify-content:center}
+.page-wrap{position:relative;box-shadow:0 0 0 1px #222;line-height:0}
+.page-wrap canvas{display:block}
+.placement{position:absolute;border:1px solid transparent;cursor:move;touch-action:none}
+.placement:hover,.placement.sel{border-color:#22c55e}
+.placement img{width:100%;height:100%;display:block;pointer-events:none;user-select:none}
+.placement .rh{position:absolute;right:-6px;bottom:-6px;width:12px;height:12px;background:#22c55e;border:1px solid #0f0f0f;border-radius:2px;cursor:nwse-resize}
+.placement .del{position:absolute;right:-9px;top:-9px;width:16px;height:16px;line-height:14px;text-align:center;background:#0f0f0f;border:1px solid #ef4444;color:#ef4444;border-radius:50%;font-size:11px;cursor:pointer}
+.placement:not(.sel):not(:hover) .rh,.placement:not(.sel):not(:hover) .del{display:none}
+
+/* --- Bibliothèque --- */
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
+.lib-card{border:1px solid #1a1a1a;border-radius:8px;background:#111;padding:12px;text-align:center}
+.lib-card img{max-width:100%;max-height:80px;object-fit:contain;display:block;margin:0 auto 8px;background:repeating-conic-gradient(#161616 0 25%,#0c0c0c 0 50%) 50%/14px 14px;border-radius:4px;padding:4px}
+.lib-card .nm{font-size:11px;color:#b0b0a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px}
+.lib-empty{padding:40px 0;text-align:center;color:#333;font-size:12px}
+.import-box{border:1px solid #1a1a1a;border-radius:8px;background:#111;padding:18px;margin-top:8px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:9px;color:#444;letter-spacing:.1em;text-transform:uppercase}
+.field input[type=text],.field select{background:#0c0c0c;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:8px 10px;font-size:12px}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.grp-title{font-size:10px;color:#666;letter-spacing:.12em;text-transform:uppercase;margin:22px 0 2px}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo"><span>Briffe</span> · signature &amp; cachet</div>
+  <div class="header-right">
+    <a class="navlink" href="/briffe-commandes.html">Commandes</a>
+    <a class="navlink" href="/briffe-prepa.html">Prépa</a>
+  </div>
+</div>
+
+<div id="tab-bar">
+  <button class="tab-btn active" id="tab-signer-btn" onclick="showTab('signer')">Signer</button>
+  <button class="tab-btn" id="tab-lib-btn" onclick="showTab('lib')">Bibliothèque</button>
+</div>
+
+<!-- ============ SIGNER ============ -->
+<div class="panel" id="tab-signer">
+  <div id="drop" class="drop">
+    Dépose un <b>PDF</b> ici, ou <b>clique pour choisir</b> un fichier.
+    <input type="file" id="pdf-input" accept="application/pdf" style="display:none">
+  </div>
+
+  <div id="editor" class="hidden">
+    <div class="toolbar">
+      <div class="section-label" id="file-name">document.pdf</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn small" onclick="resetPdf()">Changer de PDF</button>
+        <button class="btn primary" id="gen-btn" onclick="generate()">Télécharger le PDF signé</button>
+      </div>
+    </div>
+    <div class="status" id="sign-status"></div>
+
+    <div class="signer" style="margin-top:10px">
+      <div class="palette">
+        <h3>Signatures</h3>
+        <div class="thumbs" id="pal-signature"></div>
+        <h3 style="margin-top:16px">Cachets</h3>
+        <div class="thumbs" id="pal-cachet"></div>
+        <div class="hint" style="margin-top:14px">Clique une vignette pour l'ajouter sur la page. Glisse pour déplacer, coin vert pour redimensionner.</div>
+      </div>
+
+      <div class="stage-wrap">
+        <div class="pager">
+          <button class="btn small" id="prev-pg" onclick="gotoPage(cur-1)">◀</button>
+          <span class="pg" id="pg-label">Page 1 / 1</span>
+          <button class="btn small" id="next-pg" onclick="gotoPage(cur+1)">▶</button>
+          <span style="flex:1"></span>
+          <button class="btn small" onclick="zoom(-1)">−</button>
+          <button class="btn small" onclick="zoom(1)">+</button>
+        </div>
+        <div class="page-scroll">
+          <div class="page-wrap" id="page-wrap">
+            <canvas id="pdf-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BIBLIOTHÈQUE ============ -->
+<div class="panel hidden" id="tab-lib">
+  <div class="toolbar">
+    <div class="section-label">Bibliothèque · signatures &amp; cachets</div>
+    <button class="btn small" onclick="loadLibrary(true)">↻ Actualiser</button>
+  </div>
+  <div class="status" id="lib-status"></div>
+
+  <div class="import-box">
+    <div class="field">
+      <label>Image (PNG transparent conseillé)</label>
+      <button class="btn small file-btn" id="imp-file-btn">Choisir un fichier
+        <input type="file" id="imp-file" accept="image/png,image/jpeg">
+      </button>
+    </div>
+    <div class="field">
+      <label>Nom</label>
+      <input type="text" id="imp-name" placeholder="Ex : Germain B." size="16">
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <select id="imp-type">
+        <option value="signature">Signature</option>
+        <option value="cachet">Cachet</option>
+      </select>
+    </div>
+    <button class="btn primary" id="imp-add" onclick="importImage()" disabled>Ajouter</button>
+    <img id="imp-preview" style="max-height:44px;max-width:120px;object-fit:contain;display:none;background:repeating-conic-gradient(#161616 0 25%,#0c0c0c 0 50%) 50%/12px 12px;border-radius:3px">
+  </div>
+
+  <div class="grp-title">Signatures</div>
+  <div class="lib-grid" id="lib-signature"></div>
+  <div class="grp-title">Cachets</div>
+  <div class="lib-grid" id="lib-cachet"></div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const { PDFDocument, degrees } = PDFLib;
+
+/* ---------------- Bibliothèque (état + API) ---------------- */
+let LIB = {};            // id -> { name, type, dataUrl, savedAt }
+let apiAvailable = true; // bascule en mode mémoire si /api/signatures indisponible
+
+async function loadLibrary(notify) {
+  try {
+    const r = await fetch("/api/signatures");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    LIB = await r.json();
+    apiAvailable = true;
+    if (notify) setLibStatus("Bibliothèque à jour.", "ok");
+  } catch (e) {
+    apiAvailable = false;
+    if (notify) setLibStatus("Stockage cloud indisponible — mode local (images perdues au rechargement).", "err");
+  }
+  renderLibrary();
+  renderPalette();
+}
+
+async function saveImage(rec) {
+  if (!apiAvailable) { LIB[rec.id] = rec; return rec.id; }
+  const r = await fetch("/api/signatures", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "save", id: rec.id, name: rec.name, type: rec.type, dataUrl: rec.dataUrl })
+  });
+  if (!r.ok) throw new Error("Enregistrement refusé (" + r.status + ")");
+  LIB[rec.id] = { name: rec.name, type: rec.type, dataUrl: rec.dataUrl, savedAt: new Date().toISOString() };
+  return rec.id;
+}
+
+async function deleteImage(id) {
+  if (apiAvailable) {
+    try {
+      await fetch("/api/signatures", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id })
+      });
+    } catch (e) {}
+  }
+  delete LIB[id];
+}
+
+/* ---------------- Rendu bibliothèque ---------------- */
+function setLibStatus(t, c) { const e = document.getElementById("lib-status"); e.textContent = t || ""; e.className = "status" + (c ? " " + c : ""); }
+
+function renderLibrary() {
+  for (const type of ["signature", "cachet"]) {
+    const box = document.getElementById("lib-" + type);
+    const items = Object.entries(LIB).filter(([, v]) => v.type === type);
+    if (!items.length) { box.innerHTML = '<div class="lib-empty">Aucun ' + type + ' enregistré.</div>'; continue; }
+    box.innerHTML = items.map(([id, v]) =>
+      '<div class="lib-card">' +
+        '<img src="' + v.dataUrl + '" alt="">' +
+        '<div class="nm" title="' + esc(v.name) + '">' + esc(v.name) + '</div>' +
+        '<button class="btn small danger" onclick="onDelete(\'' + id + '\')">Supprimer</button>' +
+      '</div>'
+    ).join("");
+  }
+}
+
+async function onDelete(id) {
+  const v = LIB[id];
+  if (!v) return;
+  if (!confirm('Supprimer « ' + v.name + ' » ?')) return;
+  await deleteImage(id);
+  renderLibrary(); renderPalette();
+}
+
+/* ---------------- Import ---------------- */
+let impDataUrl = null;
+document.getElementById("imp-file").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    impDataUrl = fr.result;
+    const p = document.getElementById("imp-preview");
+    p.src = impDataUrl; p.style.display = "inline-block";
+    document.getElementById("imp-add").disabled = false;
+    if (!document.getElementById("imp-name").value)
+      document.getElementById("imp-name").value = f.name.replace(/\.[^.]+$/, "").substring(0, 40);
+  };
+  fr.readAsDataURL(f);
+});
+
+async function importImage() {
+  if (!impDataUrl) return;
+  const name = document.getElementById("imp-name").value.trim() || "Sans nom";
+  const type = document.getElementById("imp-type").value;
+  const id = type + "_" + Date.now();
+  setLibStatus("Enregistrement…");
+  try {
+    await saveImage({ id, name, type, dataUrl: impDataUrl });
+    setLibStatus("« " + name + " » ajouté.", "ok");
+    impDataUrl = null;
+    document.getElementById("imp-file").value = "";
+    document.getElementById("imp-name").value = "";
+    document.getElementById("imp-preview").style.display = "none";
+    document.getElementById("imp-add").disabled = true;
+    renderLibrary(); renderPalette();
+  } catch (e) { setLibStatus(e.message, "err"); }
+}
+
+/* ---------------- Palette (onglet Signer) ---------------- */
+function renderPalette() {
+  for (const type of ["signature", "cachet"]) {
+    const box = document.getElementById("pal-" + type);
+    const items = Object.entries(LIB).filter(([, v]) => v.type === type);
+    if (!items.length) { box.innerHTML = '<div class="empty-lib">Vide — ajoute-en dans l\'onglet Bibliothèque.</div>'; continue; }
+    box.innerHTML = items.map(([id, v]) =>
+      '<div class="thumb" onclick="addPlacement(\'' + id + '\')" title="' + esc(v.name) + '">' +
+        '<img src="' + v.dataUrl + '" alt="">' +
+        '<div class="nm">' + esc(v.name) + '</div>' +
+      '</div>'
+    ).join("");
+  }
+}
+
+/* ---------------- PDF : chargement & rendu ---------------- */
+let pdfBytes = null;          // ArrayBuffer original
+let pdfDocJs = null;          // document pdf.js
+let numPages = 0;
+let cur = 0;                  // page courante (0-based)
+let scale = 1.2;             // échelle d'affichage
+let placements = [];         // { uid, imgId, page, fx, fy, fw }  (fractions de la page affichée)
+let selected = null;
+let dispW = 0, dispH = 0;    // dimensions affichées de la page courante (px)
+
+const drop = document.getElementById("drop");
+const pdfInput = document.getElementById("pdf-input");
+drop.addEventListener("click", () => pdfInput.click());
+["dragover", "dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hot"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hot"); }));
+drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) openPdf(f); });
+pdfInput.addEventListener("change", e => { const f = e.target.files[0]; if (f) openPdf(f); });
+
+async function openPdf(file) {
+  if (file.type !== "application/pdf") { setSignStatus("Ce n'est pas un PDF.", "err"); return; }
+  setSignStatus("Chargement du PDF…");
+  pdfBytes = await file.arrayBuffer();
+  pdfDocJs = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+  numPages = pdfDocJs.numPages;
+  cur = 0; placements = []; selected = null;
+  document.getElementById("file-name").textContent = file.name;
+  document.getElementById("drop").classList.add("hidden");
+  document.getElementById("editor").classList.remove("hidden");
+  setSignStatus("");
+  await renderPage();
+}
+
+function resetPdf() {
+  pdfBytes = null; pdfDocJs = null; placements = []; selected = null;
+  document.getElementById("editor").classList.add("hidden");
+  document.getElementById("drop").classList.remove("hidden");
+  pdfInput.value = "";
+}
+
+async function renderPage() {
+  const page = await pdfDocJs.getPage(cur + 1);
+  const vp = page.getViewport({ scale });
+  const canvas = document.getElementById("pdf-canvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+  const wrap = document.getElementById("page-wrap");
+  wrap.style.width = canvas.width + "px"; wrap.style.height = canvas.height + "px";
+  dispW = canvas.width; dispH = canvas.height;
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  document.getElementById("pg-label").textContent = "Page " + (cur + 1) + " / " + numPages;
+  document.getElementById("prev-pg").disabled = cur === 0;
+  document.getElementById("next-pg").disabled = cur === numPages - 1;
+  drawPlacements();
+}
+
+async function gotoPage(i) {
+  if (i < 0 || i >= numPages) return;
+  cur = i; selected = null;
+  await renderPage();
+}
+async function zoom(d) { scale = Math.min(3, Math.max(0.5, scale + d * 0.2)); await renderPage(); }
+
+/* ---------------- Placements (overlays) ---------------- */
+function addPlacement(imgId) {
+  const rec = LIB[imgId]; if (!rec) return;
+  const img = new Image();
+  img.onload = () => {
+    const aspect = img.naturalHeight / img.naturalWidth; // h/w px
+    const fw = 0.22;                                      // 22% de la largeur page par défaut
+    placements.push({
+      uid: "p" + Date.now() + Math.floor(performance.now() % 1000),
+      imgId, aspect, page: cur, fx: 0.5 - fw / 2, fy: 0.45, fw
+    });
+    drawPlacements();
+    showTab('signer');
+  };
+  img.src = rec.dataUrl;
+}
+
+function drawPlacements() {
+  const wrap = document.getElementById("page-wrap");
+  wrap.querySelectorAll(".placement").forEach(e => e.remove());
+  placements.filter(p => p.page === cur).forEach(p => {
+    const rec = LIB[p.imgId]; if (!rec) return;
+    const wpx = p.fw * dispW;
+    const hpx = wpx * p.aspect;
+    const el = document.createElement("div");
+    el.className = "placement" + (selected === p.uid ? " sel" : "");
+    el.style.left = (p.fx * dispW) + "px";
+    el.style.top = (p.fy * dispH) + "px";
+    el.style.width = wpx + "px";
+    el.style.height = hpx + "px";
+    el.innerHTML = '<img src="' + rec.dataUrl + '" alt=""><div class="del">×</div><div class="rh"></div>';
+    wrap.appendChild(el);
+    el.addEventListener("pointerdown", ev => startDrag(ev, p, el, "move"));
+    el.querySelector(".rh").addEventListener("pointerdown", ev => { ev.stopPropagation(); startDrag(ev, p, el, "resize"); });
+    el.querySelector(".del").addEventListener("pointerdown", ev => { ev.stopPropagation(); });
+    el.querySelector(".del").addEventListener("click", ev => {
+      ev.stopPropagation();
+      placements = placements.filter(x => x.uid !== p.uid);
+      selected = null; drawPlacements();
+    });
+  });
+}
+
+function startDrag(ev, p, el, mode) {
+  ev.preventDefault();
+  selected = p.uid;
+  drawPlacements();
+  el = document.querySelector('.placement.sel'); // ré-obtenu après redraw
+  const startX = ev.clientX, startY = ev.clientY;
+  const x0 = p.fx, y0 = p.fy, w0 = p.fw;
+  function onMove(e) {
+    const dxf = (e.clientX - startX) / dispW;
+    const dyf = (e.clientY - startY) / dispH;
+    if (mode === "move") {
+      p.fx = clamp(x0 + dxf, 0, 1 - p.fw);
+      p.fy = clamp(y0 + dyf, 0, 1 - (p.fw * p.aspect * dispW / dispH));
+    } else {
+      p.fw = clamp(w0 + dxf, 0.03, 1);
+      if (p.fx + p.fw > 1) p.fw = 1 - p.fx;
+    }
+    if (el) {
+      const wpx = p.fw * dispW, hpx = wpx * p.aspect;
+      el.style.left = (p.fx * dispW) + "px"; el.style.top = (p.fy * dispH) + "px";
+      el.style.width = wpx + "px"; el.style.height = hpx + "px";
+    }
+  }
+  function onUp() {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  }
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+}
+
+/* ---------------- Génération finale (pdf-lib) ---------------- */
+function setSignStatus(t, c) { const e = document.getElementById("sign-status"); e.textContent = t || ""; e.className = "status" + (c ? " " + c : ""); }
+
+// Construit le PDF signé et renvoie les octets (Uint8Array). Isolé pour être testable.
+async function buildSignedPdf() {
+  const outDoc = await PDFDocument.load(pdfBytes.slice(0));
+  const jsDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+  const outPages = outDoc.getPages();
+  const embedCache = {};
+
+  async function embed(rec, key) {
+    if (embedCache[key]) return embedCache[key];
+    const bytes = dataUrlToBytes(rec.dataUrl);
+    const img = /^data:image\/png/.test(rec.dataUrl)
+      ? await outDoc.embedPng(bytes) : await outDoc.embedJpg(bytes);
+    embedCache[key] = img; return img;
+  }
+
+  // regroupe par page
+  const byPage = {};
+  placements.forEach(p => { (byPage[p.page] = byPage[p.page] || []).push(p); });
+
+  for (const pageStr of Object.keys(byPage)) {
+    const pi = +pageStr;
+    const page = await jsDoc.getPage(pi + 1);
+    const vp = page.getViewport({ scale: 1 });   // 1 pt = 1 unité
+    const outPage = outPages[pi];
+    for (const p of byPage[pi]) {
+      const rec = LIB[p.imgId]; if (!rec) continue;
+      const img = await embed(rec, p.imgId);
+      const dx = p.fx * vp.width, dy = p.fy * vp.height;
+      const dw = p.fw * vp.width, dh = dw * p.aspect;
+      const a = vp.convertToPdfPoint(dx, dy);            // haut-gauche
+      const b = vp.convertToPdfPoint(dx + dw, dy);       // haut-droit
+      const c = vp.convertToPdfPoint(dx, dy + dh);       // bas-gauche
+      const Ux = b[0] - a[0], Uy = b[1] - a[1];
+      const Vx = c[0] - a[0], Vy = c[1] - a[1];
+      const width = Math.hypot(Ux, Uy);
+      const height = Math.hypot(Vx, Vy);
+      const angle = Math.atan2(Uy, Ux) * 180 / Math.PI;
+      outPage.drawImage(img, { x: c[0], y: c[1], width, height, rotate: degrees(angle) });
+    }
+  }
+  return outDoc.save();
+}
+
+async function generate() {
+  if (!pdfBytes) return;
+  if (!placements.length) { setSignStatus("Ajoute au moins une signature ou un cachet.", "err"); return; }
+  const btn = document.getElementById("gen-btn");
+  btn.disabled = true; setSignStatus("Génération du PDF…");
+  try {
+    const out = await buildSignedPdf();
+    const blob = new Blob([out], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = document.getElementById("file-name").textContent.replace(/\.pdf$/i, "") + "_signe.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+    setSignStatus("PDF signé téléchargé.", "ok");
+  } catch (e) {
+    setSignStatus("Erreur : " + e.message, "err");
+    console.error(e);
+  } finally { btn.disabled = false; }
+}
+
+/* ---------------- Utilitaires ---------------- */
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function esc(s) { return (s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function dataUrlToBytes(u) {
+  const b64 = u.split(",")[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+/* ---------------- Onglets ---------------- */
+function showTab(t) {
+  document.getElementById("tab-signer").classList.toggle("hidden", t !== "signer");
+  document.getElementById("tab-lib").classList.toggle("hidden", t !== "lib");
+  document.getElementById("tab-signer-btn").classList.toggle("active", t === "signer");
+  document.getElementById("tab-lib-btn").classList.toggle("active", t === "lib");
+}
+
+/* ---------------- Init ---------------- */
+loadLibrary(false);
+</script>
+</body>
+</html>
