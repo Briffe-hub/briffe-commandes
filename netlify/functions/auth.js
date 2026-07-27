@@ -1,7 +1,8 @@
 // Netlify Function: /api/auth
 // Authentification par mot de passe pour la page "Signature & cachet".
-// Le mot de passe vit UNIQUEMENT dans la variable d'environnement Netlify
-// BRIFFE_AUTH_PASSWORD (jamais dans le repo).
+// Le(s) mot(s) de passe vivent UNIQUEMENT dans la variable d'environnement
+// Netlify BRIFFE_AUTH_PASSWORD (jamais dans le repo). Plusieurs mots de passe
+// sont possibles en les séparant par des virgules : "motA,motB".
 // POST { password } -> { ok:true, token, exp }  |  401 si incorrect.
 // Le token est un HMAC-SHA256 signé avec le mot de passe, avec expiration.
 
@@ -36,15 +37,22 @@ exports.handler = async function (event) {
     return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "BRIFFE_AUTH_PASSWORD non défini" }) };
   }
 
+  // Un ou plusieurs mots de passe acceptés, séparés par des virgules.
+  const passwords = key.split(",").map(s => s.trim()).filter(Boolean);
+
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch (e) {}
 
-  if (!safeEqual(body.password || "", key)) {
+  const submitted = body.password || "";
+  const ok = passwords.some(pw => safeEqual(submitted, pw));
+  if (!ok) {
     // petit délai pour ralentir une attaque par force brute
     await new Promise(r => setTimeout(r, 400));
     return { statusCode: 401, headers: cors(), body: JSON.stringify({ error: "mot de passe incorrect" }) };
   }
 
+  // Le jeton est signé avec la valeur brute de la variable (clé stable,
+  // identique côté /api/signatures) — pas avec le mot de passe individuel.
   const t = makeToken(key);
   return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, token: t.token, exp: t.exp }) };
 };
