@@ -780,7 +780,7 @@ function renderEmailList(){
 async function loadHistory() {
   document.getElementById("history-list").innerHTML = '<div class="empty">Chargement depuis Drive...</div>';
   try {
-    var folderId = "16VCSkD551XBNVgy0q48n4PeNVKxFcwpK";
+    var folderId = "1qrOcZO7hhKcu9hmFEbBC8M8TOSn6EyDW";
     var url = "https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,webViewLink)&pageSize=100";
     var data = await gFetch(url);
     var files = data.files || [];
