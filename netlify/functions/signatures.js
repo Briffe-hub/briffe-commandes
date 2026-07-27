@@ -5,9 +5,41 @@
 // POST { action: "save",   id, name, type, dataUrl } → enregistre / met à jour
 // POST { action: "delete", id }                       → supprime
 
+const crypto  = require("crypto");
 const SITE_ID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
 const TOKEN   = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
 const STORE   = "briffe-signatures";
+
+// ---- Authentification (mêmes tokens que /api/auth) ----
+function b64url(buf) {
+  return Buffer.from(buf).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function signHmac(data, key) {
+  return b64url(crypto.createHmac("sha256", key).update(data).digest());
+}
+function verifyToken(token, key) {
+  if (!token || token.indexOf(".") < 0) return false;
+  const i = token.indexOf(".");
+  const p = token.slice(0, i), sig = token.slice(i + 1);
+  const expected = signHmac(p, key);
+  if (sig.length !== expected.length) return false;
+  try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false; }
+  catch (e) { return false; }
+  try {
+    const payload = JSON.parse(Buffer.from(p.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString());
+    return payload.exp > Date.now();
+  } catch (e) { return false; }
+}
+function requireAuth(event) {
+  const key = process.env.BRIFFE_AUTH_PASSWORD;
+  if (!key) return { statusCode: 401, headers: cors(), body: JSON.stringify({ error: "auth non configurée" }) };
+  const h = event.headers || {};
+  const auth = h.authorization || h.Authorization || "";
+  const tok = auth.replace(/^Bearer\s+/i, "");
+  if (!verifyToken(tok, key)) return { statusCode: 401, headers: cors(), body: JSON.stringify({ error: "non autorisé" }) };
+  return null;
+}
 
 function blobUrl(key) {
   return `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${STORE}/${encodeURIComponent(key)}`;
@@ -65,6 +97,9 @@ async function blobList() {
 exports.handler = async function(event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
 
+  const authErr = requireAuth(event);
+  if (authErr) return authErr;
+
   try {
     if (event.httpMethod === "GET") {
       const blobs = await blobList();
@@ -116,6 +151,6 @@ function cors() {
   return {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   };
 }
