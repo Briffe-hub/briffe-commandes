@@ -30,3 +30,12 @@
   from = "/prepa"
   to = "/briffe-prepa.html"
   status = 301
+[[redirects]]
+  from = "/api/signatures"
+  to = "/.netlify/functions/signatures"
+  status = 200
+
+[[redirects]]
+  from = "/signature"
+  to = "/briffe-signature.html"
+  status = 301
