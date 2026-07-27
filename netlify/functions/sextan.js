@@ -9,7 +9,91 @@ const AUTH = { "X-API-Key": API_KEY };
 function cors() { return { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }; }
 
 async function call(method, path, body) {
-  const opts = { method, headers: Object.assign({ "Accept": "application/json" }, AUTH) };
+  const opts = { method, headers: Object.assign({ "Accept": "application/json" }, AUTH)// Netlify Function: /api/sextan?id=NUM
+// Récupère le détail complet d'une réception via l'API REST Sextan :
+//   POST /api/events/details  { id, include:[menu,billing,staff,packs] }
+// Repli : POST /api/events/search (résumé) si le détail n'est pas disponible.
+
+const BASE = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
+const API_KEY = process.env.SEXTAN_API_KEY || "";
+const AUTH = { "X-API-Key": API_KEY };
+
+function cors() { return { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" }; }
+
+async function call(path, body) {
+  const r = await fetch(BASE + path, {
+    method: "POST",
+    headers: Object.assign({ "Content-Type": "application/json", "Accept": "application/json" }, AUTH),
+    body: JSON.stringify(body)
+  });
+  const txt = await r.text();
+  let json = null; try { json = JSON.parse(txt); } catch (e) {}
+  return { status: r.status, json, txt };
+}
+
+function firstEvent(json) {
+  if (!json) return null;
+  if (Array.isArray(json.data)) return json.data[0];
+  if (json.data && json.data.id) return json.data;
+  if (json.id) return json;
+  return null;
+}
+function hasDetail(ev) { return ev && (ev.menu || ev.billing || ev.content || ev.products); }
+
+async function getEvent(id) {
+  const n = parseInt(id, 10);
+  const inc = ["menu", "billing", "staff", "packs"];
+  const attempts = [
+    ["/api/events/details", { id: n, include: inc }],
+    ["/api/events/details", { id: n }],
+    ["/api/events/search",  { id: n, include: inc }],
+    ["/api/events/search",  { id: n }]
+  ];
+  let summary = null;
+  for (const [path, body] of attempts) {
+    let r; try { r = await call(path, body); } catch (e) { continue; }
+    const ev = firstEvent(r.json);
+    if (ev && hasDetail(ev)) return ev;
+    if (ev && !summary) summary = ev;
+  }
+  return summary;
+}
+
+exports.handler = async function (event) {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
+  if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée." }) };
+  const q = event.queryStringParameters || {};
+  const id = q.id || "1550";
+
+  // Diagnostic : structure de /api/events/details
+  if (q.debug === "7") {
+    const n = parseInt(id, 10);
+    const out = {};
+    for (const [lbl, body] of [["with_include", { id: n, include: ["menu", "billing", "staff", "packs"] }], ["plain", { id: n }]]) {
+      try {
+        const r = await call("/api/events/details", body);
+        const ev = firstEvent(r.json);
+        out[lbl] = {
+          status: r.status,
+          allKeys: ev ? Object.keys(ev) : null,
+          hasMenu: !!(ev && ev.menu), hasBilling: !!(ev && ev.billing), hasContent: !!(ev && ev.content),
+          menuSample: ev && ev.menu ? JSON.stringify(ev.menu).slice(0, 300) : null,
+          billingSample: ev && ev.billing ? JSON.stringify(ev.billing).slice(0, 200) : null
+        };
+      } catch (e) { out[lbl] = { error: e.message }; }
+    }
+    return { statusCode: 200, headers: cors(), body: JSON.stringify(out) };
+  }
+
+  if (!q.id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
+  try {
+    const ev = await getEvent(id);
+    if (!ev) return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Réception introuvable." }) };
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({ data: [ev] }) };
+  } catch (e) {
+    return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
+  }
+}; };
   if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
   const r = await fetch(BASE + path, opts);
   const txt = await r.text();
