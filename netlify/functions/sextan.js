@@ -1,97 +1,83 @@
 // Netlify Function: /api/sextan?id=NUM
-// Client MCP (Streamable HTTP) complet : initialize -> session -> tools/call.
-// Auth par en-tête X-API-Key (comme les clients MCP officiels), repli Bearer.
-//
-// Netlify env : SEXTAN_API_KEY = "sxt_...", SEXTAN_MCP_URL (optionnel).
+// Accès aux données Sextan. Deux pistes gérées :
+//   - API REST /api/... avec la clé sxt_ (X-API-Key ou Bearer)
+//   - (repli) MCP /mcp
+// SEXTAN_API_KEY = clé "sxt_..."   ;  SEXTAN_BASE (optionnel, défaut ci-dessous)
 
-const MCP_URL = process.env.SEXTAN_MCP_URL || "https://briffe.sextan.catering/mcp";
-const API_KEY = process.env.SEXTAN_API_KEY;
+const BASE = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
+const API_KEY = process.env.SEXTAN_API_KEY || "";
 
 function cors() {
   return { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type" };
 }
-function parseRpc(text, ct) {
-  ct = (ct || "").toLowerCase();
-  if (ct.includes("text/event-stream") || text.startsWith("event:") || text.startsWith("data:")) {
-    let last = null;
-    for (const line of text.split(/\r?\n/)) {
-      const m = line.match(/^data:\s?(.*)$/);
-      if (!m || !m[1].trim()) continue;
-      try { const o = JSON.parse(m[1]); if (o && (o.result || o.error)) last = o; } catch (e) {}
-    }
-    return last;
-  }
-  try { return JSON.parse(text); } catch (e) { return null; }
-}
-function extractPayload(rpc) {
-  const res = rpc.result || {};
-  let p = res.structuredContent || null;
-  if (!p && Array.isArray(res.content)) { const t = res.content.find(c => c.type === "text"); if (t) { try { p = JSON.parse(t.text); } catch (e) { p = { raw: t.text }; } } }
-  return p || res;
+
+// Endpoints REST candidats pour le détail d'une réception
+function candidates(id) {
+  return [
+    ["GET",  "/api/events/" + id],
+    ["GET",  "/api/event/" + id],
+    ["GET",  "/api/receptions/" + id],
+    ["GET",  "/api/reception/" + id],
+    ["GET",  "/api/quotes/" + id],
+    ["GET",  "/api/quote/" + id],
+    ["POST", "/api/events/search",     { id: parseInt(id, 10) }],
+    ["POST", "/api/receptions/search", { id: parseInt(id, 10) }]
+  ];
 }
 
-// Séquence MCP complète avec un jeu d'en-têtes d'auth donné
-async function mcpSequence(id, auth, trace) {
-  const base = { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" };
-  const h1 = Object.assign({}, base, auth);
-  // 1) initialize
-  const r1 = await fetch(MCP_URL, { method: "POST", headers: h1, body: JSON.stringify({
-    jsonrpc: "2.0", id: 1, method: "initialize",
-    params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "briffe-prepa", version: "1.0" } }
-  }) });
-  const sid = r1.headers.get("mcp-session-id");
-  const t1 = await r1.text();
-  if (trace) trace.initialize = { status: r1.status, sid: sid || null, body: t1.slice(0, 160) };
-  const rpc1 = parseRpc(t1, r1.headers.get("content-type"));
-  if (!rpc1 || rpc1.error) return { ok: false, where: "initialize", status: r1.status, rpc: rpc1 };
-  const h2 = Object.assign({}, h1, sid ? { "Mcp-Session-Id": sid } : {});
-  // 2) initialized (notification)
-  try { await fetch(MCP_URL, { method: "POST", headers: h2, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) }); } catch (e) {}
-  // 3) tools/call
-  const r3 = await fetch(MCP_URL, { method: "POST", headers: h2, body: JSON.stringify({
-    jsonrpc: "2.0", id: 2, method: "tools/call",
-    params: { name: "event_details", arguments: { id: parseInt(id, 10), include: ["menu", "billing", "staff", "packs"] } }
-  }) });
-  const t3 = await r3.text();
-  if (trace) trace.toolscall = { status: r3.status, body: t3.slice(0, 160) };
-  const rpc3 = parseRpc(t3, r3.headers.get("content-type"));
-  if (rpc3 && rpc3.result) return { ok: true, payload: extractPayload(rpc3) };
-  return { ok: false, where: "tools/call", status: r3.status, rpc: rpc3 };
+async function tryCall(method, path, auth, body) {
+  const headers = Object.assign({ "Accept": "application/json" }, auth);
+  const opts = { method, headers };
+  if (body) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const r = await fetch(BASE + path, opts);
+  const txt = await r.text();
+  return { status: r.status, ct: r.headers.get("content-type") || "", body: txt };
 }
 
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: cors(), body: "" };
-  if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée dans Netlify." }) };
+  if (!API_KEY) return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée." }) };
   const q = event.queryStringParameters || {};
-  const k = API_KEY;
+  const id = q.id || "1080";
 
-  if (q.debug === "1") {
-    return { statusCode: 200, headers: cors(), body: JSON.stringify({ has_key: !!k, keyLength: k.length, keyPrefixPublic: k.slice(0, 12), startsWithSxt: k.startsWith("sxt_"), hasWhitespace: /\s/.test(k), mcpUrl: MCP_URL }) };
-  }
-  if (q.debug === "3") {
-    const out = {};
-    const tX = {}; const rX = await mcpSequence(q.id || 1080, { "X-API-Key": k }, tX); out.xapikey = { trace: tX, ok: rX.ok, err: rX.rpc && rX.rpc.error };
-    const tB = {}; const rB = await mcpSequence(q.id || 1080, { "Authorization": "Bearer " + k }, tB); out.bearer = { trace: tB, ok: rB.ok, err: rB.rpc && rB.rpc.error };
-    return { statusCode: 200, headers: cors(), body: JSON.stringify(out) };
-  }
-
-  const id = q.id || "";
-  if (!id) return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "Paramètre id manquant" }) };
-
-  try {
-    let last = null;
-    for (const auth of [{ "X-API-Key": k }, { "Authorization": "Bearer " + k }]) {
-      const r = await mcpSequence(id, auth);
-      if (r.ok) return { statusCode: 200, headers: cors(), body: JSON.stringify(r.payload) };
-      last = r;
-      // erreur métier (pas d'auth) -> stop
-      const msg = (r.rpc && r.rpc.error && r.rpc.error.message || "").toLowerCase();
-      if (r.rpc && r.rpc.error && !/bearer|token|unauthor|expired|invalid|api.?key|forbidden/.test(msg)) {
-        return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: r.rpc.error.message, code: r.rpc.error.code }) };
+  // ── Mode sonde : teste les endpoints REST avec les 2 styles d'auth ──────────
+  if (q.debug === "4") {
+    const auths = [
+      ["xapikey", { "X-API-Key": API_KEY }],
+      ["bearer",  { "Authorization": "Bearer " + API_KEY }]
+    ];
+    const out = [];
+    for (const [alabel, ah] of auths) {
+      for (const [method, path, body] of candidates(id)) {
+        try {
+          const r = await tryCall(method, path, ah, body);
+          out.push({ auth: alabel, method, path, status: r.status, ct: r.ct.split(";")[0], snippet: r.body.slice(0, 120).replace(/\s+/g, " ") });
+        } catch (e) { out.push({ auth: alabel, method, path, error: e.message }); }
       }
     }
-    const m = (last && last.rpc && last.rpc.error && last.rpc.error.message) || ("HTTP " + (last && last.status));
-    return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Sextan a refusé la requête (" + m + ")" }) };
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({ base: BASE, id, results: out }) };
+  }
+
+  // ── Chemin normal : tente les endpoints REST, renvoie le 1er qui donne du JSON réception ──
+  const auths = [{ "X-API-Key": API_KEY }, { "Authorization": "Bearer " + API_KEY }];
+  let lastInfo = null;
+  try {
+    for (const ah of auths) {
+      for (const [method, path, body] of candidates(id)) {
+        let r;
+        try { r = await tryCall(method, path, ah, body); } catch (e) { continue; }
+        lastInfo = { path, status: r.status };
+        if (r.status === 200 && /json/i.test(r.ct)) {
+          let j; try { j = JSON.parse(r.body); } catch (e) { continue; }
+          // normalise : on veut un objet réception (avec nbr_pax) éventuellement enveloppé
+          const ev = (j && j.data && (Array.isArray(j.data) ? j.data[0] : j.data)) || j;
+          if (ev && (ev.nbr_pax != null || ev.id != null)) {
+            return { statusCode: 200, headers: cors(), body: JSON.stringify({ data: [ev] }) };
+          }
+        }
+      }
+    }
+    return { statusCode: 502, headers: cors(), body: JSON.stringify({ error: "Aucun endpoint REST n'a renvoyé la réception (dernier: " + (lastInfo && lastInfo.path) + " → " + (lastInfo && lastInfo.status) + ")" }) };
   } catch (e) {
     return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
   }
