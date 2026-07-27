@@ -91,6 +91,64 @@ input,select{font-family:'DM Mono',monospace}
 </style>
 </head>
 <body>
+<!-- ================= Verrou d'accès (auth serveur) ================= -->
+<div id="bt-lock" class="bt-lock">
+  <div class="bt-lock-card">
+    <img class="bt-lock-logo" src="/briffe-tools-logo_1.png" alt="briffetools">
+    <div class="bt-lock-sub">Signature &amp; cachet &middot; accès protégé</div>
+    <form id="bt-lock-form" autocomplete="off">
+      <input id="bt-lock-pw" type="password" placeholder="Mot de passe" autocomplete="current-password" aria-label="Mot de passe">
+      <button type="submit" id="bt-lock-btn">Déverrouiller</button>
+    </form>
+    <div id="bt-lock-msg" class="bt-lock-msg" role="alert"></div>
+  </div>
+</div>
+<style>
+.bt-lock{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,10,10,.9);backdrop-filter:blur(9px);font-family:'DM Mono',monospace}
+.bt-lock[hidden]{display:none}
+.bt-lock-card{width:min(360px,90vw);background:#141414;border:1px solid #1e1e1e;border-radius:16px;padding:34px 28px;text-align:center;box-shadow:0 34px 90px -30px rgba(0,0,0,.85)}
+.bt-lock-logo{width:150px;height:auto;display:block;margin:2px auto 12px;filter:drop-shadow(0 8px 22px rgba(146,24,33,.32))}
+.bt-lock-sub{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#8a8a82;margin-bottom:26px}
+#bt-lock-form{display:flex;flex-direction:column;gap:12px}
+#bt-lock-pw{font-family:'DM Mono',monospace;font-size:14px;color:#e8e8e0;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:9px;padding:12px 14px;outline:none;text-align:center;letter-spacing:.06em}
+#bt-lock-pw:focus{border-color:#921821}
+#bt-lock-btn{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:#921821;border:1px solid #921821;border-radius:9px;padding:12px;cursor:pointer;transition:background .18s ease}
+#bt-lock-btn:hover{background:#b3242e}
+#bt-lock-btn:disabled{opacity:.55;cursor:default}
+.bt-lock-msg{min-height:16px;margin-top:14px;font-size:11px;letter-spacing:.03em;color:#ef4444}
+</style>
+<script>
+/* Auth : token stocké en sessionStorage, en-tête Authorization sur /api/signatures */
+(function(){
+  var KEY="bt_sig_token";
+  window.btGetToken=function(){
+    try{ var o=JSON.parse(sessionStorage.getItem(KEY)); if(!o||!o.token||!o.exp||o.exp<=Date.now()){sessionStorage.removeItem(KEY);return null;} return o.token; }
+    catch(e){ return null; }
+  };
+  window.authHeaders=function(){ var t=window.btGetToken(); return t?{"Authorization":"Bearer "+t}:{}; };
+  var lock,msg,pw,btn,form;
+  function showLock(){ if(lock){ lock.hidden=false; if(pw){ pw.value=""; setTimeout(function(){pw.focus();},60);} } }
+  function hideLock(){ if(lock) lock.hidden=true; }
+  window.btLogout=function(){ try{sessionStorage.removeItem(KEY);}catch(e){}; showLock(); };
+  document.addEventListener("DOMContentLoaded",function(){
+    lock=document.getElementById("bt-lock"); msg=document.getElementById("bt-lock-msg");
+    pw=document.getElementById("bt-lock-pw"); btn=document.getElementById("bt-lock-btn"); form=document.getElementById("bt-lock-form");
+    if(window.btGetToken()){ hideLock(); } else { showLock(); }
+    form.addEventListener("submit",async function(e){
+      e.preventDefault(); msg.textContent=""; btn.disabled=true;
+      try{
+        var r=await fetch("/api/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw.value})});
+        if(r.status===401){ msg.textContent="Mot de passe incorrect."; btn.disabled=false; pw.select(); return; }
+        if(!r.ok){ msg.textContent="Erreur serveur ("+r.status+")."; btn.disabled=false; return; }
+        var d=await r.json();
+        sessionStorage.setItem(KEY,JSON.stringify({token:d.token,exp:d.exp}));
+        hideLock(); btn.disabled=false;
+        if(typeof loadLibrary==="function") loadLibrary(true);
+      }catch(err){ msg.textContent="Connexion impossible."; btn.disabled=false; }
+    });
+  });
+})();
+</script>
 <div class="header">
   <a class="bt-back" href="index.html" title="Retour au menu principal"><span class="ar">&larr;</span>&nbsp;Menu</a>
   <div class="logo" style="margin-right:auto"><span>Briffe</span> · signature &amp; cachet</div>
@@ -207,7 +265,8 @@ let apiAvailable = true; // bascule en mode mémoire si /api/signatures indispon
 
 async function loadLibrary(notify) {
   try {
-    const r = await fetch("/api/signatures");
+    const r = await fetch("/api/signatures", { headers: authHeaders() });
+    if (r.status === 401) { if (window.btLogout) window.btLogout(); throw new Error("HTTP 401"); }
     if (!r.ok) throw new Error("HTTP " + r.status);
     LIB = await r.json();
     apiAvailable = true;
@@ -223,7 +282,7 @@ async function loadLibrary(notify) {
 async function saveImage(rec) {
   if (!apiAvailable) { LIB[rec.id] = rec; return rec.id; }
   const r = await fetch("/api/signatures", {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
     body: JSON.stringify({ action: "save", id: rec.id, name: rec.name, type: rec.type, dataUrl: rec.dataUrl })
   });
   if (!r.ok) throw new Error("Enregistrement refusé (" + r.status + ")");
@@ -235,7 +294,7 @@ async function deleteImage(id) {
   if (apiAvailable) {
     try {
       await fetch("/api/signatures", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
         body: JSON.stringify({ action: "delete", id })
       });
     } catch (e) {}
@@ -541,7 +600,7 @@ function showTab(t) {
 }
 
 /* ---------------- Init ---------------- */
-loadLibrary(false);
+if (window.btGetToken && window.btGetToken()) loadLibrary(false);
 </script>
 </body>
 </html>
