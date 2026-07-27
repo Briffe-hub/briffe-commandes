@@ -120,6 +120,8 @@ input,select{font-family:'DM Mono',monospace}
         <div class="thumbs" id="pal-signature"></div>
         <h3 style="margin-top:16px">Cachets</h3>
         <div class="thumbs" id="pal-cachet"></div>
+        <h3 style="margin-top:16px">Bon pour accord</h3>
+        <div class="thumbs" id="pal-accord"></div>
         <div class="hint" style="margin-top:14px">Clique une vignette pour l'ajouter sur la page. Glisse pour déplacer, coin vert pour redimensionner.</div>
       </div>
 
@@ -166,6 +168,7 @@ input,select{font-family:'DM Mono',monospace}
       <select id="imp-type">
         <option value="signature">Signature</option>
         <option value="cachet">Cachet</option>
+        <option value="accord">Bon pour accord</option>
       </select>
     </div>
     <button class="btn primary" id="imp-add" onclick="importImage()" disabled>Ajouter</button>
@@ -176,6 +179,8 @@ input,select{font-family:'DM Mono',monospace}
   <div class="lib-grid" id="lib-signature"></div>
   <div class="grp-title">Cachets</div>
   <div class="lib-grid" id="lib-cachet"></div>
+  <div class="grp-title">Bon pour accord</div>
+  <div class="lib-grid" id="lib-accord"></div>
 </div>
 
 <script>
@@ -183,6 +188,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
 const { PDFDocument, degrees } = PDFLib;
 
 /* ---------------- Bibliothèque (état + API) ---------------- */
+const TYPES = ["signature", "cachet", "accord"];
+const EMPTY_MSG = {
+  signature: "Aucune signature enregistrée.",
+  cachet: "Aucun cachet enregistré.",
+  accord: "Aucun « bon pour accord » enregistré."
+};
 let LIB = {};            // id -> { name, type, dataUrl, savedAt }
 let apiAvailable = true; // bascule en mode mémoire si /api/signatures indisponible
 
@@ -228,10 +239,10 @@ async function deleteImage(id) {
 function setLibStatus(t, c) { const e = document.getElementById("lib-status"); e.textContent = t || ""; e.className = "status" + (c ? " " + c : ""); }
 
 function renderLibrary() {
-  for (const type of ["signature", "cachet"]) {
+  for (const type of TYPES) {
     const box = document.getElementById("lib-" + type);
     const items = Object.entries(LIB).filter(([, v]) => v.type === type);
-    if (!items.length) { box.innerHTML = '<div class="lib-empty">Aucun ' + type + ' enregistré.</div>'; continue; }
+    if (!items.length) { box.innerHTML = '<div class="lib-empty">' + EMPTY_MSG[type] + '</div>'; continue; }
     box.innerHTML = items.map(([id, v]) =>
       '<div class="lib-card">' +
         '<img src="' + v.dataUrl + '" alt="">' +
@@ -286,7 +297,7 @@ async function importImage() {
 
 /* ---------------- Palette (onglet Signer) ---------------- */
 function renderPalette() {
-  for (const type of ["signature", "cachet"]) {
+  for (const type of TYPES) {
     const box = document.getElementById("pal-" + type);
     const items = Object.entries(LIB).filter(([, v]) => v.type === type);
     if (!items.length) { box.innerHTML = '<div class="empty-lib">Vide — ajoute-en dans l\'onglet Bibliothèque.</div>'; continue; }
