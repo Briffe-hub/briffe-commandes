@@ -2,6 +2,11 @@
   functions = "netlify/functions"
 
 [[redirects]]
+  from = "/"
+  to = "/briffe-commandes.html"
+  status = 301
+
+[[redirects]]
   from = "/api/claude"
   to = "/.netlify/functions/claude"
   status = 200
@@ -28,6 +33,11 @@
 [[redirects]]
   from = "/api/signatures"
   to = "/.netlify/functions/signatures"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth"
+  to = "/.netlify/functions/auth"
   status = 200
 
 [[redirects]]
