@@ -73,6 +73,7 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 <div id="tab-bar">
   <button class="tab-btn active" id="tab-emails" onclick="showTab('emails')">Commandes</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin')">Adresses</button>
+  <button class="tab-btn" id="tab-history" onclick="showTab('history')">Commandes traitees</button>
 </div>
 <div id="tab-admin-panel">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -80,6 +81,13 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
     <button class="btn" onclick="loadAddresses()">&#8635; Actualiser</button>
   </div>
   <div id="addr-list"><div class="empty">Chargement...</div></div>
+</div>
+<div id="tab-history-panel" style="display:none;padding:24px 28px;max-width:920px;margin:0 auto;min-height:200px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div style="font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase">Commandes traitees</div>
+    <button class="btn" onclick="loadHistory()">&#8635; Actualiser</button>
+  </div>
+  <div id="history-list"><div class="empty">Chargement...</div></div>
 </div>
 <div class="main" id="main">
   <div class="connect-box">
@@ -502,10 +510,41 @@ function renderHeader(){
 function showTab(tab){
   document.getElementById("tab-emails").className = "tab-btn"+(tab==="emails"?" active":"");
   document.getElementById("tab-admin").className = "tab-btn"+(tab==="admin"?" active":"");
+  document.getElementById("tab-history").className = "tab-btn"+(tab==="history"?" active":"");
   document.getElementById("main").style.display = tab==="emails"?"":"none";
   document.getElementById("tab-admin-panel").style.display = tab==="admin"?"block":"none";
+  document.getElementById("tab-history-panel").style.display = tab==="history"?"block":"none";
   window.scrollTo(0,0);
   if (tab==="admin") loadAddresses();
+  if (tab==="history") loadHistory();
+}
+
+async function findBL(devNum, btn) {
+  btn.disabled = true;
+  btn.textContent = "...";
+  try {
+    // Search in all mail (including archived) for this DEV number with attachment
+    var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:"+devNum+"+has:attachment");
+    if (!data.messages || !data.messages.length) {
+      btn.textContent = "BL introuvable";
+      return;
+    }
+    // Get full message to find PDF attachment
+    var msg = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages/"+data.messages[0].id+"?format=full");
+    var pdfParts = findPdfParts(msg.payload && msg.payload.parts);
+    if (!pdfParts.length) {
+      btn.textContent = "BL introuvable";
+      return;
+    }
+    // Fetch and print the BL
+    var b64 = await fetchAttachment(msg.id, pdfParts[0].body.attachmentId);
+    btn.textContent = "Impression...";
+    autoPrint(b64);
+    setTimeout(function(){ btn.disabled=false; btn.innerHTML="&#128248; BL"; }, 3000);
+  } catch(e) {
+    btn.textContent = "Erreur";
+    console.error("findBL error:", e);
+  }
 }
 
 async function loadAddresses(){
@@ -736,6 +775,44 @@ function renderEmailList(){
     html+='</div>';
   }
   document.getElementById("main").innerHTML=html;
+}
+
+async function loadHistory() {
+  document.getElementById("history-list").innerHTML = '<div class="empty">Chargement depuis Drive...</div>';
+  try {
+    var folderId = "16VCSkD551XBNVgy0q48n4PeNVKxFcwpK";
+    var url = "https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,webViewLink)&pageSize=100";
+    var data = await gFetch(url);
+    var files = data.files || [];
+    if (!files.length) {
+      document.getElementById("history-list").innerHTML = '<div class="empty">Aucune commande traitee trouvee dans Drive.</div>';
+      return;
+    }
+    var html = '<div class="addr-row" style="border-bottom:1px solid #2a2a2a;margin-bottom:4px">'
+      + '<div style="flex:1;color:#555;font-size:11px">Commande</div>'
+      + '<div style="min-width:100px;color:#555;font-size:11px">Date</div>'
+      + '<div style="width:80px"></div></div>';
+    files.forEach(function(f) {
+      var date = f.createdTime ? new Date(f.createdTime).toLocaleDateString("fr-FR") : "—";
+      var name = f.name.replace(".pdf","");
+      // Extract DEV number from filename
+      var devMatch = f.name.match(/DEV-\d+/);
+      var devNum = devMatch ? devMatch[0] : null;
+      var blBtn = devNum
+        ? '<button class="btn" data-dev="'+esc(devNum)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>'
+        : '';
+      html += '<div class="addr-row">'
+        + '<div style="flex:1;color:#e8e8e0;font-size:12px">'+esc(name)+'</div>'
+        + '<div style="min-width:100px;color:#555;font-size:11px">'+date+'</div>'
+        + '<div style="display:flex;gap:6px">'
+        + '<a href="'+esc(f.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128196; Bon de prep.</a>'
+        + blBtn
+        + '</div></div>';
+    });
+    document.getElementById("history-list").innerHTML = html;
+  } catch(e) {
+    document.getElementById("history-list").innerHTML = '<div class="empty">Erreur : '+esc(e.message)+'</div>';
+  }
 }
 
 async function archiveCancellation(msgId) {
