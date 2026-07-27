@@ -737,8 +737,9 @@ function mapSextanToForm(ev){
   const cremant=alcool?qtyOf(/cr[eé]mant/):0, champagne=alcool?qtyOf(/champagne/):0;
   const tables=qtyOf(/\btable/);
   const nappe=has(/\bnappe|nappage|housse/);
+  const etuve=has(/[ée]tuve/);
   return {model,client,date:ev.date||"",heure,nb,alcool,softs,service,entree,plat,dessert,
-    rose,futs,cremant,champagne,tables,nappe,sextan:String(ev.id||"")};
+    rose,futs,cremant,champagne,tables,nappe,etuve,sextan:String(ev.id||"")};
 }
 function applySextan(ev){
   const m=mapSextanToForm(ev);
@@ -747,6 +748,7 @@ function applySextan(ev){
   S.rose=m.rose; S.futs=m.futs; S.cremant=m.cremant; S.champagne=m.champagne;
   S.serveurNb = m.service ? RUd(m.nb,40) : 0;
   S.mhOn = S.serveurNb>=3;
+  if(m.etuve) S.etuve = true;
   if(m.tables>0){ S.tblNb=m.tables; S.tblHousse=m.nappe; S.nappesOn=false; }
   else { S.tblNb=0; S.tblHousse=false; S.nappesOn=m.nappe; }
   if(m.model!=='cocktail'){ S.entree=m.entree; S.plat=m.plat; S.dessert=m.dessert; }
