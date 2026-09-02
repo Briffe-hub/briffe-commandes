@@ -261,10 +261,17 @@ var CONFIG=null, apiOK=true, sc=0, sp=0;
 var SECTIONS=['BOISSONS','CONSOMMABLES','FRAIS','VERRERIE','MATERIEL','OPTIONS'];
 
 async function loadConfig(){
-  try{var r=await fetch('/api/prestations');if(!r.ok)throw 0;var j=await r.json();CONFIG=j.config;apiOK=true;}
-  catch(e){apiOK=false;try{CONFIG=JSON.parse(localStorage.getItem('bt_prestations')||'null');}catch(_){CONFIG=null;}}
+  var local=null;try{local=JSON.parse(localStorage.getItem('bt_prestations')||'null');}catch(_){}
+  var usedLocal=false;
+  try{
+    var r=await fetch('/api/prestations');if(!r.ok)throw 0;var j=await r.json();apiOK=true;
+    if(j.config&&j.config.clients&&j.config.clients.length){CONFIG=j.config;}
+    else if(local&&local.clients&&local.clients.length){CONFIG=local;usedLocal=true;}
+    else{CONFIG=null;}
+  }catch(e){apiOK=false;CONFIG=local;}
   if(!CONFIG||!CONFIG.clients||!CONFIG.clients.length){CONFIG=seedConfig();}
-  document.getElementById('hstatus').textContent=apiOK?'Synchronisé':'Mode local';
+  var h=document.getElementById('hstatus');
+  h.textContent=apiOK?(usedLocal?'Synchronisé · Enregistre pour pousser':'Synchronisé'):'Mode local';
 }
 async function save(){
   try{localStorage.setItem('bt_prestations',JSON.stringify(CONFIG));}catch(e){}
