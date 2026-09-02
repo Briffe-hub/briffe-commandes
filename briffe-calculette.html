@@ -30,6 +30,8 @@ input,select,button,textarea{font-family:'DM Mono',monospace}
 
 /* tabs */
 #tab-bar{display:flex;gap:2px;padding:0 26px;background:#111;border-bottom:1px solid var(--line);position:sticky;top:59px;z-index:19}
+body.embed .header{display:none}
+body.embed #tab-bar{top:0}
 .tab-btn{background:none;border:none;border-bottom:2px solid transparent;color:var(--mut);padding:13px 16px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
 .tab-btn.active{color:var(--ink);border-bottom-color:var(--red)}
 .tab-btn:hover{color:var(--ink)}
@@ -490,6 +492,7 @@ function generate(){
 
 /* ============================ INIT ============================ */
 document.getElementById('c-presta').addEventListener('change',renderOptionToggles);
+if(location.search.indexOf('embed')>=0) document.body.classList.add('embed');
 (async function(){
   await loadConfig();
   refreshSelectors();
