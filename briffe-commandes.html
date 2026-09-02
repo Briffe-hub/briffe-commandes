@@ -89,6 +89,7 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
   <button class="tab-btn active" id="tab-emails" onclick="showTab('emails')">Commandes</button>
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin')">Adresses</button>
   <button class="tab-btn" id="tab-history" onclick="showTab('history')">Commandes traitees</button>
+  <button class="tab-btn" id="tab-param" onclick="showTab('param')">Paramétrage prépa</button>
 </div>
 <div id="tab-admin-panel">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -103,6 +104,9 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
     <button class="btn" onclick="loadHistory()">&#8635; Actualiser</button>
   </div>
   <div id="history-list"><div class="empty">Chargement...</div></div>
+</div>
+<div id="tab-param-panel" style="display:none">
+  <iframe id="param-frame" title="Paramétrage préparation" style="width:100%;height:calc(100vh - 118px);border:0;display:block;background:#0f0f0f"></iframe>
 </div>
 <div class="main" id="main">
   <div class="connect-box">
@@ -526,9 +530,12 @@ function showTab(tab){
   document.getElementById("tab-emails").className = "tab-btn"+(tab==="emails"?" active":"");
   document.getElementById("tab-admin").className = "tab-btn"+(tab==="admin"?" active":"");
   document.getElementById("tab-history").className = "tab-btn"+(tab==="history"?" active":"");
+  var tp=document.getElementById("tab-param"); if(tp) tp.className="tab-btn"+(tab==="param"?" active":"");
   document.getElementById("main").style.display = tab==="emails"?"":"none";
   document.getElementById("tab-admin-panel").style.display = tab==="admin"?"block":"none";
   document.getElementById("tab-history-panel").style.display = tab==="history"?"block":"none";
+  var pp=document.getElementById("tab-param-panel"); if(pp) pp.style.display = tab==="param"?"block":"none";
+  if(tab==="param"){ var fr=document.getElementById("param-frame"); if(fr&&!fr.getAttribute("src")){ fr.setAttribute("src","briffe-calculette.html?embed=1"); } }
   window.scrollTo(0,0);
   if (tab==="admin") loadAddresses();
   if (tab==="history") loadHistory();
@@ -885,10 +892,11 @@ async function refresh(){
 /* ===== Branchement calculette : bon de préparation généré depuis /api/prestations ===== */
 var PREP_CONFIG=null;
 var PREP_SECTIONS=['BOISSONS','CONSOMMABLES','FRAIS','VERRERIE','MATERIEL','OPTIONS'];
-async function loadPrepConfig(force){
-  if(PREP_CONFIG&&!force) return PREP_CONFIG;
-  try{var r=await fetch('/api/prestations'); if(r.ok){var j=await r.json(); PREP_CONFIG=j.config||null;}}catch(e){}
-  return PREP_CONFIG;
+async function loadPrepConfig(){
+  var cfg=null;
+  try{var r=await fetch('/api/prestations',{cache:'no-store'}); if(r.ok){var j=await r.json(); if(j.config&&j.config.clients&&j.config.clients.length) cfg=j.config;}}catch(e){}
+  if(!cfg){ try{var l=JSON.parse(localStorage.getItem('bt_prestations')||'null'); if(l&&l.clients&&l.clients.length) cfg=l;}catch(e){} }
+  PREP_CONFIG=cfg; return cfg;
 }
 function pfnum(n,d){if(n==null||isNaN(n))return'';var f=Math.pow(10,d==null?2:d);return (Math.round(n*f)/f).toString().replace('.',',');}
 function pceil(x){return Math.ceil(x-1e-9);}
