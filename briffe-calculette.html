@@ -121,6 +121,8 @@ input[type=number]{width:90px}
     <button class="btn small" onclick="renamePresta()">Renommer</button>
     <button class="btn small danger" onclick="deletePresta()">Supprimer</button>
     <span style="flex:1"></span>
+    <button class="btn small" onclick="exportConfig()" title="Télécharger une sauvegarde JSON">Exporter</button>
+    <label class="btn small" style="cursor:pointer;display:inline-flex;align-items:center" title="Restaurer une sauvegarde JSON">Importer<input type="file" accept="application/json,.json" onchange="importConfig(this)" style="display:none"></label>
     <button class="btn primary" onclick="save()">Enregistrer</button>
     <span class="status" id="p-status"></span>
   </div>
@@ -272,7 +274,35 @@ async function save(){
     catch(e){setStatus('Enregistré en local (serveur indisponible).','warn');}
   } else setStatus('Enregistré en local.','warn');
 }
-function setStatus(t,c){var e=document.getElementById('p-status');e.textContent=t;e.className='status'+(c?' '+c:'');setTimeout(function(){if(e.textContent===t){e.textContent='';e.className='status';}},4000);}
+function setStatus(t,c){var e=document.getElementById('p-status');e.textContent=t;e.className='status'+(c?' '+c:'');setTimeout(function(){if(e.textContent===t){e.textContent='';e.className='status';}},5000);}
+
+function exportConfig(){
+  try{
+    var data=JSON.stringify(CONFIG,null,2);
+    var blob=new Blob([data],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    var d=new Date().toISOString().slice(0,10).replace(/-/g,'');
+    a.href=url;a.download='briffe-prestations-'+d+'.json';document.body.appendChild(a);a.click();
+    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},120);
+    setStatus('Sauvegarde téléchargée.','ok');
+  }catch(e){setStatus('Export impossible : '+e.message,'err');}
+}
+function importConfig(input){
+  var f=input.files&&input.files[0];if(!f){return;}
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var j=JSON.parse(rd.result);
+      if(!j||!j.clients||!Array.isArray(j.clients)||!j.clients.length) throw new Error('format non reconnu');
+      if(!confirm('Remplacer la configuration actuelle par le fichier importé ?\n\n(Pense à cliquer sur « Enregistrer » ensuite pour la sauvegarder.)')){input.value='';return;}
+      CONFIG=j;sc=0;sp=0;refreshSelectors();renderEditor();
+      setStatus('Importé — clique sur « Enregistrer » pour sauvegarder.','warn');
+    }catch(e){setStatus('Import impossible : '+e.message,'err');}
+    input.value='';
+  };
+  rd.readAsText(f);
+}
 
 /* ============================ NAVIGATION ============================ */
 function showTab(t){
