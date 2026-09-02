@@ -192,6 +192,33 @@ exports.handler = async function(event) {
     );
     const calEvent = await calResp.json();
 
+    // ── 7. Créer la prestation dans GreenLoop (best-effort, ne bloque JAMAIS la prépa) ──
+    let greenloop = null;
+    try {
+      const glUrl = process.env.GREENLOOP_INGEST_URL;   // ex: https://oshgbbywvcrwruzgravd.supabase.co/functions/v1/ingest-prestation
+      const glKey = process.env.GREENLOOP_INGEST_KEY;   // clé secrète d'ingestion
+      if (glUrl && glKey) {
+        const glResp = await fetch(glUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-ingest-key": glKey },
+          body: JSON.stringify({
+            numero_commande: numero_commande || "",
+            client: client || "",
+            date_evenement: dateEv,                       // JJ/MM/AAAA
+            type_prestation: livraison.type_prestation || "",
+            nombre_personnes: nb,
+            lieu, salle, contact,
+            heure_mise_en_place: heureMep,
+            heure_evenement: heureEv,
+          }),
+        });
+        greenloop = await glResp.json().catch(() => ({ status: glResp.status }));
+        console.log("GreenLoop ingest:", glResp.status, JSON.stringify(greenloop).slice(0, 200));
+      }
+    } catch (e) {
+      console.warn("GreenLoop ingest échec (non bloquant):", e.message);
+    }
+
     // Return both PDFs separately for printing
     const sheetPdfBase64 = Buffer.from(sheetPdfBytes).toString("base64");
 
@@ -204,7 +231,8 @@ exports.handler = async function(event) {
         pdfFileId: uploadedFile.id,
         pdfFileName: fileName,
         calEventId: calEvent.id,
-        calEventLink: calEvent.htmlLink
+        calEventLink: calEvent.htmlLink,
+        greenloop: greenloop
       })
     };
 
