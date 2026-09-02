@@ -41,6 +41,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/prestations"
+  to = "/.netlify/functions/prestations"
+  status = 200
+
+[[redirects]]
   from = "/signature"
   to = "/briffe-signature.html"
   status = 301
