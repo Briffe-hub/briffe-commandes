@@ -963,16 +963,32 @@ function prepPrintDoc(inner){
   var d=iframe.contentWindow.document; d.open(); d.write(doc); d.close();
   setTimeout(function(){ try{iframe.contentWindow.focus();iframe.contentWindow.print();}catch(e){} setTimeout(function(){try{document.body.removeChild(iframe);}catch(e){}},4000); },500);
 }
+function clientFromSheet(sheetName){
+  var m=(sheetName||'').match(/^\s*\[([^\]]+)\]/);
+  if(m) return m[1].trim();
+  var t=(sheetName||'').trim().split(/\s+/)[0];
+  return t||'';
+}
 async function printBonApp(msgId){
   var order=ORDERS[msgId]; if(!order||!order.data){alert('Commande non traitée.');return;}
   var config=await loadPrepConfig();
   if(!config||!config.clients){alert('Configuration des prestations indisponible. Va dans la Calculette et clique « Enregistrer » au moins une fois.');return;}
-  var livs=order.data.livraisons||[],pages=[];
-  for(var i=0;i<livs.length;i++){
-    var l=livs[i],client=order.data.client,found=findPrepPresta(config, client, l.type_prestation);
-    if(!found){ pages.push('<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(client)+' · '+esc(l.type_prestation||'?')+'</div></div><div class="meta"><b>'+esc(String(l.nombre_personnes||''))+' personnes</b></div></div><p style="font-family:monospace;color:#a02a2a">Prestation non reconnue dans la calculette — vérifie le nom / les mots-clés côté Paramétrage.</p></div>'); continue; }
-    pages.push(prepBonHTML(found.client.name, found.presta, l.nombre_personnes, l));
+  var livs=order.data.livraisons||[];
+  var entries=[];
+  if(order.sheetResult&&order.sheetResult.length){
+    order.sheetResult.forEach(function(sr,idx){
+      var liv=livs[idx]||livs[0]||{};
+      entries.push({client:clientFromSheet(sr.sheetName), pax:sr.nb!=null?sr.nb:liv.nombre_personnes, tp:liv.type_prestation, liv:liv});
+    });
+  } else {
+    livs.forEach(function(l){ entries.push({client:order.data.client, pax:l.nombre_personnes, tp:l.type_prestation, liv:l}); });
   }
+  var pages=[];
+  entries.forEach(function(e){
+    var found=findPrepPresta(config, e.client, e.tp);
+    if(!found){ pages.push('<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(e.client)+' · '+esc(e.tp||'?')+'</div></div><div class="meta"><b>'+esc(String(e.pax||''))+' personnes</b></div></div><p style="font-family:monospace;color:#a02a2a">Prestation non reconnue dans la calculette — vérifie le nom / les mots-clés côté Paramétrage.</p></div>'); return; }
+    pages.push(prepBonHTML(found.client.name, found.presta, e.pax, e.liv));
+  });
   prepPrintDoc(pages.join('<div style="page-break-after:always"></div>'));
 }
 </script>
