@@ -780,7 +780,8 @@ function renderEmailList(){
       }
       if (status==="success") html+=pill("#22c55e","Imprime · archive");
       html+='<button class="btn" onclick="reprintBL(\''+msg.id+'\')">&#10697; BL</button>';
-      html+='<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">&#10697; Bon de prep.</button>';
+      html+='<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">&#10697; Bon de prep. (Sheet)</button>';
+      html+='<button class="btn" style="border-color:#921821" onclick="printBonApp(\''+msg.id+'\')">&#10697; Bon (app)</button>';
       html+='<button class="btn" onclick="regenerate(\''+msg.id+'\')">&#8635; Reg&#233;n&#233;rer</button>';
       html+='</div>';
     }
@@ -878,6 +879,101 @@ async function refresh(){
   } catch(e){
     document.getElementById("main").innerHTML='<div class="empty">Erreur : '+e.message+'</div>';
   }
+}
+</script>
+<script>
+/* ===== Branchement calculette : bon de préparation généré depuis /api/prestations ===== */
+var PREP_CONFIG=null;
+var PREP_SECTIONS=['BOISSONS','CONSOMMABLES','FRAIS','VERRERIE','MATERIEL','OPTIONS'];
+async function loadPrepConfig(force){
+  if(PREP_CONFIG&&!force) return PREP_CONFIG;
+  try{var r=await fetch('/api/prestations'); if(r.ok){var j=await r.json(); PREP_CONFIG=j.config||null;}}catch(e){}
+  return PREP_CONFIG;
+}
+function pfnum(n,d){if(n==null||isNaN(n))return'';var f=Math.pow(10,d==null?2:d);return (Math.round(n*f)/f).toString().replace('.',',');}
+function pceil(x){return Math.ceil(x-1e-9);}
+function prepComputeLine(line,pax){
+  var c=line.calc,ct=line.cont,r={label:line.label,qty:'',note:''};
+  if(!c||!ct) return r;
+  if(c.type==='flag'){r.qty='Oui';return r;}
+  var total=0;
+  if(c.type==='vol'){total=c.base*(c.pct==null?1:c.pct)*pax;}
+  else if(c.type==='pcs'){total=c.base*(c.pct==null?1:c.pct)*pax;}
+  else if(c.type==='gram'){total=c.base*pax;}
+  else if(c.type==='paxpct'){total=pceil(pax*(c.pct||0));}
+  else if(c.type==='ratio'){total=pax/(c.divisor||1);}
+  if(ct.type==='cap'){r.qty=pceil(total/(ct.size||1))+' '+(ct.unit||'');}
+  else if(ct.type==='raw'){r.qty=pfnum(total/(ct.factor||1),ct.decimals)+' '+(ct.unit||'');}
+  else if(ct.type==='caisse12'){var b=pceil(total);if(b>=12){r.qty=pceil(b/12)+' caisse(s) de 12';r.note=b+' bouteilles 1L';}else{r.qty=b+' bouteille(s) 1L';r.note='contenant au choix du livreur';}}
+  else if(ct.type==='formats'){var sz=(ct.sizes||[1]).slice().sort(function(a,b){return a-b;}),ch=null;for(var i=0;i<sz.length;i++){if(sz[i]>=total-1e-9){ch={n:1,s:sz[i]};break;}}if(!ch){var mx=sz[sz.length-1];ch={n:pceil(total/mx),s:mx};}r.qty=ch.n+' × '+pfnum(ch.s,2)+' L';}
+  else if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),parts=[];for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)parts.push(nn+' × '+s2);rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){parts.push(mm+' × '+s2);rem-=mm*s2;}}}r.qty=(parts.length?parts.join(' + '):'0')+' '+(ct.unit||'Boîte')+'(s)';}
+  return r;
+}
+var PREP_MATCH={
+  euratech:[{kw:['elabore','sain'],p:'PDJ élaboré & sain'},{kw:['gourmande'],p:'PC Gourmande'},{kw:['pause','cafe','pc'],p:'PC Simple'},{kw:['dejeuner','pdj','petit'],p:'PDJ Simple'}],
+  univlille:[{kw:['pause','cafe','pc'],p:'PC'},{kw:['dejeuner','pdj','petit'],p:'PDJ'}],
+  sciencepo:[{kw:['dejeuner','pdj','petit'],p:'PDJ'}],
+  sciencespo:[{kw:['dejeuner','pdj','petit'],p:'PDJ'}]
+};
+function nkey(s){return normalize(s).replace(/\s+/g,'');}
+function findPrepPresta(config, client, typePresta){
+  if(!config||!config.clients) return null;
+  var ck=nkey(client),clientObj=null;
+  for(var i=0;i<config.clients.length;i++){if(nkey(config.clients[i].name)===ck){clientObj=config.clients[i];break;}}
+  if(!clientObj) return null;
+  var tp=normalize(typePresta||'');
+  for(var j=0;j<clientObj.prestations.length;j++){var pk=clientObj.prestations[j].keywords||[];for(var m=0;m<pk.length;m++){if(pk[m]&&tp.indexOf(normalize(pk[m]))>=0) return {client:clientObj,presta:clientObj.prestations[j]};}}
+  var rules=PREP_MATCH[ck]||[];
+  for(var a=0;a<rules.length;a++){for(var b=0;b<rules[a].kw.length;b++){if(tp.indexOf(rules[a].kw[b])>=0){var name=rules[a].p;for(var q=0;q<clientObj.prestations.length;q++){if(normalize(clientObj.prestations[q].name)===normalize(name)) return {client:clientObj,presta:clientObj.prestations[q]};}}}}
+  return null;
+}
+function prepBonHTML(clientName, presta, pax, liv){
+  pax=parseInt(pax,10)||0;
+  var rows='';
+  PREP_SECTIONS.forEach(function(sec){
+    var lines=(presta.lines||[]).filter(function(l){return l.section===sec && !l.optional;});
+    if(!lines.length) return;
+    rows+='<tr class="secrow"><td colspan="3">'+sec+'</td></tr>';
+    var lastGrp='';
+    lines.forEach(function(l){
+      if(l.group&&l.group!==lastGrp){rows+='<tr class="grprow"><td colspan="3">'+esc(l.group)+'</td></tr>';lastGrp=l.group;}
+      if(!l.group)lastGrp='';
+      var r=prepComputeLine(l,pax);
+      rows+='<tr><td>'+esc(r.label)+'</td><td class="q">'+esc(r.qty)+'</td><td class="note">'+esc(r.note)+'</td></tr>';
+    });
+  });
+  var today=new Date().toLocaleDateString('fr-FR');
+  var meta=[liv&&liv.date_evenement?('Date : '+esc(liv.date_evenement)):'', liv&&liv.heure_mise_en_place?('MEP : '+esc(liv.heure_mise_en_place)):'', liv&&liv.lieu?esc(liv.lieu):''].filter(Boolean).join('<br>');
+  return '<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(clientName)+' · '+esc(presta.name)+'</div></div><div class="meta"><b>'+pax+' personnes</b><br>'+meta+'<br><span style="color:#999">Édité le '+today+'</span></div></div>'
+    +'<table><thead><tr><th>Élément</th><th>Quantité</th><th>Note</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function prepPrintDoc(inner){
+  var css='<style>body{font-family:\'DM Mono\',ui-monospace,monospace;margin:0;color:#111;background:#fff}'
+   +'.bon{padding:22px 24px}.bhead{display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:6px}'
+   +'h1{font-size:20px;margin:0}.sub2{font-size:13px;color:#444;margin-top:3px}.meta{font-size:12px;color:#444;text-align:right;line-height:1.6}'
+   +'table{width:100%;border-collapse:collapse;margin-top:10px}th{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#777;text-align:left;padding:6px;border-bottom:1px solid #ddd}'
+   +'td{font-size:13px;padding:6px;border-bottom:1px solid #eee}td.q{font-weight:700;white-space:nowrap}td.note{color:#888;font-size:11px}'
+   +'.secrow td{background:#f3efe6;color:#111;font-size:10px;letter-spacing:.14em;text-transform:uppercase;border:none;padding-top:12px}'
+   +'.grprow td{color:#a02a2a;font-size:10px;letter-spacing:.06em;text-transform:uppercase;border:none;padding-bottom:0}'
+   +'*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>';
+  var doc='<!doctype html><html><head><meta charset="utf-8">'+css+'</head><body>'+inner+'</body></html>';
+  var iframe=document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:820px;height:1100px;border:0;';
+  document.body.appendChild(iframe);
+  var d=iframe.contentWindow.document; d.open(); d.write(doc); d.close();
+  setTimeout(function(){ try{iframe.contentWindow.focus();iframe.contentWindow.print();}catch(e){} setTimeout(function(){try{document.body.removeChild(iframe);}catch(e){}},4000); },500);
+}
+async function printBonApp(msgId){
+  var order=ORDERS[msgId]; if(!order||!order.data){alert('Commande non traitée.');return;}
+  var config=await loadPrepConfig();
+  if(!config||!config.clients){alert('Configuration des prestations indisponible. Va dans la Calculette et clique « Enregistrer » au moins une fois.');return;}
+  var livs=order.data.livraisons||[],pages=[];
+  for(var i=0;i<livs.length;i++){
+    var l=livs[i],client=order.data.client,found=findPrepPresta(config, client, l.type_prestation);
+    if(!found){ pages.push('<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(client)+' · '+esc(l.type_prestation||'?')+'</div></div><div class="meta"><b>'+esc(String(l.nombre_personnes||''))+' personnes</b></div></div><p style="font-family:monospace;color:#a02a2a">Prestation non reconnue dans la calculette — vérifie le nom / les mots-clés côté Paramétrage.</p></div>'); continue; }
+    pages.push(prepBonHTML(found.client.name, found.presta, l.nombre_personnes, l));
+  }
+  prepPrintDoc(pages.join('<div style="page-break-after:always"></div>'));
 }
 </script>
 </body>
