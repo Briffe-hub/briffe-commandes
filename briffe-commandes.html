@@ -789,6 +789,7 @@ function renderEmailList(){
       html+='<button class="btn" onclick="reprintBL(\''+msg.id+'\')">&#10697; BL</button>';
       html+='<button class="btn" onclick="reprintSheet(\''+msg.id+'\')">&#10697; Bon de prep. (Sheet)</button>';
       html+='<button class="btn" style="border-color:#921821" onclick="printBonApp(\''+msg.id+'\')">&#10697; Bon (app)</button>';
+      html+='<button class="btn" onclick="askLabels(\''+msg.id+'\')">&#127991;&#65039; Étiquettes</button>';
       html+='<button class="btn" onclick="regenerate(\''+msg.id+'\')">&#8635; Reg&#233;n&#233;rer</button>';
       html+='</div>';
     }
@@ -935,7 +936,7 @@ function findPrepPresta(config, client, typePresta){
   for(var a=0;a<rules.length;a++){for(var b=0;b<rules[a].kw.length;b++){if(tp.indexOf(rules[a].kw[b])>=0){var name=rules[a].p;for(var q=0;q<clientObj.prestations.length;q++){if(normalize(clientObj.prestations[q].name)===normalize(name)) return {client:clientObj,presta:clientObj.prestations[q]};}}}}
   return null;
 }
-function prepBonHTML(clientName, presta, pax, liv){
+function prepBonHTML(clientName, presta, pax, liv, blNum){
   pax=parseInt(pax,10)||0;
   var rows='';
   PREP_SECTIONS.forEach(function(sec){
@@ -951,7 +952,11 @@ function prepBonHTML(clientName, presta, pax, liv){
     });
   });
   var today=new Date().toLocaleDateString('fr-FR');
-  var meta=[liv&&liv.date_evenement?('Date : '+esc(liv.date_evenement)):'', liv&&liv.heure_mise_en_place?('MEP : '+esc(liv.heure_mise_en_place)):'', liv&&liv.lieu?esc(liv.lieu):''].filter(Boolean).join('<br>');
+  var meta=[
+    blNum?('N° BL : '+esc(blNum)):'',
+    (liv&&liv.lieu)?('Lieu : '+esc(liv.lieu)+(liv.salle?(' — '+esc(liv.salle)):'')):'',
+    (liv&&(liv.date_evenement||liv.heure_mise_en_place))?('Livraison : '+esc(liv.date_evenement||'')+(liv.heure_mise_en_place?(' à '+esc(liv.heure_mise_en_place)):'')):''
+  ].filter(Boolean).join('<br>');
   return '<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(clientName)+' · '+esc(presta.name)+'</div></div><div class="meta"><b>'+pax+' personnes</b><br>'+meta+'<br><span style="color:#999">Édité le '+today+'</span></div></div>'
     +'<table><thead><tr><th>Élément</th><th>Quantité</th><th>Note</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
@@ -982,6 +987,7 @@ async function printBonApp(msgId){
   var config=await loadPrepConfig();
   if(!config||!config.clients){alert('Configuration des prestations indisponible. Va dans la Calculette et clique « Enregistrer » au moins une fois.');return;}
   var livs=order.data.livraisons||[];
+  var bl=order.data.numero_commande||'';
   var entries=[];
   if(order.sheetResult&&order.sheetResult.length){
     order.sheetResult.forEach(function(sr,idx){
@@ -995,9 +1001,54 @@ async function printBonApp(msgId){
   entries.forEach(function(e){
     var found=findPrepPresta(config, e.client, e.tp);
     if(!found){ pages.push('<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(e.client)+' · '+esc(e.tp||'?')+'</div></div><div class="meta"><b>'+esc(String(e.pax||''))+' personnes</b></div></div><p style="font-family:monospace;color:#a02a2a">Prestation non reconnue dans la calculette — vérifie le nom / les mots-clés côté Paramétrage.</p></div>'); return; }
-    pages.push(prepBonHTML(found.client.name, found.presta, e.pax, e.liv));
+    pages.push(prepBonHTML(found.client.name, found.presta, e.pax, e.liv, bl));
   });
   prepPrintDoc(pages.join('<div style="page-break-after:always"></div>'));
+}
+
+/* ===== Étiquettes de livraison (Brother DK 62mm) ===== */
+function labelHTML(place, blNum, pax, date, heure){
+  return '<div class="lbl">'
+    +'<div class="lbl-place">'+esc(place||'')+'</div>'
+    +'<div class="lbl-info">'
+      +'<div class="lbl-line"><span>BL</span>&nbsp;'+esc(blNum||'—')+'</div>'
+      +'<div class="lbl-line"><span>PAX</span>&nbsp;'+esc(String(pax==null?'—':pax))+'</div>'
+      +'<div class="lbl-line"><span>'+esc(date||'')+'</span>&nbsp;'+esc(heure||'')+'</div>'
+    +'</div></div>';
+}
+function labelsPrintDoc(inner){
+  var css='<style>@page{size:62mm 40mm;margin:0}html,body{margin:0;padding:0}'
+    +'.lbl{width:62mm;height:40mm;box-sizing:border-box;padding:2.5mm 4mm;page-break-after:always;'
+    +'font-family:Arial,Helvetica,sans-serif;color:#000;display:flex;flex-direction:column;justify-content:center;overflow:hidden}'
+    +'.lbl-place{font-size:25pt;font-weight:800;line-height:1;text-transform:uppercase;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2mm}'
+    +'.lbl-info{font-size:12pt;line-height:1.45}.lbl-line span{font-weight:700}'
+    +'*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>';
+  var doc='<!doctype html><html><head><meta charset="utf-8">'+css+'</head><body>'+inner+'</body></html>';
+  var iframe=document.createElement('iframe');
+  iframe.style.cssText='position:fixed;top:-9999px;left:-9999px;width:320px;height:320px;border:0;';
+  document.body.appendChild(iframe);
+  var d=iframe.contentWindow.document; d.open(); d.write(doc); d.close();
+  setTimeout(function(){ try{iframe.contentWindow.focus();iframe.contentWindow.print();}catch(e){} setTimeout(function(){try{document.body.removeChild(iframe);}catch(e){}},4000); },500);
+}
+function printLabels(msgId, count){
+  var order=ORDERS[msgId]; if(!order||!order.data){alert('Commande non traitée.');return;}
+  var livs=order.data.livraisons||[];
+  var bl=order.data.numero_commande||'';
+  var entries=[];
+  if(order.sheetResult&&order.sheetResult.length){
+    order.sheetResult.forEach(function(sr,idx){ var liv=livs[idx]||livs[0]||{}; entries.push({place:clientFromSheet(sr.sheetName)||order.data.client||liv.lieu, pax:sr.nb!=null?sr.nb:liv.nombre_personnes, date:liv.date_evenement, heure:liv.heure_mise_en_place}); });
+  } else {
+    livs.forEach(function(l){ entries.push({place:order.data.client||l.lieu, pax:l.nombre_personnes, date:l.date_evenement, heure:l.heure_mise_en_place}); });
+  }
+  var n=count||2, html='';
+  entries.forEach(function(e){ for(var k=0;k<n;k++){ html+=labelHTML(e.place, bl, e.pax, e.date, e.heure); } });
+  if(!html){alert('Aucune livraison à étiqueter.');return;}
+  labelsPrintDoc(html);
+}
+function askLabels(msgId){
+  var v=prompt("Nombre d'étiquettes par livraison :","2"); if(v===null) return;
+  var n=parseInt(v,10); if(!(n>0)) n=2; if(n>50) n=50;
+  printLabels(msgId,n);
 }
 </script>
 </body>
