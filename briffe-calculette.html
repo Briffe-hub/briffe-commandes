@@ -262,6 +262,25 @@ function seedConfig(){
 var CONFIG=null, apiOK=true, sc=0, sp=0;
 var SECTIONS=['BOISSONS','CONSOMMABLES','FRAIS','VERRERIE','MATERIEL','OPTIONS'];
 
+/* Liste des matériels GreenLoop (pour mapper chaque ligne -> 1 matériel GreenLoop) */
+var GLMATS=[];
+var GL_LIST_URL='https://oshgbbywvcrwruzgravd.supabase.co/functions/v1/list-materiel';
+async function loadGLMats(){try{var r=await fetch(GL_LIST_URL);if(r.ok){var j=await r.json();if(Array.isArray(j))GLMATS=j;}}catch(e){}}
+
+/* Calcule la liste matériel GreenLoop [{code,qte,nom}] pour une prestation + nb de pers.
+   Les options non actives par défaut ne sont pas incluses (import auto). */
+function computeGreenloopPrep(presta,pax){
+  var out=[];
+  (presta.lines||[]).forEach(function(l){
+    if(!l.glCode)return;
+    if(l.optional && l.defaultOn===false)return;
+    var r=computeLine(l,pax);
+    var q=Math.round(r.count||0);
+    if(q>0)out.push({code:l.glCode,qte:q,nom:l.label});
+  });
+  return out;
+}
+
 async function loadConfig(){
   var local=null;try{local=JSON.parse(localStorage.getItem('bt_prestations')||'null');}catch(_){}
   var usedLocal=false;
@@ -340,6 +359,16 @@ var CONT_TYPES=[['cap','Capacité'],['raw','Brut'],['caisse12','Eau (caisse 12)'
 
 function selOpts(list,val){return list.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>';}).join('');}
 
+/* Sélecteur du matériel GreenLoop correspondant à une ligne (par nom, stocke le code). */
+function glSelect(line){
+  if(GLMATS.length){
+    var opts='<option value="">— aucun —</option>'+GLMATS.map(function(m){return '<option value="'+esc(m.code)+'"'+(m.code===line.glCode?' selected':'')+'>'+esc(m.nom)+'</option>';}).join('');
+    if(line.glCode && !GLMATS.some(function(m){return m.code===line.glCode;})) opts+='<option value="'+esc(line.glCode)+'" selected>'+esc(line.glCode)+' (?)</option>';
+    return '<select class="ty" data-id="'+line.id+'" data-f="glcode" style="min-width:150px">'+opts+'</select>';
+  }
+  return '<input class="u" type="text" placeholder="GL-…" value="'+esc(line.glCode||'')+'" data-id="'+line.id+'" data-f="glcode">';
+}
+
 function calcInputs(line){
   var c=line.calc,id=line.id,h='';
   if(c.type==='vol'||c.type==='pcs'){
@@ -386,6 +415,7 @@ function renderEditor(){
         +'<div class="cell"><span class="clab">calcul</span><select class="ty" data-id="'+l.id+'" data-f="calc.type">'+selOpts(CALC_TYPES,l.calc.type)+'</select>'+calcInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">contenant</span><select class="ty" data-id="'+l.id+'" data-f="cont.type">'+selOpts(CONT_TYPES,l.cont.type)+'</select>'+contInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">prix €</span><input class="p" type="number" step="0.001" value="'+(l.price||0)+'" data-id="'+l.id+'" data-f="price"></div>'
+        +'<div class="cell"><span class="clab">GreenLoop</span>'+glSelect(l)+'</div>'
         +'<div class="cell end"><label class="opt"><input type="checkbox" '+(l.optional?'checked':'')+' data-id="'+l.id+'" data-f="optional"> option</label>'
         +'<button class="btn small danger" data-id="'+l.id+'" data-act="del">✕</button></div>'
         +'</div>';
@@ -400,6 +430,7 @@ function setField(line,f,val){
   if(f==='label')line.label=val;
   else if(f==='price')line.price=parseFloat(val)||0;
   else if(f==='optional')line.optional=val;
+  else if(f==='glcode')line.glCode=val;
   else if(f==='calc.type'){line.calc=defaultCalc(val);}
   else if(f==='cont.type'){line.cont=defaultCont(val);}
   else if(f==='calc.base')line.calc.base=parseFloat(val)||0;
@@ -494,7 +525,7 @@ function generate(){
 document.getElementById('c-presta').addEventListener('change',renderOptionToggles);
 if(location.search.indexOf('embed')>=0) document.body.classList.add('embed');
 (async function(){
-  await loadConfig();
+  await Promise.all([loadConfig(), loadGLMats()]);
   refreshSelectors();
   renderEditor();
 })();
