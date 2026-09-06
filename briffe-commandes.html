@@ -427,6 +427,7 @@ async function processEmail(msg) {
       }
       liv.sheetName = sheetName;
 
+      var prep1 = await greenloopPrepFor(resolvedClient, liv.type_prestation, liv.nombre_personnes);
       try {
         var resp = await fetch("/api/process",{
           method:"POST",
@@ -436,7 +437,8 @@ async function processEmail(msg) {
             livraison:liv,
             numero_commande:extracted.numero_commande,
             client:resolvedClient,
-            blBase64:blBase64
+            blBase64:blBase64,
+            preparation:prep1
           })
         });
         var result = await resp.json();
@@ -658,6 +660,7 @@ async function regenerate(msgId) {
     var pdfPart = pdfParts[li]||pdfParts[0];
     if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){}}
 
+    var prep2 = await greenloopPrepFor(resolvedClient, liv.type_prestation, liv.nombre_personnes);
     try {
       var resp = await fetch("/api/process",{
         method:"POST",
@@ -667,7 +670,8 @@ async function regenerate(msgId) {
           livraison:liv,
           numero_commande:order.data.numero_commande,
           client:resolvedClient,
-          blBase64:blBase64
+          blBase64:blBase64,
+          preparation:prep2
         })
       });
       var result = await resp.json();
@@ -917,6 +921,44 @@ function prepComputeLine(line,pax){
   else if(ct.type==='formats'){var sz=(ct.sizes||[1]).slice().sort(function(a,b){return a-b;}),ch=null;for(var i=0;i<sz.length;i++){if(sz[i]>=total-1e-9){ch={n:1,s:sz[i]};break;}}if(!ch){var mx=sz[sz.length-1];ch={n:pceil(total/mx),s:mx};}r.qty=ch.n+' × '+pfnum(ch.s,2)+' L';}
   else if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),parts=[];for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)parts.push(nn+' × '+s2);rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){parts.push(mm+' × '+s2);rem-=mm*s2;}}}r.qty=(parts.length?parts.join(' + '):'0')+' '+(ct.unit||'Boîte')+'(s)';}
   return r;
+}
+/* Quantité PHYSIQUE (nombre d'exemplaires) d'une ligne, pour GreenLoop. */
+function prepLineCount(line,pax){
+  var c=line.calc,ct=line.cont; if(!c||!ct) return 0;
+  if(c.type==='flag') return 0;
+  var total=0;
+  if(c.type==='vol') total=c.base*(c.pct==null?1:c.pct)*pax;
+  else if(c.type==='pcs') total=c.base*(c.pct==null?1:c.pct)*pax;
+  else if(c.type==='gram') total=c.base*pax;
+  else if(c.type==='paxpct') total=pceil(pax*(c.pct||0));
+  else if(c.type==='ratio') total=pax/(c.divisor||1);
+  if(ct.type==='cap') return pceil(total/(ct.size||1));
+  if(ct.type==='raw') return 0; // brut (kg) : pas un matériel unitaire GreenLoop
+  if(ct.type==='caisse12'){var b=pceil(total); return b>=12?pceil(b/12):b;}
+  if(ct.type==='formats'){var sz=(ct.sizes||[1]).slice().sort(function(a,b){return a-b;});for(var i=0;i<sz.length;i++){if(sz[i]>=total-1e-9)return 1;}return pceil(total/sz[sz.length-1]);}
+  if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),tot=0;for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)tot+=nn;rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){tot+=mm;rem-=mm*s2;}}}return tot;}
+  return 0;
+}
+/* Liste matériel GreenLoop [{code,qte,nom}] d'une prestation calculette. */
+function greenloopPrep(presta,pax){
+  var out=[];
+  (presta.lines||[]).forEach(function(l){
+    if(!l.glCode) return;
+    if(l.optional && l.defaultOn===false) return; // options non incluses à l'import auto
+    var q=Math.round(prepLineCount(l,pax)||0);
+    if(q>0) out.push({code:l.glCode, qte:q, nom:l.label});
+  });
+  return out;
+}
+/* Trouve la prestation calculette pour (client,type) et renvoie sa liste GreenLoop. */
+async function greenloopPrepFor(client, typePresta, pax){
+  try{
+    if(!PREP_CONFIG) await loadPrepConfig();
+    if(!PREP_CONFIG) return [];
+    var found=findPrepPresta(PREP_CONFIG, client, typePresta);
+    if(!found) return [];
+    return greenloopPrep(found.presta, parseInt(pax,10)||0);
+  }catch(e){ return []; }
 }
 var PREP_MATCH={
   euratech:[{kw:['elabore','sain'],p:'PDJ élaboré & sain'},{kw:['gourmande'],p:'PC Gourmande'},{kw:['pause','cafe','pc'],p:'PC Simple'},{kw:['dejeuner','pdj','petit'],p:'PDJ Simple'}],
