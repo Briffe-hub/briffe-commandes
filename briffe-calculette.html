@@ -269,16 +269,26 @@ async function loadGLMats(){try{var r=await fetch(GL_LIST_URL);if(r.ok){var j=aw
 
 /* Calcule la liste matériel GreenLoop [{code,qte,nom}] pour une prestation + nb de pers.
    Les options non actives par défaut ne sont pas incluses (import auto). */
+function glQty(g,base,pax){
+  var mode=g.mode||'auto',n=parseInt(g.n,10)||0;
+  if(mode==='fixe') return n>0?n:0;
+  if(mode==='pax')  return n>0?ceil(pax/n):0;
+  if(mode==='ratio')return n>0?ceil(base/n):0;
+  return base; // auto = quantité calculée de la ligne
+}
 function computeGreenloopPrep(presta,pax){
-  var out=[];
+  var acc={};
   (presta.lines||[]).forEach(function(l){
-    if(!l.glCode)return;
     if(l.optional && l.defaultOn===false)return;
-    var r=computeLine(l,pax);
-    var q=Math.round(r.count||0);
-    if(q>0)out.push({code:l.glCode,qte:q,nom:l.label});
+    var gl=glList(l);if(!gl.length)return;
+    var base=Math.round((computeLine(l,pax).count)||0);
+    gl.forEach(function(g){
+      if(!g.code)return;
+      var q=glQty(g,base,pax);
+      if(q>0){ if(!acc[g.code])acc[g.code]={code:g.code,qte:0,nom:l.label}; acc[g.code].qte+=q; }
+    });
   });
-  return out;
+  return Object.keys(acc).map(function(k){return acc[k];});
 }
 
 async function loadConfig(){
@@ -359,14 +369,37 @@ var CONT_TYPES=[['cap','Capacité'],['raw','Brut'],['caisse12','Eau (caisse 12)'
 
 function selOpts(list,val){return list.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>';}).join('');}
 
-/* Sélecteur du matériel GreenLoop correspondant à une ligne (par nom, stocke le code). */
-function glSelect(line){
-  if(GLMATS.length){
-    var opts='<option value="">— aucun —</option>'+GLMATS.map(function(m){return '<option value="'+esc(m.code)+'"'+(m.code===line.glCode?' selected':'')+'>'+esc(m.nom)+'</option>';}).join('');
-    if(line.glCode && !GLMATS.some(function(m){return m.code===line.glCode;})) opts+='<option value="'+esc(line.glCode)+'" selected>'+esc(line.glCode)+' (?)</option>';
-    return '<select class="ty" data-id="'+line.id+'" data-f="glcode" style="min-width:150px">'+opts+'</select>';
-  }
-  return '<input class="u" type="text" placeholder="GL-…" value="'+esc(line.glCode||'')+'" data-id="'+line.id+'" data-f="glcode">';
+/* Correspondances GreenLoop d'une ligne : une ligne calculette peut alimenter
+   PLUSIEURS matériels GreenLoop (ex. cuillère à café → cuillère + pot à cuillères),
+   chacun avec sa règle de quantité. Modèle : line.gl = [{code,mode,n}].
+   mode : auto = quantité calculée de la ligne ; fixe = n ; pax = 1 pour n pers ;
+   ratio = 1 pour n exemplaires calculés. */
+var GL_MODES=[['auto','Quantité calculée'],['fixe','Fixe'],['pax','1 / N pers'],['ratio','1 / N calculés']];
+function glList(line){
+  if(Array.isArray(line.gl)) return line.gl;
+  if(line.glCode){ line.gl=[{code:line.glCode,mode:'auto',n:1}]; delete line.glCode; return line.gl; }
+  line.gl=[]; return line.gl;
+}
+function glMatOptions(code){
+  var opts='<option value="">— choisir —</option>'+GLMATS.map(function(m){return '<option value="'+esc(m.code)+'"'+(m.code===code?' selected':'')+'>'+esc(m.nom)+'</option>';}).join('');
+  if(code && !GLMATS.some(function(m){return m.code===code;})) opts+='<option value="'+esc(code)+'" selected>'+esc(code)+' (?)</option>';
+  return opts;
+}
+function glBlock(line){
+  var gl=glList(line),h='';
+  gl.forEach(function(g,gi){
+    var showN=(g.mode&&g.mode!=='auto');
+    h+='<div class="glrow" style="display:flex;gap:4px;align-items:center;margin-bottom:3px;flex-wrap:wrap">'
+      +(GLMATS.length
+        ? '<select class="ty" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="code" style="min-width:120px">'+glMatOptions(g.code)+'</select>'
+        : '<input class="u" type="text" placeholder="GL-…" value="'+esc(g.code||'')+'" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="code">')
+      +'<select class="ty" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="mode" style="min-width:110px">'+selOpts(GL_MODES,g.mode||'auto')+'</select>'
+      +'<input class="p" type="number" step="1" min="1" value="'+(g.n==null?'':g.n)+'" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="n" style="width:52px'+(showN?'':';visibility:hidden')+'">'
+      +'<button class="btn small danger" data-id="'+line.id+'" data-gi="'+gi+'" data-act="gldel" title="Retirer cette correspondance">✕</button>'
+      +'</div>';
+  });
+  h+='<button class="btn small" data-id="'+line.id+'" data-act="gladd" style="font-size:10px;padding:2px 6px">+ matériel</button>';
+  return h;
 }
 
 function calcInputs(line){
@@ -415,7 +448,7 @@ function renderEditor(){
         +'<div class="cell"><span class="clab">calcul</span><select class="ty" data-id="'+l.id+'" data-f="calc.type">'+selOpts(CALC_TYPES,l.calc.type)+'</select>'+calcInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">contenant</span><select class="ty" data-id="'+l.id+'" data-f="cont.type">'+selOpts(CONT_TYPES,l.cont.type)+'</select>'+contInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">prix €</span><input class="p" type="number" step="0.001" value="'+(l.price||0)+'" data-id="'+l.id+'" data-f="price"></div>'
-        +'<div class="cell"><span class="clab">GreenLoop</span>'+glSelect(l)+'</div>'
+        +'<div class="cell"><span class="clab">GreenLoop</span>'+glBlock(l)+'</div>'
         +'<div class="cell end"><label class="opt"><input type="checkbox" '+(l.optional?'checked':'')+' data-id="'+l.id+'" data-f="optional"> option</label>'
         +'<button class="btn small danger" data-id="'+l.id+'" data-act="del">✕</button></div>'
         +'</div>';
@@ -459,6 +492,30 @@ function wireEditor(){
     b.addEventListener('click',function(){
       var id=b.getAttribute('data-id'),p=curPresta();
       p.lines=p.lines.filter(function(l){return l.id!==id;});renderEditor();
+    });
+  });
+  // Correspondances GreenLoop multiples par ligne
+  host.querySelectorAll('[data-gf]').forEach(function(el){
+    var evt=el.tagName==='SELECT'?'change':'input';
+    el.addEventListener(evt,function(){
+      var line=findLine(el.getAttribute('data-id'));if(!line)return;
+      var gl=glList(line),g=gl[+el.getAttribute('data-gi')];if(!g)return;
+      var gf=el.getAttribute('data-gf');
+      if(gf==='code')g.code=el.value;
+      else if(gf==='mode'){g.mode=el.value;if(g.mode!=='auto'&&(g.n==null||g.n<1))g.n=(g.mode==='fixe'?1:50);renderEditor();}
+      else if(gf==='n')g.n=parseInt(el.value,10)||0;
+    });
+  });
+  host.querySelectorAll('[data-act=gladd]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var line=findLine(b.getAttribute('data-id'));if(!line)return;
+      glList(line).push({code:'',mode:'auto',n:1});renderEditor();
+    });
+  });
+  host.querySelectorAll('[data-act=gldel]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var line=findLine(b.getAttribute('data-id'));if(!line)return;
+      glList(line).splice(+b.getAttribute('data-gi'),1);renderEditor();
     });
   });
 }
