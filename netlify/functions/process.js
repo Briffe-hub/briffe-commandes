@@ -23,7 +23,7 @@ exports.handler = async function(event) {
   try { body = JSON.parse(event.body); }
   catch(e) { return { statusCode: 400, body: "Invalid JSON" }; }
 
-  const { googleToken, livraison, numero_commande, client, blBase64 } = body;
+  const { googleToken, livraison, numero_commande, client, blBase64, preparation, consignerie_url } = body;
   if (!googleToken || !livraison) {
     return { statusCode: 400, body: JSON.stringify({ error: "Missing params" }) };
   }
@@ -210,6 +210,8 @@ exports.handler = async function(event) {
             lieu, salle, contact,
             heure_mise_en_place: heureMep,
             heure_evenement: heureEv,
+            consignerie_url: consignerie_url || "",
+            preparation: Array.isArray(preparation) ? preparation : undefined,
           }),
         });
         greenloop = await glResp.json().catch(() => ({ status: glResp.status }));
