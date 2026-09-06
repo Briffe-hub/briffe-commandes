@@ -939,16 +939,34 @@ function prepLineCount(line,pax){
   if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),tot=0;for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)tot+=nn;rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){tot+=mm;rem-=mm*s2;}}}return tot;}
   return 0;
 }
-/* Liste matériel GreenLoop [{code,qte,nom}] d'une prestation calculette. */
+/* Correspondances GreenLoop d'une ligne : une ligne peut alimenter PLUSIEURS
+   matériels GreenLoop (ex. cuillère à café → cuillère + pot à cuillères). */
+function prepGlList(line){
+  if(Array.isArray(line.gl)) return line.gl;
+  if(line.glCode) return [{code:line.glCode,mode:'auto',n:1}];
+  return [];
+}
+function prepGlQty(g,base,pax){
+  var mode=g.mode||'auto',n=parseInt(g.n,10)||0;
+  if(mode==='fixe') return n>0?n:0;
+  if(mode==='pax')  return n>0?pceil(pax/n):0;
+  if(mode==='ratio')return n>0?pceil(base/n):0;
+  return base; // auto = quantité calculée de la ligne
+}
+/* Liste matériel GreenLoop [{code,qte,nom}] d'une prestation calculette (agrégée par code). */
 function greenloopPrep(presta,pax){
-  var out=[];
+  var acc={};
   (presta.lines||[]).forEach(function(l){
-    if(!l.glCode) return;
     if(l.optional && l.defaultOn===false) return; // options non incluses à l'import auto
-    var q=Math.round(prepLineCount(l,pax)||0);
-    if(q>0) out.push({code:l.glCode, qte:q, nom:l.label});
+    var gl=prepGlList(l); if(!gl.length) return;
+    var base=Math.round(prepLineCount(l,pax)||0);
+    gl.forEach(function(g){
+      if(!g.code) return;
+      var q=prepGlQty(g,base,pax);
+      if(q>0){ if(!acc[g.code]) acc[g.code]={code:g.code,qte:0,nom:l.label}; acc[g.code].qte+=q; }
+    });
   });
-  return out;
+  return Object.keys(acc).map(function(k){return acc[k];});
 }
 /* Trouve la prestation calculette pour (client,type) et renvoie sa liste GreenLoop. */
 async function greenloopPrepFor(client, typePresta, pax){
