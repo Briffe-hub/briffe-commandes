@@ -23,7 +23,7 @@ exports.handler = async function(event) {
   try { body = JSON.parse(event.body); }
   catch(e) { return { statusCode: 400, body: "Invalid JSON" }; }
 
-  const { googleToken, livraison, numero_commande, client, blBase64, preparation, consignerie_url } = body;
+  const { googleToken, livraison, numero_commande, client, blBase64, bonPdfBase64 } = body;
   if (!googleToken || !livraison) {
     return { statusCode: 400, body: JSON.stringify({ error: "Missing params" }) };
   }
@@ -36,6 +36,12 @@ exports.handler = async function(event) {
       ...(opts.headers || {})
     }
   });
+
+  // ── Nouveau flux : bon de prépa fourni en PDF (app). On archive bon + BL séparément,
+  //    on lie les deux dans l'agenda, on ne touche PAS à Google Sheets. ──
+  if (bonPdfBase64) {
+    return await handleAppBon(googleToken, body);
+  }
 
   try {
     const sheetName = livraison.sheetName;
@@ -210,8 +216,6 @@ exports.handler = async function(event) {
             lieu, salle, contact,
             heure_mise_en_place: heureMep,
             heure_evenement: heureEv,
-            consignerie_url: consignerie_url || "",
-            preparation: Array.isArray(preparation) ? preparation : undefined,
           }),
         });
         greenloop = await glResp.json().catch(() => ({ status: glResp.status }));
@@ -297,6 +301,116 @@ function simplePdfMerge(buf1, buf2) {
     Buffer.from(cleanStr1 + "\n", "latin1"),
     Buffer.from(adjustedStr2, "latin1")
   ]);
+}
+
+function driveLink(id){ return "https://drive.google.com/file/d/" + id; }
+
+async function driveUpload(googleToken, fileName, buffer){
+  const boundary = "briffe_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  const metadata = JSON.stringify({ name: fileName, mimeType: "application/pdf", parents: [DRIVE_FOLDER_ID] });
+  const multipart = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json\r\n\r\n${metadata}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`),
+    buffer,
+    Buffer.from(`\r\n--${boundary}--`)
+  ]);
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + googleToken, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: multipart
+  });
+  const j = await r.json();
+  console.log("Drive upload:", r.status, fileName, j && j.id);
+  return j;
+}
+
+// Flux app : archive le bon (PDF fourni) + le BL séparément, agenda avec les deux liens, GreenLoop.
+async function handleAppBon(googleToken, body){
+  const { livraison, numero_commande, client, blBase64, bonPdfBase64 } = body;
+  try {
+    const nb       = livraison.nombre_personnes;
+    const dateEv   = livraison.date_evenement || "";
+    const heureMep = livraison.heure_mise_en_place || "06:00";
+    const heureEv  = livraison.heure_evenement || "08:00";
+    const lieu     = livraison.lieu || "";
+    const salle    = livraison.salle || "";
+    const contact  = livraison.contact || "";
+    const presta   = livraison.type_prestation || livraison.prestaName || "";
+
+    const safe = s => (s || "").toString().replace(/[\\/:*?"<>|]+/g, "-").trim();
+    const base = [numero_commande || "CMD", safe(client), safe(presta), dateEv].filter(Boolean).join(" · ");
+
+    // 1. Archive du bon (PDF app) et du BL, en deux fichiers Drive
+    const bonFile = await driveUpload(googleToken, "BON · " + base + ".pdf", Buffer.from(bonPdfBase64, "base64"));
+    let blFile = null;
+    if (blBase64) { try { blFile = await driveUpload(googleToken, "BL · " + base + ".pdf", Buffer.from(blBase64, "base64")); } catch(e){ console.warn("BL upload fail:", e.message); } }
+
+    // 2. Événement agenda, avec les deux liens
+    let dateISO = new Date().toISOString().split("T")[0];
+    if (dateEv && /\d{2}\/\d{2}\/\d{4}/.test(dateEv)) { const [d,m,y] = dateEv.split("/"); dateISO = `${y}-${m}-${d}`; }
+    const startISO = `${dateISO}T${heureMep}:00`;
+    const endISO   = `${dateISO}T${heureEv}:00`;
+
+    const tp = (presta || "").toLowerCase();
+    let emoji = "☕";
+    if (tp.includes("dejeuner")||tp.includes("déjeuner")||tp.includes("pdj")||tp.includes("petit")) emoji = "🥐";
+    else if (tp.includes("pause")||tp.includes("cafe")||tp.includes("café")||tp.includes("pc")) emoji = "☕";
+    else if (tp.includes("buffet")||tp.includes("repas")||tp.includes("diner")||tp.includes("dîner")) emoji = "🍽";
+
+    const description = [
+      "N° BL : " + (numero_commande || "—"),
+      "Client : " + (client || "—"),
+      "Prestation : " + presta,
+      "Nombre de personnes : " + nb,
+      "Mise en place : " + heureMep,
+      "Événement : " + heureEv,
+      lieu ? "Adresse : " + lieu : "",
+      salle ? "Salle : " + salle : "",
+      contact ? "Contact : " + contact.replace(/<[^>]+>/g, "") : "",
+      "",
+      "──────────",
+      "📄 Bon de préparation : " + driveLink(bonFile.id),
+      blFile ? "📎 BL original : " + driveLink(blFile.id) : ""
+    ].filter(Boolean).join("\n");
+
+    const gFetch = (url, opts = {}) => fetch(url, { ...opts, headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json", ...(opts.headers||{}) } });
+    const calResp = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`,
+      { method: "POST", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.`,
+          location: [lieu, salle].filter(Boolean).join(" — "),
+          description,
+          start: { dateTime: startISO, timeZone: "Europe/Paris" },
+          end:   { dateTime: endISO,   timeZone: "Europe/Paris" },
+          colorId: "5"
+        }) }
+    );
+    const calEvent = await calResp.json();
+
+    // 3. GreenLoop (best-effort)
+    let greenloop = null;
+    try {
+      const glUrl = process.env.GREENLOOP_INGEST_URL, glKey = process.env.GREENLOOP_INGEST_KEY;
+      if (glUrl && glKey) {
+        const glResp = await fetch(glUrl, { method: "POST", headers: { "Content-Type": "application/json", "x-ingest-key": glKey },
+          body: JSON.stringify({ numero_commande: numero_commande||"", client: client||"", date_evenement: dateEv, type_prestation: presta, nombre_personnes: nb, lieu, salle, contact, heure_mise_en_place: heureMep, heure_evenement: heureEv }) });
+        greenloop = await glResp.json().catch(() => ({ status: glResp.status }));
+      }
+    } catch(e) { console.warn("GreenLoop ingest échec:", e.message); }
+
+    return { statusCode: 200, headers: cors(), body: JSON.stringify({
+      ok: true,
+      bonFileId: bonFile.id, bonLink: driveLink(bonFile.id),
+      blFileId: blFile ? blFile.id : null, blLink: blFile ? driveLink(blFile.id) : null,
+      pdfFileId: bonFile.id, pdfFileName: "BON · " + base + ".pdf",
+      calEventId: calEvent.id, calEventLink: calEvent.htmlLink,
+      greenloop
+    }) };
+  } catch(e){
+    console.error("handleAppBon error:", e);
+    return { statusCode: 500, headers: cors(), body: JSON.stringify({ error: e.message }) };
+  }
 }
 
 function cors() {
