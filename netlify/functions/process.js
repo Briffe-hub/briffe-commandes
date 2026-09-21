@@ -305,6 +305,19 @@ function simplePdfMerge(buf1, buf2) {
 
 function driveLink(id){ return "https://drive.google.com/file/d/" + id; }
 
+// Écrit un enregistrement stat dans Netlify Blobs (store briffe-stats), clé = n° de commande (upsert).
+async function writeStat(rec){
+  const sid = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
+  const tok = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
+  if (!sid || !tok || !rec.dev) return;
+  const key = String(rec.dev).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120);
+  await fetch(`https://api.netlify.com/api/v1/blobs/${sid}/briffe-stats/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: { "Authorization": "Bearer " + tok, "Content-Type": "application/json" },
+    body: JSON.stringify(rec)
+  });
+}
+
 async function driveUpload(googleToken, fileName, buffer){
   const boundary = "briffe_" + Date.now() + "_" + Math.random().toString(36).slice(2);
   const metadata = JSON.stringify({ name: fileName, mimeType: "application/pdf", parents: [DRIVE_FOLDER_ID] });
@@ -335,7 +348,7 @@ async function handleAppBon(googleToken, body){
     const lieu     = livraison.lieu || "";
     const salle    = livraison.salle || "";
     const contact  = livraison.contact || "";
-    const presta   = livraison.type_prestation || livraison.prestaName || "";
+    const presta   = livraison.prestaName || livraison.type_prestation || "";
 
     const safe = s => (s || "").toString().replace(/[\\/:*?"<>|]+/g, "-").trim();
     const base = [numero_commande || "CMD", safe(client), safe(presta), dateEv].filter(Boolean).join(" · ");
@@ -408,6 +421,9 @@ async function handleAppBon(googleToken, body){
         greenloop = await glResp.json().catch(() => ({ status: glResp.status }));
       }
     } catch(e) { console.warn("GreenLoop ingest échec:", e.message); }
+
+    // 4. Journal statistiques (best-effort, dédoublonné sur le n° de commande)
+    try { await writeStat({ dev: numero_commande || "", client: client || "", prestation: presta || "", pax: Number(nb) || 0, date: dateEv || "", lieu: lieu || "", ts: new Date().toISOString() }); } catch(e) { console.warn("writeStat:", e.message); }
 
     return { statusCode: 200, headers: cors(), body: JSON.stringify({
       ok: true,
