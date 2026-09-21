@@ -326,7 +326,7 @@ async function driveUpload(googleToken, fileName, buffer){
 
 // Flux app : archive le bon (PDF fourni) + le BL séparément, agenda avec les deux liens, GreenLoop.
 async function handleAppBon(googleToken, body){
-  const { livraison, numero_commande, client, blBase64, bonPdfBase64 } = body;
+  const { livraison, numero_commande, client, blBase64, bonPdfBase64, replaceEventId, isModif } = body;
   try {
     const nb       = livraison.nombre_personnes;
     const dateEv   = livraison.date_evenement || "";
@@ -339,11 +339,14 @@ async function handleAppBon(googleToken, body){
 
     const safe = s => (s || "").toString().replace(/[\\/:*?"<>|]+/g, "-").trim();
     const base = [numero_commande || "CMD", safe(client), safe(presta), dateEv].filter(Boolean).join(" · ");
+    const stamp = isModif ? (" · " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }).replace(":", "h")) : "";
+    const bonPfx = isModif ? "BON MODIF" : "BON";
+    const blPfx  = isModif ? "BL MODIF"  : "BL";
 
-    // 1. Archive du bon (PDF app) et du BL, en deux fichiers Drive
-    const bonFile = await driveUpload(googleToken, "BON · " + base + ".pdf", Buffer.from(bonPdfBase64, "base64"));
+    // 1. Archive du bon (PDF app) et du BL, en deux fichiers Drive (une version par traitement)
+    const bonFile = await driveUpload(googleToken, bonPfx + " · " + base + stamp + ".pdf", Buffer.from(bonPdfBase64, "base64"));
     let blFile = null;
-    if (blBase64) { try { blFile = await driveUpload(googleToken, "BL · " + base + ".pdf", Buffer.from(blBase64, "base64")); } catch(e){ console.warn("BL upload fail:", e.message); } }
+    if (blBase64) { try { blFile = await driveUpload(googleToken, blPfx + " · " + base + stamp + ".pdf", Buffer.from(blBase64, "base64")); } catch(e){ console.warn("BL upload fail:", e.message); } }
 
     // 2. Événement agenda, avec les deux liens
     let dateISO = new Date().toISOString().split("T")[0];
@@ -373,19 +376,26 @@ async function handleAppBon(googleToken, body){
       blFile ? "📎 BL original : " + driveLink(blFile.id) : ""
     ].filter(Boolean).join("\n");
 
-    const gFetch = (url, opts = {}) => fetch(url, { ...opts, headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json", ...(opts.headers||{}) } });
-    const calResp = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`,
-      { method: "POST", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.`,
-          location: [lieu, salle].filter(Boolean).join(" — "),
-          description,
-          start: { dateTime: startISO, timeZone: "Europe/Paris" },
-          end:   { dateTime: endISO,   timeZone: "Europe/Paris" },
-          colorId: "5"
-        }) }
-    );
+    const evBody = {
+      summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.` + (isModif ? " (modifiée)" : ""),
+      location: [lieu, salle].filter(Boolean).join(" — "),
+      description,
+      start: { dateTime: startISO, timeZone: "Europe/Paris" },
+      end:   { dateTime: endISO,   timeZone: "Europe/Paris" },
+      colorId: "5"
+    };
+    const calBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
+    let calResp;
+    if (replaceEventId) {
+      // Remplace intégralement l'entrée agenda existante
+      calResp = await fetch(`${calBase}/${encodeURIComponent(replaceEventId)}`,
+        { method: "PATCH", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" }, body: JSON.stringify(evBody) });
+      if (!calResp.ok) { // l'événement n'existe plus → on en crée un neuf
+        calResp = await fetch(calBase, { method: "POST", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" }, body: JSON.stringify(evBody) });
+      }
+    } else {
+      calResp = await fetch(calBase, { method: "POST", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" }, body: JSON.stringify(evBody) });
+    }
     const calEvent = await calResp.json();
 
     // 3. GreenLoop (best-effort)
