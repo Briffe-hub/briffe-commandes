@@ -427,7 +427,6 @@ async function processEmail(msg) {
       }
       liv.sheetName = sheetName;
 
-      var prep1 = await greenloopPrepFor(resolvedClient, liv.type_prestation, liv.nombre_personnes);
       try {
         var resp = await fetch("/api/process",{
           method:"POST",
@@ -437,8 +436,7 @@ async function processEmail(msg) {
             livraison:liv,
             numero_commande:extracted.numero_commande,
             client:resolvedClient,
-            blBase64:blBase64,
-            preparation:prep1
+            blBase64:blBase64
           })
         });
         var result = await resp.json();
@@ -660,7 +658,6 @@ async function regenerate(msgId) {
     var pdfPart = pdfParts[li]||pdfParts[0];
     if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){}}
 
-    var prep2 = await greenloopPrepFor(resolvedClient, liv.type_prestation, liv.nombre_personnes);
     try {
       var resp = await fetch("/api/process",{
         method:"POST",
@@ -670,8 +667,7 @@ async function regenerate(msgId) {
           livraison:liv,
           numero_commande:order.data.numero_commande,
           client:resolvedClient,
-          blBase64:blBase64,
-          preparation:prep2
+          blBase64:blBase64
         })
       });
       var result = await resp.json();
@@ -805,42 +801,67 @@ function renderEmailList(){
   document.getElementById("main").innerHTML=html;
 }
 
+var HISTORY_FILES=[];
 async function loadHistory() {
-  document.getElementById("history-list").innerHTML = '<div class="empty">Chargement depuis Drive...</div>';
+  var host=document.getElementById("history-list");
+  host.innerHTML = '<div class="empty">Chargement depuis Drive...</div>';
   try {
     var folderId = "1qrOcZO7hhKcu9hmFEbBC8M8TOSn6EyDW";
-    var url = "https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,webViewLink)&pageSize=100";
+    var url = "https://www.googleapis.com/drive/v3/files?q='" + folderId + "'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,webViewLink)&pageSize=300";
     var data = await gFetch(url);
-    var files = data.files || [];
-    if (!files.length) {
-      document.getElementById("history-list").innerHTML = '<div class="empty">Aucune commande traitee trouvee dans Drive.</div>';
-      return;
-    }
-    var html = '<div class="addr-row" style="border-bottom:1px solid #2a2a2a;margin-bottom:4px">'
-      + '<div style="flex:1;color:#555;font-size:11px">Commande</div>'
-      + '<div style="min-width:100px;color:#555;font-size:11px">Date</div>'
-      + '<div style="width:80px"></div></div>';
-    files.forEach(function(f) {
-      var date = f.createdTime ? new Date(f.createdTime).toLocaleDateString("fr-FR") : "—";
-      var name = f.name.replace(".pdf","");
-      // Extract DEV number from filename
-      var devMatch = f.name.match(/DEV-\d+/);
-      var devNum = devMatch ? devMatch[0] : null;
-      var blBtn = devNum
-        ? '<button class="btn" data-dev="'+esc(devNum)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>'
-        : '';
-      html += '<div class="addr-row">'
-        + '<div style="flex:1;color:#e8e8e0;font-size:12px">'+esc(name)+'</div>'
-        + '<div style="min-width:100px;color:#555;font-size:11px">'+date+'</div>'
-        + '<div style="display:flex;gap:6px">'
-        + '<a href="'+esc(f.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128196; Bon de prep.</a>'
-        + blBtn
-        + '</div></div>';
-    });
-    document.getElementById("history-list").innerHTML = html;
+    HISTORY_FILES = data.files || [];
+    host.innerHTML =
+      '<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'
+      + '<input id="hist-search" type="text" placeholder="Rechercher : client, DEV, prestation, date..." oninput="renderHistoryRows()" style="flex:1;min-width:220px;background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;color:#e8e8e0;padding:9px 12px;font-size:13px;outline:none">'
+      + '<select id="hist-sort" onchange="renderHistoryRows()" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;color:#e8e8e0;padding:9px 11px;font-size:13px">'
+      +   '<option value="trait-desc">Traitement (récent)</option>'
+      +   '<option value="presta-desc">Date presta (récent)</option>'
+      +   '<option value="presta-asc">Date presta (ancien)</option>'
+      +   '<option value="nom">Nom (A→Z)</option>'
+      + '</select>'
+      + '<span id="hist-count" style="font-size:11px;color:#555"></span></div>'
+      + '<div id="hist-rows"></div>';
+    renderHistoryRows();
   } catch(e) {
-    document.getElementById("history-list").innerHTML = '<div class="empty">Erreur : '+esc(e.message)+'</div>';
+    host.innerHTML = '<div class="empty">Erreur : '+esc(e.message)+'</div>';
   }
+}
+function histParseDate(name){
+  var m=(name||"").match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? new Date(+m[3], +m[2]-1, +m[1]).getTime() : 0;
+}
+function renderHistoryRows(){
+  var rowsEl=document.getElementById("hist-rows"); if(!rowsEl) return;
+  var q=(document.getElementById("hist-search")||{}).value||"";
+  var sort=(document.getElementById("hist-sort")||{}).value||"trait-desc";
+  var nq=normalize(q);
+  var list=HISTORY_FILES.filter(function(f){ return !nq || normalize(f.name).indexOf(nq)>=0; });
+  list.sort(function(a,b){
+    if(sort==="presta-desc") return histParseDate(b.name)-histParseDate(a.name);
+    if(sort==="presta-asc")  return histParseDate(a.name)-histParseDate(b.name);
+    if(sort==="nom")         return normalize(a.name).localeCompare(normalize(b.name));
+    return new Date(b.createdTime)-new Date(a.createdTime);
+  });
+  var cnt=document.getElementById("hist-count"); if(cnt) cnt.textContent=list.length+" / "+HISTORY_FILES.length;
+  if(!HISTORY_FILES.length){ rowsEl.innerHTML='<div class="empty">Aucune commande traitee trouvee dans Drive.</div>'; return; }
+  if(!list.length){ rowsEl.innerHTML='<div class="empty">Aucun résultat.</div>'; return; }
+  var html='<div class="addr-row" style="border-bottom:1px solid #2a2a2a;margin-bottom:4px">'
+    +'<div style="flex:1;color:#555;font-size:11px">Commande</div>'
+    +'<div style="min-width:100px;color:#555;font-size:11px">Traité le</div>'
+    +'<div style="width:80px"></div></div>';
+  list.forEach(function(f){
+    var date=f.createdTime?new Date(f.createdTime).toLocaleDateString("fr-FR"):"—";
+    var name=f.name.replace(".pdf","");
+    var devMatch=f.name.match(/DEV-\d+/); var devNum=devMatch?devMatch[0]:null;
+    var blBtn=devNum?'<button class="btn" data-dev="'+esc(devNum)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>':'';
+    html+='<div class="addr-row">'
+      +'<div style="flex:1;color:#e8e8e0;font-size:12px">'+esc(name)+'</div>'
+      +'<div style="min-width:100px;color:#555;font-size:11px">'+date+'</div>'
+      +'<div style="display:flex;gap:6px">'
+      +'<a href="'+esc(f.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128196; Bon de prep.</a>'
+      +blBtn+'</div></div>';
+  });
+  rowsEl.innerHTML=html;
 }
 
 async function archiveCancellation(msgId) {
@@ -921,62 +942,6 @@ function prepComputeLine(line,pax){
   else if(ct.type==='formats'){var sz=(ct.sizes||[1]).slice().sort(function(a,b){return a-b;}),ch=null;for(var i=0;i<sz.length;i++){if(sz[i]>=total-1e-9){ch={n:1,s:sz[i]};break;}}if(!ch){var mx=sz[sz.length-1];ch={n:pceil(total/mx),s:mx};}r.qty=ch.n+' × '+pfnum(ch.s,2)+' L';}
   else if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),parts=[];for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)parts.push(nn+' × '+s2);rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){parts.push(mm+' × '+s2);rem-=mm*s2;}}}r.qty=(parts.length?parts.join(' + '):'0')+' '+(ct.unit||'Boîte')+'(s)';}
   return r;
-}
-/* Quantité PHYSIQUE (nombre d'exemplaires) d'une ligne, pour GreenLoop. */
-function prepLineCount(line,pax){
-  var c=line.calc,ct=line.cont; if(!c||!ct) return 0;
-  if(c.type==='flag') return 0;
-  var total=0;
-  if(c.type==='vol') total=c.base*(c.pct==null?1:c.pct)*pax;
-  else if(c.type==='pcs') total=c.base*(c.pct==null?1:c.pct)*pax;
-  else if(c.type==='gram') total=c.base*pax;
-  else if(c.type==='paxpct') total=pceil(pax*(c.pct||0));
-  else if(c.type==='ratio') total=pax/(c.divisor||1);
-  if(ct.type==='cap') return pceil(total/(ct.size||1));
-  if(ct.type==='raw') return 0; // brut (kg) : pas un matériel unitaire GreenLoop
-  if(ct.type==='caisse12'){var b=pceil(total); return b>=12?pceil(b/12):b;}
-  if(ct.type==='formats'){var sz=(ct.sizes||[1]).slice().sort(function(a,b){return a-b;});for(var i=0;i<sz.length;i++){if(sz[i]>=total-1e-9)return 1;}return pceil(total/sz[sz.length-1]);}
-  if(ct.type==='boxes'){var bs=(ct.sizes||[30,10]).slice().sort(function(a,b){return b-a;}),rem=pceil(total),tot=0;for(var k=0;k<bs.length;k++){var s2=bs[k];if(k===bs.length-1){var nn=pceil(rem/s2);if(nn>0)tot+=nn;rem=0;}else{var mm=Math.floor(rem/s2);if(mm>0){tot+=mm;rem-=mm*s2;}}}return tot;}
-  return 0;
-}
-/* Correspondances GreenLoop d'une ligne : une ligne peut alimenter PLUSIEURS
-   matériels GreenLoop (ex. cuillère à café → cuillère + pot à cuillères). */
-function prepGlList(line){
-  if(Array.isArray(line.gl)) return line.gl;
-  if(line.glCode) return [{code:line.glCode,mode:'auto',n:1}];
-  return [];
-}
-function prepGlQty(g,base,pax){
-  var mode=g.mode||'auto',n=parseInt(g.n,10)||0;
-  if(mode==='fixe') return n>0?n:0;
-  if(mode==='pax')  return n>0?pceil(pax/n):0;
-  if(mode==='ratio')return n>0?pceil(base/n):0;
-  return base; // auto = quantité calculée de la ligne
-}
-/* Liste matériel GreenLoop [{code,qte,nom}] d'une prestation calculette (agrégée par code). */
-function greenloopPrep(presta,pax){
-  var acc={};
-  (presta.lines||[]).forEach(function(l){
-    if(l.optional && l.defaultOn===false) return; // options non incluses à l'import auto
-    var gl=prepGlList(l); if(!gl.length) return;
-    var base=Math.round(prepLineCount(l,pax)||0);
-    gl.forEach(function(g){
-      if(!g.code) return;
-      var q=prepGlQty(g,base,pax);
-      if(q>0){ if(!acc[g.code]) acc[g.code]={code:g.code,qte:0,nom:l.label}; acc[g.code].qte+=q; }
-    });
-  });
-  return Object.keys(acc).map(function(k){return acc[k];});
-}
-/* Trouve la prestation calculette pour (client,type) et renvoie sa liste GreenLoop. */
-async function greenloopPrepFor(client, typePresta, pax){
-  try{
-    if(!PREP_CONFIG) await loadPrepConfig();
-    if(!PREP_CONFIG) return [];
-    var found=findPrepPresta(PREP_CONFIG, client, typePresta);
-    if(!found) return [];
-    return greenloopPrep(found.presta, parseInt(pax,10)||0);
-  }catch(e){ return []; }
 }
 var PREP_MATCH={
   euratech:[{kw:['elabore','sain'],p:'PDJ élaboré & sain'},{kw:['gourmande'],p:'PC Gourmande'},{kw:['pause','cafe','pc'],p:'PC Simple'},{kw:['dejeuner','pdj','petit'],p:'PDJ Simple'}],
