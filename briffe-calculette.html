@@ -106,7 +106,7 @@ input[type=number]{width:90px}
 
 <div id="tab-bar">
   <button class="tab-btn active" id="tb-param" onclick="showTab('param')">Paramétrage</button>
-  <button class="tab-btn" id="tb-calc" onclick="showTab('calc')">Bon fictif</button>
+  <button class="tab-btn" id="tb-calc" onclick="showTab('calc')">Bon manuel</button>
 </div>
 
 <!-- ===================== PARAMÉTRAGE ===================== -->
@@ -153,6 +153,16 @@ input[type=number]{width:90px}
     </label>
   </div>
   <div id="c-options" class="bar no-print"></div>
+  <div class="bar no-print" style="border-top:1px solid var(--line);padding-top:12px">
+    <label class="fld">N° BL<input type="text" id="m-bl" placeholder="DEV-XXXXX"></label>
+    <label class="fld">Date<input type="text" id="m-date" placeholder="JJ/MM/AAAA"></label>
+    <label class="fld">Livraison (h)<input type="text" id="m-mep" placeholder="07:00" style="width:80px"></label>
+    <label class="fld">Événement (h)<input type="text" id="m-ev" placeholder="12:00" style="width:80px"></label>
+    <label class="fld" style="flex:1;min-width:160px">Lieu<input type="text" id="m-lieu" placeholder="adresse" style="width:100%"></label>
+    <label class="fld">Salle<input type="text" id="m-salle" style="width:90px"></label>
+    <button class="btn primary" onclick="validerManuel()" title="Génère le bon (nouveau format), l'imprime et l'ajoute à l'agenda">Valider et traiter</button>
+    <span class="status" id="m-status"></span>
+  </div>
   <div id="bon-wrap"><div class="hint">Choisis une prestation et un nombre de personnes, puis « Générer ».</div></div>
 </div>
 
@@ -262,35 +272,6 @@ function seedConfig(){
 var CONFIG=null, apiOK=true, sc=0, sp=0;
 var SECTIONS=['BOISSONS','CONSOMMABLES','FRAIS','VERRERIE','MATERIEL','OPTIONS'];
 
-/* Liste des matériels GreenLoop (pour mapper chaque ligne -> 1 matériel GreenLoop) */
-var GLMATS=[];
-var GL_LIST_URL='https://oshgbbywvcrwruzgravd.supabase.co/functions/v1/list-materiel';
-async function loadGLMats(){try{var r=await fetch(GL_LIST_URL);if(r.ok){var j=await r.json();if(Array.isArray(j))GLMATS=j;}}catch(e){}}
-
-/* Calcule la liste matériel GreenLoop [{code,qte,nom}] pour une prestation + nb de pers.
-   Les options non actives par défaut ne sont pas incluses (import auto). */
-function glQty(g,base,pax){
-  var mode=g.mode||'auto',n=parseInt(g.n,10)||0;
-  if(mode==='fixe') return n>0?n:0;
-  if(mode==='pax')  return n>0?ceil(pax/n):0;
-  if(mode==='ratio')return n>0?ceil(base/n):0;
-  return base; // auto = quantité calculée de la ligne
-}
-function computeGreenloopPrep(presta,pax){
-  var acc={};
-  (presta.lines||[]).forEach(function(l){
-    if(l.optional && l.defaultOn===false)return;
-    var gl=glList(l);if(!gl.length)return;
-    var base=Math.round((computeLine(l,pax).count)||0);
-    gl.forEach(function(g){
-      if(!g.code)return;
-      var q=glQty(g,base,pax);
-      if(q>0){ if(!acc[g.code])acc[g.code]={code:g.code,qte:0,nom:l.label}; acc[g.code].qte+=q; }
-    });
-  });
-  return Object.keys(acc).map(function(k){return acc[k];});
-}
-
 async function loadConfig(){
   var local=null;try{local=JSON.parse(localStorage.getItem('bt_prestations')||'null');}catch(_){}
   var usedLocal=false;
@@ -369,39 +350,6 @@ var CONT_TYPES=[['cap','Capacité'],['raw','Brut'],['caisse12','Eau (caisse 12)'
 
 function selOpts(list,val){return list.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>';}).join('');}
 
-/* Correspondances GreenLoop d'une ligne : une ligne calculette peut alimenter
-   PLUSIEURS matériels GreenLoop (ex. cuillère à café → cuillère + pot à cuillères),
-   chacun avec sa règle de quantité. Modèle : line.gl = [{code,mode,n}].
-   mode : auto = quantité calculée de la ligne ; fixe = n ; pax = 1 pour n pers ;
-   ratio = 1 pour n exemplaires calculés. */
-var GL_MODES=[['auto','Quantité calculée'],['fixe','Fixe'],['pax','1 / N pers'],['ratio','1 / N calculés']];
-function glList(line){
-  if(Array.isArray(line.gl)) return line.gl;
-  if(line.glCode){ line.gl=[{code:line.glCode,mode:'auto',n:1}]; delete line.glCode; return line.gl; }
-  line.gl=[]; return line.gl;
-}
-function glMatOptions(code){
-  var opts='<option value="">— choisir —</option>'+GLMATS.map(function(m){return '<option value="'+esc(m.code)+'"'+(m.code===code?' selected':'')+'>'+esc(m.nom)+'</option>';}).join('');
-  if(code && !GLMATS.some(function(m){return m.code===code;})) opts+='<option value="'+esc(code)+'" selected>'+esc(code)+' (?)</option>';
-  return opts;
-}
-function glBlock(line){
-  var gl=glList(line),h='';
-  gl.forEach(function(g,gi){
-    var showN=(g.mode&&g.mode!=='auto');
-    h+='<div class="glrow" style="display:flex;gap:4px;align-items:center;margin-bottom:3px;flex-wrap:wrap">'
-      +(GLMATS.length
-        ? '<select class="ty" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="code" style="min-width:120px">'+glMatOptions(g.code)+'</select>'
-        : '<input class="u" type="text" placeholder="GL-…" value="'+esc(g.code||'')+'" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="code">')
-      +'<select class="ty" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="mode" style="min-width:110px">'+selOpts(GL_MODES,g.mode||'auto')+'</select>'
-      +'<input class="p" type="number" step="1" min="1" value="'+(g.n==null?'':g.n)+'" data-id="'+line.id+'" data-gi="'+gi+'" data-gf="n" style="width:52px'+(showN?'':';visibility:hidden')+'">'
-      +'<button class="btn small danger" data-id="'+line.id+'" data-gi="'+gi+'" data-act="gldel" title="Retirer cette correspondance">✕</button>'
-      +'</div>';
-  });
-  h+='<button class="btn small" data-id="'+line.id+'" data-act="gladd" style="font-size:10px;padding:2px 6px">+ matériel</button>';
-  return h;
-}
-
 function calcInputs(line){
   var c=line.calc,id=line.id,h='';
   if(c.type==='vol'||c.type==='pcs'){
@@ -448,7 +396,6 @@ function renderEditor(){
         +'<div class="cell"><span class="clab">calcul</span><select class="ty" data-id="'+l.id+'" data-f="calc.type">'+selOpts(CALC_TYPES,l.calc.type)+'</select>'+calcInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">contenant</span><select class="ty" data-id="'+l.id+'" data-f="cont.type">'+selOpts(CONT_TYPES,l.cont.type)+'</select>'+contInputs(l)+'</div>'
         +'<div class="cell"><span class="clab">prix €</span><input class="p" type="number" step="0.001" value="'+(l.price||0)+'" data-id="'+l.id+'" data-f="price"></div>'
-        +'<div class="cell"><span class="clab">GreenLoop</span>'+glBlock(l)+'</div>'
         +'<div class="cell end"><label class="opt"><input type="checkbox" '+(l.optional?'checked':'')+' data-id="'+l.id+'" data-f="optional"> option</label>'
         +'<button class="btn small danger" data-id="'+l.id+'" data-act="del">✕</button></div>'
         +'</div>';
@@ -463,7 +410,6 @@ function setField(line,f,val){
   if(f==='label')line.label=val;
   else if(f==='price')line.price=parseFloat(val)||0;
   else if(f==='optional')line.optional=val;
-  else if(f==='glcode')line.glCode=val;
   else if(f==='calc.type'){line.calc=defaultCalc(val);}
   else if(f==='cont.type'){line.cont=defaultCont(val);}
   else if(f==='calc.base')line.calc.base=parseFloat(val)||0;
@@ -492,30 +438,6 @@ function wireEditor(){
     b.addEventListener('click',function(){
       var id=b.getAttribute('data-id'),p=curPresta();
       p.lines=p.lines.filter(function(l){return l.id!==id;});renderEditor();
-    });
-  });
-  // Correspondances GreenLoop multiples par ligne
-  host.querySelectorAll('[data-gf]').forEach(function(el){
-    var evt=el.tagName==='SELECT'?'change':'input';
-    el.addEventListener(evt,function(){
-      var line=findLine(el.getAttribute('data-id'));if(!line)return;
-      var gl=glList(line),g=gl[+el.getAttribute('data-gi')];if(!g)return;
-      var gf=el.getAttribute('data-gf');
-      if(gf==='code')g.code=el.value;
-      else if(gf==='mode'){g.mode=el.value;if(g.mode!=='auto'&&(g.n==null||g.n<1))g.n=(g.mode==='fixe'?1:50);renderEditor();}
-      else if(gf==='n')g.n=parseInt(el.value,10)||0;
-    });
-  });
-  host.querySelectorAll('[data-act=gladd]').forEach(function(b){
-    b.addEventListener('click',function(){
-      var line=findLine(b.getAttribute('data-id'));if(!line)return;
-      glList(line).push({code:'',mode:'auto',n:1});renderEditor();
-    });
-  });
-  host.querySelectorAll('[data-act=gldel]').forEach(function(b){
-    b.addEventListener('click',function(){
-      var line=findLine(b.getAttribute('data-id'));if(!line)return;
-      glList(line).splice(+b.getAttribute('data-gi'),1);renderEditor();
     });
   });
 }
@@ -580,9 +502,26 @@ function generate(){
 
 /* ============================ INIT ============================ */
 document.getElementById('c-presta').addEventListener('change',renderOptionToggles);
+function mval(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+function setM(t,c){ var e=document.getElementById('m-status'); if(e){ e.textContent=t; e.className='status'+(c?' '+c:''); } }
+function validerManuel(){
+  var ci=+document.getElementById('c-client').value, pi=+document.getElementById('c-presta').value;
+  var client=CONFIG.clients[ci]; if(!client){ setM('Choisis un client.','err'); return; }
+  var presta=client.prestations[pi]; if(!presta){ setM('Choisis une prestation.','err'); return; }
+  var pax=parseInt(document.getElementById('c-pax').value,10)||0;
+  if(pax<1){ setM('Indique le nombre de personnes.','err'); return; }
+  generate();
+  var payload={ type:'bt-bon-manuel', client:client.name, prestation:presta.name, pax:pax,
+    blNum:mval('m-bl'), date:mval('m-date'), heureMep:mval('m-mep')||'07:00', heureEv:mval('m-ev')||'12:00',
+    lieu:mval('m-lieu'), salle:mval('m-salle') };
+  try{
+    if(window.parent && window.parent!==window){ window.parent.postMessage(payload,'*'); setM('Envoyé : impression + agenda en cours...','ok'); }
+    else { setM("À utiliser depuis l'onglet « Paramétrage prépa » de la page Commandes (connexion Google requise).",'warn'); }
+  }catch(e){ setM('Erreur : '+e.message,'err'); }
+}
 if(location.search.indexOf('embed')>=0) document.body.classList.add('embed');
 (async function(){
-  await Promise.all([loadConfig(), loadGLMats()]);
+  await loadConfig();
   refreshSelectors();
   renderEditor();
 })();
