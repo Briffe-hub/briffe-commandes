@@ -91,6 +91,7 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
   <button class="tab-btn" id="tab-admin" onclick="showTab('admin')">Adresses</button>
   <button class="tab-btn" id="tab-history" onclick="showTab('history')">Commandes traitees</button>
   <button class="tab-btn" id="tab-param" onclick="showTab('param')">Paramétrage prépa</button>
+  <button class="tab-btn" id="tab-stats" onclick="showTab('stats')">Stats</button>
 </div>
 <div id="tab-admin-panel">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -108,6 +109,22 @@ button{font-family:'DM Mono',monospace;cursor:pointer}
 </div>
 <div id="tab-param-panel" style="display:none">
   <iframe id="param-frame" title="Paramétrage préparation" style="width:100%;height:calc(100vh - 118px);border:0;display:block;background:#0f0f0f"></iframe>
+</div>
+<div id="tab-stats-panel" style="display:none;padding:20px 28px;max-width:1000px;margin:0 auto">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+    <div style="font-size:10px;color:#444;letter-spacing:.14em;text-transform:uppercase">Statistiques</div>
+    <span style="flex:1"></span>
+    <select id="stats-period" onchange="renderStats()" style="background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;color:#e8e8e0;padding:9px 11px;font-size:13px">
+      <option value="30">30 derniers jours</option>
+      <option value="90">3 derniers mois</option>
+      <option value="365" selected>12 derniers mois</option>
+      <option value="ytd">Année en cours</option>
+      <option value="all">Tout</option>
+    </select>
+    <button class="btn" onclick="loadStats()">&#8635; Actualiser</button>
+    <button class="btn" onclick="importAgendaStats()" title="Amorcer les stats avec les commandes passées (agenda, événements AO uniquement)">Importer l'historique (agenda)</button>
+  </div>
+  <div id="stats-content"><div class="empty">Chargement...</div></div>
 </div>
 <div class="main" id="main">
   <div class="connect-box">
@@ -551,10 +568,13 @@ function showTab(tab){
   document.getElementById("tab-admin-panel").style.display = tab==="admin"?"block":"none";
   document.getElementById("tab-history-panel").style.display = tab==="history"?"block":"none";
   var pp=document.getElementById("tab-param-panel"); if(pp) pp.style.display = tab==="param"?"block":"none";
+  var ts=document.getElementById("tab-stats"); if(ts) ts.className="tab-btn"+(tab==="stats"?" active":"");
+  var sp=document.getElementById("tab-stats-panel"); if(sp) sp.style.display = tab==="stats"?"block":"none";
   if(tab==="param"){ var fr=document.getElementById("param-frame"); if(fr&&!fr.getAttribute("src")){ fr.setAttribute("src","briffe-calculette.html?embed=1"); } }
   window.scrollTo(0,0);
   if (tab==="admin") loadAddresses();
   if (tab==="history") loadHistory();
+  if (tab==="stats") loadStats();
 }
 
 async function findBL(devNum, btn) {
@@ -1251,6 +1271,7 @@ async function processModification(msg){
       };
       viewLivs.push({type_prestation:liv.type_prestation, nombre_personnes:liv.nombre_personnes, date_evenement:liv.date_evenement, lieu:liv.lieu});
       var found=cfg?findPrepPresta(cfg, client, liv.type_prestation):null;
+      if(found) liv.prestaName=found.presta.name;
       var bonPdf=found?await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev):null;
       var blB64=null, pp=pdfParts[li]||pdfParts[0]; if(pp){ try{ blB64=await fetchAttachment(msg.id, pp.body.attachmentId); }catch(e){} }
       var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({googleToken:TOKEN, livraison:liv, numero_commande:dev, client:(found?found.client.name:client), blBase64:blB64, bonPdfBase64:bonPdf, replaceEventId:(orig?orig.eventId:null), isModif:true})});
@@ -1263,6 +1284,104 @@ async function processModification(msg){
     renderEmailList();
     (async function(){ for(var i=0;i<results.length;i++){ var r=results[i]; if(r.blBase64){autoPrint(r.blBase64); await new Promise(function(res){setTimeout(res,4000);});} if(r.bonPdfBase64){autoPrint(r.bonPdfBase64); await new Promise(function(res){setTimeout(res,4000);});} } })();
   }catch(e){ console.error("processModification", e); ORDERS[id]={status:"error", error:e.message, msgId:msg.id, data:{isModif:true}}; renderEmailList(); }
+}
+
+/* ===== Onglet Statistiques (lit le journal /api/stats alimenté au traitement) ===== */
+var STATS_RECORDS=[];
+async function loadStats(){
+  var host=document.getElementById("stats-content"); if(host) host.innerHTML='<div class="empty">Chargement...</div>';
+  try{ var r=await fetch("/api/stats",{cache:"no-store"}); var j=await r.json(); STATS_RECORDS=(j&&j.records)||[]; }
+  catch(e){ STATS_RECORDS=[]; }
+  renderStats();
+}
+function statParseDate(s){ if(!s) return null; var m=String(s).match(/(\d{2})\/(\d{2})\/(\d{4})/); if(m) return new Date(+m[3],+m[2]-1,+m[1]); var d=new Date(s); return isNaN(d.getTime())?null:d; }
+function renderStats(){
+  var host=document.getElementById("stats-content"); if(!host) return;
+  var per=(document.getElementById("stats-period")||{}).value||"365";
+  var now=new Date(), min=null;
+  if(per==="all") min=null;
+  else if(per==="ytd") min=new Date(now.getFullYear(),0,1);
+  else min=new Date(now.getTime()-parseInt(per,10)*86400000);
+  var recs=STATS_RECORDS.filter(function(r){ var d=statParseDate(r.date); if(!d) return per==="all"; if(min&&d<min) return false; return true; });
+  if(!recs.length){ host.innerHTML='<div class="empty">Aucune donnée sur cette période.<br><span style="font-size:12px;color:#555">Les stats se remplissent au fil des traitements. Utilise « Importer l\'historique (agenda) » pour amorcer le passé.</span></div>'; return; }
+  var totalPax=0, byPresta={}, byClient={}, byMonth={};
+  recs.forEach(function(r){
+    var pax=Number(r.pax)||0; totalPax+=pax;
+    var pk=(r.prestation||"—").trim()||"—"; (byPresta[pk]=byPresta[pk]||{pax:0,n:0}).pax+=pax; byPresta[pk].n++;
+    var ck=(r.client||"—").trim()||"—"; (byClient[ck]=byClient[ck]||{pax:0,n:0}).pax+=pax; byClient[ck].n++;
+    var d=statParseDate(r.date); if(d){ var mk=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); byMonth[mk]=(byMonth[mk]||0)+pax; }
+  });
+  var nCmd=recs.length, nClients=Object.keys(byClient).length, avg=nCmd?Math.round(totalPax/nCmd):0;
+  function fnum(n){ return (Number(n)||0).toLocaleString("fr-FR"); }
+  function tile(v,l){ return '<div style="background:#141414;border:1px solid #1e1e1e;border-radius:12px;padding:16px 18px"><div style="font-size:26px;font-weight:500;color:#e8e8e0">'+v+'</div><div style="font-size:11px;color:#8a8a82;letter-spacing:.04em;margin-top:3px">'+l+'</div></div>'; }
+  function bars(obj){
+    var arr=Object.keys(obj).map(function(k){return {k:k,v:obj[k].pax,n:obj[k].n};}).sort(function(a,b){return b.v-a.v;});
+    var max=arr.reduce(function(m,x){return Math.max(m,x.v);},0)||1;
+    return arr.map(function(x){
+      var w=Math.round(x.v/max*100);
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">'
+        +'<div style="width:210px;font-size:12px;color:#e8e8e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+esc(x.k)+'">'+esc(x.k)+'</div>'
+        +'<div style="flex:1;background:#0f0f0f;border-radius:6px;overflow:hidden;height:20px"><div style="width:'+w+'%;height:100%;background:linear-gradient(90deg,#921821,#b3242e)"></div></div>'
+        +'<div style="width:130px;text-align:right;font-size:12px;color:#e8e8e0">'+fnum(x.v)+' pers. <span style="color:#5a5a56">('+x.n+')</span></div>'
+        +'</div>';
+    }).join("");
+  }
+  function monthBars(){
+    var keys=Object.keys(byMonth).sort();
+    if(!keys.length) return '<div class="empty" style="padding:10px">—</div>';
+    var max=keys.reduce(function(m,k){return Math.max(m,byMonth[k]);},0)||1;
+    var mn=["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+    return '<div style="display:flex;align-items:flex-end;gap:6px;min-height:150px;padding-top:10px;overflow-x:auto">'+keys.map(function(k){
+      var h=Math.round(byMonth[k]/max*120), p=k.split("-");
+      return '<div style="flex:1;min-width:34px;display:flex;flex-direction:column;align-items:center;gap:4px" title="'+byMonth[k]+' pers.">'
+        +'<div style="font-size:10px;color:#8a8a82">'+byMonth[k]+'</div>'
+        +'<div style="width:70%;background:linear-gradient(180deg,#b3242e,#921821);border-radius:4px 4px 0 0;height:'+Math.max(h,2)+'px"></div>'
+        +'<div style="font-size:9px;color:#5a5a56;white-space:nowrap">'+(mn[+p[1]-1]||"")+" "+p[0].slice(2)+'</div></div>';
+    }).join("")+'</div>';
+  }
+  function section(t,inner){ return '<div style="margin-bottom:26px"><div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#b3242e;margin-bottom:12px;border-bottom:1px solid #1e1e1e;padding-bottom:6px">'+t+'</div>'+inner+'</div>'; }
+  host.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px">'
+      +tile(fnum(totalPax),"personnes au total")+tile(fnum(nCmd),"prestations")
+      +tile(fnum(avg),"pers. / prestation (moy.)")+tile(fnum(nClients),"clients")
+    +'</div>'
+    + section("Personnes par type de prestation", bars(byPresta))
+    + section("Évolution mensuelle (personnes)", monthBars())
+    + section("Par client", bars(byClient));
+}
+async function importAgendaStats(){
+  if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
+  if(!confirm("Importer les commandes passées depuis l'agenda (événements « AO … » créés par briffetools uniquement) vers les statistiques ?")) return;
+  var host=document.getElementById("stats-content"); if(host) host.innerHTML='<div class="empty">Import depuis l\'agenda…</div>';
+  try{
+    var CAL="logistique@briffe.me", timeMin=new Date(Date.now()-1000*60*60*24*730).toISOString();
+    var items=[], pageToken=null, guard=0;
+    do{
+      var url="https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(CAL)+"/events?singleEvents=true&maxResults=250&timeMin="+encodeURIComponent(timeMin)+(pageToken?("&pageToken="+pageToken):"");
+      var data=await gFetch(url); items=items.concat(data.items||[]); pageToken=data.nextPageToken; guard++;
+    }while(pageToken && guard<20);
+    var recs=[];
+    items.forEach(function(ev){
+      var s=ev.summary||"", d=ev.description||"";
+      if(!/^AO\s/.test(s)) return;
+      function g(re){ var m=d.match(re); return m?m[1].trim():""; }
+      var dev=g(/N°\s*(?:BL|Commande)\s*:\s*(DEV-\d+)/)||((s.match(/DEV-\d+/)||[])[0])||"";
+      var pax=parseInt(g(/Nombre de personnes\s*:\s*(\d+)/),10)||0;
+      var client=g(/Client\s*:\s*(.+)/), presta=g(/Prestation\s*:\s*(.+)/), lieu=g(/Adresse\s*:\s*(.+)/), date="";
+      if(ev.start&&ev.start.dateTime){ var dt=new Date(ev.start.dateTime); date=("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(); }
+      if((!client||!presta||!pax)&&/·/.test(s)){ var parts=s.replace(/^AO\s+\S+\s+/,"").split("·").map(function(x){return x.trim();}); if(!client)client=parts[0]||""; if(!presta)presta=parts[1]||""; if(!pax){var pm=(parts[2]||"").match(/(\d+)/); if(pm)pax=+pm[1];} }
+      if(!dev) dev="AG_"+(ev.id||Math.random().toString(36).slice(2));
+      recs.push({dev:dev, client:client||"—", prestation:(presta||"—").replace(/\s*\(modifiée\)\s*$/,""), pax:pax, date:date, lieu:lieu||"", ts:(ev.start&&ev.start.dateTime)||new Date().toISOString()});
+    });
+    if(!recs.length){ alert("Aucun événement « AO » trouvé dans l'agenda."); loadStats(); return; }
+    var count=0;
+    for(var i=0;i<recs.length;i+=100){
+      var r=await fetch("/api/stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({records:recs.slice(i,i+100)})});
+      var j=await r.json(); count+=(j&&j.count)||0;
+    }
+    alert("Import terminé : "+count+" commande(s) ajoutée(s) aux statistiques.");
+    loadStats();
+  }catch(e){ alert("Erreur import : "+e.message); loadStats(); }
 }
 </script>
 </body>
