@@ -477,7 +477,7 @@ async function processEmail(msg) {
         var found = cfg ? findPrepPresta(cfg, resolvedClient, liv.type_prestation) : null;
         if (found) { liv.prestaName = found.presta.name; bonPdfB64 = await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev); }
       } catch(e){ console.warn("bon PDF gen:", e); }
-      console.log("Commande:", dev, "| sheet:", sheetName, "| bonPDF:", !!bonPdfB64, "| client:", resolvedClient, "| presta:", liv.type_prestation);
+      console.log("Commande:", dev, "| client:", resolvedClient, "| libellé email:", liv.type_prestation, "| prestation retenue:", (found?found.presta.name:"—"), "| sheet:", sheetName, "| bonPDF:", !!bonPdfB64);
       if (!sheetName && !bonPdfB64) {
         sheetErrors.push("Prestation non reconnue pour "+resolvedClient+" / "+liv.type_prestation+(dev?(" ("+dev+")"):""));
         processedLivs.push(liv);
@@ -1044,15 +1044,37 @@ var PREP_MATCH={
   sciencespo:[{kw:['dejeuner','pdj','petit'],p:'PDJ'}]
 };
 function nkey(s){return normalize(s).replace(/\s+/g,'');}
+// Famille d'une prestation à partir d'un libellé (email) : un petit-déjeuner reste un PDJ
+// même s'il contient « café » ; une pause reste PC. '' = indéterminé.
+function prestaFamily(s){
+  s=normalize(s||'');
+  if(s.indexOf('petit dej')>=0 || /(^| )pdj( |$)/.test(s) || (s.indexOf('dejeuner')>=0 && s.indexOf('petit')>=0) || s.indexOf('breakfast')>=0) return 'PDJ';
+  if(s.indexOf('pause')>=0 || s.indexOf('cafe')>=0 || /(^| )pc( |$)/.test(s)) return 'PC';
+  return '';
+}
+// Famille déduite du NOM d'une prestation de la config (ex. "PDJ élaboré & sain" -> PDJ, "PC Simple" -> PC).
+function nameFamily(name){
+  var n=normalize(name||'');
+  if(n.indexOf('pdj')>=0 || n.indexOf('petit dej')>=0 || (n.indexOf('dejeuner')>=0 && n.indexOf('petit')>=0)) return 'PDJ';
+  if(n.indexOf('pc')>=0 || n.indexOf('pause')>=0 || n.indexOf('cafe')>=0) return 'PC';
+  return '';
+}
 function findPrepPresta(config, client, typePresta){
   if(!config||!config.clients) return null;
   var ck=nkey(client),clientObj=null;
   for(var i=0;i<config.clients.length;i++){if(nkey(config.clients[i].name)===ck){clientObj=config.clients[i];break;}}
   if(!clientObj) return null;
   var tp=normalize(typePresta||'');
-  for(var j=0;j<clientObj.prestations.length;j++){var pk=clientObj.prestations[j].keywords||[];for(var m=0;m<pk.length;m++){if(pk[m]&&tp.indexOf(normalize(pk[m]))>=0) return {client:clientObj,presta:clientObj.prestations[j]};}}
+  var famTp=prestaFamily(tp);
+  // Un match n'est accepté que si la famille de la prestation ciblée est compatible avec celle du libellé.
+  function famOK(p){ if(!famTp) return true; var nf=nameFamily(p.name); return !nf || nf===famTp; }
+  // 1) mots-clés définis dans la config
+  for(var j=0;j<clientObj.prestations.length;j++){var pk=clientObj.prestations[j].keywords||[];for(var m=0;m<pk.length;m++){if(pk[m]&&tp.indexOf(normalize(pk[m]))>=0 && famOK(clientObj.prestations[j])) return {client:clientObj,presta:clientObj.prestations[j]};}}
+  // 2) table de secours PREP_MATCH
   var rules=PREP_MATCH[ck]||[];
-  for(var a=0;a<rules.length;a++){for(var b=0;b<rules[a].kw.length;b++){if(tp.indexOf(rules[a].kw[b])>=0){var name=rules[a].p;for(var q=0;q<clientObj.prestations.length;q++){if(normalize(clientObj.prestations[q].name)===normalize(name)) return {client:clientObj,presta:clientObj.prestations[q]};}}}}
+  for(var a=0;a<rules.length;a++){for(var b=0;b<rules[a].kw.length;b++){if(tp.indexOf(rules[a].kw[b])>=0){var name=rules[a].p;for(var q=0;q<clientObj.prestations.length;q++){if(normalize(clientObj.prestations[q].name)===normalize(name) && famOK(clientObj.prestations[q])) return {client:clientObj,presta:clientObj.prestations[q]};}}}}
+  // 3) repli par famille : PDJ -> première prestation « PDJ » du client, PC -> première « PC »
+  if(famTp){ for(var q2=0;q2<clientObj.prestations.length;q2++){ if(nameFamily(clientObj.prestations[q2].name)===famTp) return {client:clientObj,presta:clientObj.prestations[q2]}; } }
   return null;
 }
 function prepBonHTML(clientName, presta, pax, liv, blNum){
