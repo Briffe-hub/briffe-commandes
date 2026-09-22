@@ -645,6 +645,33 @@ async function findBL(devNum, btn) {
   }
 }
 
+// Archive : ouvrir l'événement agenda correspondant à un DEV
+async function openAgendaForDev(dev, btn){
+  if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
+  var old=btn.innerHTML; btn.disabled=true; btn.textContent="...";
+  try{
+    var a=await findAgendaByDev(dev);
+    if(a&&a.htmlLink){ window.open(a.htmlLink,"_blank"); btn.innerHTML=old; btn.disabled=false; }
+    else { btn.textContent="Agenda introuvable"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
+  }catch(e){ btn.textContent="Erreur"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
+}
+// Archive : réimprimer les étiquettes d'un DEV à partir des infos de l'événement agenda
+async function labelsForDev(dev, btn){
+  if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
+  var old=btn.innerHTML; btn.disabled=true; btn.textContent="...";
+  try{
+    var a=await findAgendaByDev(dev);
+    if(!a||!a.fields){ btn.textContent="Agenda introuvable"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); return; }
+    var f=a.fields;
+    var v=prompt("Nombre d'étiquettes :","2"); if(v===null){ btn.innerHTML=old; btn.disabled=false; return; }
+    var n=parseInt(v,10); if(!(n>0)) n=2; if(n>50) n=50;
+    var place=f.client||f.lieu||"", html="";
+    for(var k=0;k<n;k++){ html+=labelHTML(place, dev, f.pax, f.date, f.mep); }
+    labelsPrintDoc(html);
+    btn.innerHTML=old; btn.disabled=false;
+  }catch(e){ btn.textContent="Erreur"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
+}
+
 async function loadAddresses(){
   document.getElementById("addr-list").innerHTML = '<div class="empty">Chargement...</div>';
   try {
@@ -941,6 +968,8 @@ function renderHistoryRows(){
     html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e">'
       +'<span style="flex:1;font-size:12px;color:#e8e8e0;font-weight:500">'+esc(fileLabel(latest.name))+'</span>'
       +(nver>1?'<span class="pill" style="border:1px solid #f59e0b44;background:#f59e0b11;color:#f59e0b"><span class="dot" style="background:#f59e0b"></span>'+(nver-1)+' modif'+((nver-1)>1?'s':'')+'</span>':'')
+      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="openAgendaForDev(this.dataset.dev,this)">&#128197; Agenda</button>':'')
+      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="labelsForDev(this.dataset.dev,this)">&#127991;&#65039; Étiquettes</button>':'')
       +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>':'')
       +'</div>';
     g.versions.slice().reverse().forEach(function(v,i){
@@ -1300,7 +1329,7 @@ async function findAgendaByDev(dev){
     function g(re){ var m=d.match(re); return m?m[1].trim():""; }
     var dateStr="";
     if(ev.start&&ev.start.dateTime){ var dt=new Date(ev.start.dateTime); dateStr=("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(); }
-    return { eventId:ev.id, fields:{
+    return { eventId:ev.id, htmlLink:ev.htmlLink||"", fields:{
       client:g(/Client\s*:\s*(.+)/), presta:g(/Prestation\s*:\s*(.+)/),
       pax:(parseInt(g(/Nombre de personnes\s*:\s*(\d+)/),10)||undefined),
       mep:g(/Mise en place\s*:\s*([0-9:hH]+)/), ev:g(/Événement\s*:\s*([0-9:hH]+)/),
