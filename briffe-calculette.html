@@ -161,6 +161,7 @@ input[type=number]{width:90px}
     <label class="fld" style="flex:1;min-width:160px">Lieu<input type="text" id="m-lieu" placeholder="adresse" style="width:100%"></label>
     <label class="fld">Salle<input type="text" id="m-salle" style="width:90px"></label>
     <button class="btn primary" onclick="validerManuel()" title="Génère le bon (nouveau format), l'imprime et l'ajoute à l'agenda">Valider et traiter</button>
+    <button class="btn small" onclick="reprendreManuel()" title="Recharger un bon manuel déjà traité (par n° de BL/référence) pour le modifier">Reprendre un bon traité</button>
     <span class="status" id="m-status"></span>
   </div>
   <div id="bon-wrap"><div class="hint">Choisis une prestation et un nombre de personnes, puis « Générer ».</div></div>
@@ -519,6 +520,43 @@ function validerManuel(){
     else { setM("À utiliser depuis l'onglet « Paramétrage prépa » de la page Commandes (connexion Google requise).",'warn'); }
   }catch(e){ setM('Erreur : '+e.message,'err'); }
 }
+/* ===== Reprise / modification d'un bon manuel déjà traité ===== */
+function mnrm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\(modifiee?\)/g,'').trim(); }
+function mvalSet(id,v){ var e=document.getElementById(id); if(e) e.value=(v==null?'':v); }
+function selectByLabel(selId, name){
+  var sel=document.getElementById(selId); if(!sel) return false;
+  var nn=mnrm(name); var hit=null;
+  for(var i=0;i<sel.options.length;i++){ if(mnrm(sel.options[i].textContent)===nn){ hit=sel.options[i]; break; } }
+  if(!hit) for(var j=0;j<sel.options.length;j++){ if(nn && mnrm(sel.options[j].textContent).indexOf(nn)>=0){ hit=sel.options[j]; break; } }
+  if(hit){ sel.value=hit.value; return true; }
+  return false;
+}
+function reprendreManuel(){
+  var ref=prompt("N° de BL / référence du bon manuel à modifier :", mval('m-bl'));
+  if(ref===null) return; ref=ref.trim(); if(!ref){ setM('Référence vide.','err'); return; }
+  if(window.parent && window.parent!==window){ window.parent.postMessage({type:'bt-load-manuel', ref:ref},'*'); setM('Recherche du bon « '+ref+' »…','ok'); }
+  else { setM("À utiliser depuis l'onglet « Paramétrage prépa » (connexion Google requise).",'warn'); }
+}
+function fillManuelForm(f){
+  if(!f){ setM('Bon introuvable.','err'); return; }
+  selectByLabel('c-client', f.client||'');
+  if(typeof onCalcClientChange==='function') onCalcClientChange();  // recharge la liste des prestations du client
+  selectByLabel('c-presta', f.presta||f.prestation||'');
+  if(f.pax) mvalSet('c-pax', f.pax);
+  mvalSet('m-bl', f.ref||f.blNum||'');
+  mvalSet('m-date', f.date||'');
+  mvalSet('m-mep', f.mep||f.heureMep||'');
+  mvalSet('m-ev', f.ev||f.heureEv||'');
+  mvalSet('m-lieu', f.lieu||'');
+  mvalSet('m-salle', f.salle||'');
+  if(typeof renderOptionToggles==='function') renderOptionToggles();
+  try{ generate(); }catch(e){}
+  setM('Bon « '+(f.ref||f.blNum||'')+' » chargé — modifie puis « Valider et traiter » pour remplacer.','ok');
+}
+window.addEventListener('message', function(ev){
+  var d=ev.data;
+  if(d && d.type==='bt-fill-manuel'){ fillManuelForm(d.fields); }
+});
 if(location.search.indexOf('embed')>=0) document.body.classList.add('embed');
 (async function(){
   await loadConfig();
