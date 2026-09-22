@@ -1292,21 +1292,42 @@ async function processManual(d){
   var found=config?findPrestaByName(config,d.client,d.prestation):null;
   if(!found){ alert("Prestation introuvable dans la config : "+d.client+" / "+d.prestation); return; }
   var liv={ type_prestation:d.prestation, prestaName:d.prestation, nombre_personnes:d.pax, date_evenement:d.date||"", heure_mise_en_place:d.heureMep||"07:00", heure_evenement:d.heureEv||"12:00", lieu:d.lieu||"", salle:d.salle||"", contact:d.contact||"" };
+  // Détection d'un bon déjà traité portant la même référence -> modification (remplacement)
+  var orig=null;
+  if(d.blNum){ try{ orig=await findAgendaByDev(d.blNum); }catch(e){} }
+  var isModif=!!(orig&&orig.eventId);
+  if(isModif){
+    if(!confirm("Un bon avec la référence « "+d.blNum+" » existe déjà à l'agenda"+(orig.fields.date?(" ("+orig.fields.date+")"):"")+".\n\nLe remplacer par cette version modifiée ?")) return;
+  }
   var bonPdf;
   try{ bonPdf=await bonPdfBase64Gen(found.client.name, found.presta, d.pax, liv, d.blNum); }
   catch(e){ alert("Erreur génération du bon : "+e.message); return; }
   try{
     var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ googleToken:TOKEN, livraison:liv, numero_commande:d.blNum||"", client:found.client.name, blBase64:null, bonPdfBase64:bonPdf })});
+      body:JSON.stringify({ googleToken:TOKEN, livraison:liv, numero_commande:d.blNum||"", client:found.client.name, blBase64:null, bonPdfBase64:bonPdf, replaceEventId:(isModif?orig.eventId:null), isModif:isModif })});
     var result=await resp.json();
-    if(result.ok){ autoPrint(bonPdf); alert("Bon manuel traité : imprimé et ajouté à l'agenda."); }
+    if(result.ok){ autoPrint(bonPdf); alert(isModif?"Bon manuel modifié : entrée agenda remplacée et bon réimprimé.":"Bon manuel traité : imprimé et ajouté à l'agenda."); }
     else { alert("Erreur traitement : "+(result.error||"inconnue")); }
   }catch(e){ alert("Erreur réseau : "+e.message); }
+}
+// Recharge un bon manuel déjà traité (depuis l'agenda) dans le formulaire de la calculette pour édition
+async function loadManuelForEdit(ref, srcWin){
+  if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
+  try{
+    var a=await findAgendaByDev(ref);
+    if(!a||!a.fields){ alert("Aucun bon trouvé à l'agenda pour la référence « "+ref+" »."); return; }
+    var f=a.fields;
+    (srcWin||window).postMessage({ type:"bt-fill-manuel", fields:{
+      client:f.client, presta:f.presta, pax:f.pax, ref:ref,
+      date:f.date, mep:f.mep, ev:f.ev, lieu:f.lieu, salle:f.salle
+    }}, "*");
+  }catch(e){ alert("Erreur chargement : "+e.message); }
 }
 window.addEventListener("message", function(ev){
   if(ev.origin!==location.origin) return;
   var d=ev.data;
   if(d && d.type==="bt-bon-manuel"){ processManual(d); }
+  else if(d && d.type==="bt-load-manuel"){ loadManuelForEdit(d.ref, ev.source); }
 });
 
 /* ===== Traitement des mails de MODIFICATION (met à jour la commande existante) ===== */
