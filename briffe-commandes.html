@@ -323,7 +323,7 @@ function normalize(s) {
 }
 
 async function extractFromBody(body, subject) {
-  var prompt = "Analyse ce corps d'email de La Consignerie. Il peut y avoir plusieurs livraisons.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nExtrait pour chaque livraison : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}";
+  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande.\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
 
   var resp = await fetch("/api/claude", {
     method:"POST",
@@ -400,6 +400,28 @@ function autoPrint(base64) {
   };
 }
 
+// Aplatit l'extraction en une liste d'items { numero_commande, client, liv } — un bon par item.
+// Tolère l'ancien format ({numero_commande, client, livraisons}) et le nouveau ({commandes:[...]}).
+function flattenExtraction(ex){
+  var items=[];
+  if(!ex) return items;
+  if(Array.isArray(ex.commandes)&&ex.commandes.length){
+    ex.commandes.forEach(function(c){
+      var livs=(c.livraisons&&c.livraisons.length)?c.livraisons:[{}];
+      livs.forEach(function(l){ items.push({ numero_commande:c.numero_commande||ex.numero_commande||"", client:c.client||ex.client||"", liv:l }); });
+    });
+  } else if(ex.livraisons&&ex.livraisons.length){
+    ex.livraisons.forEach(function(l){ items.push({ numero_commande:ex.numero_commande||"", client:ex.client||"", liv:l }); });
+  }
+  return items;
+}
+// Choisit la PJ BL correspondant à une commande : par n° dans le nom de fichier, sinon positionnel.
+function pickBlPart(pdfParts, dev, idx){
+  if(!pdfParts||!pdfParts.length) return null;
+  if(dev){ var m=pdfParts.find(function(p){ return (p.filename||"").indexOf(dev)>=0; }); if(m) return m; }
+  return pdfParts[idx]||(pdfParts.length===1?pdfParts[0]:null);
+}
+
 async function processEmail(msg) {
   if (isModification(msg)) { return processModification(msg); }
   var id = msg.id;
@@ -409,17 +431,20 @@ async function processEmail(msg) {
     var body = getPlainBody(msg.payload);
     var subject = getHeader(msg,"subject");
     var extracted = await extractFromBody(body, subject);
-    if (!extracted||!extracted.livraisons||!extracted.livraisons.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
+    var items = flattenExtraction(extracted);
+    if (!items.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
 
     var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
-    var sheetResults=[], sheetErrors=[];
+    var sheetResults=[], sheetErrors=[], processedLivs=[], resolvedClients=[];
 
-    for (var li=0;li<extracted.livraisons.length;li++) {
-      var liv = extracted.livraisons[li];
+    for (var li=0;li<items.length;li++) {
+      var item = items[li];
+      var liv = item.liv;
+      var dev = item.numero_commande || (extracted&&extracted.numero_commande) || "";
 
-      // Fetch BL PDF
+      // Fetch BL PDF (par n° de commande si possible, sinon positionnel)
       var blBase64 = null;
-      var pdfPart = pdfParts[li]||pdfParts[0];
+      var pdfPart = pickBlPart(pdfParts, dev, li);
       if (pdfPart){try{blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId);}catch(e){}}
 
       // Address lookup
@@ -440,17 +465,22 @@ async function processEmail(msg) {
         });
       }
 
+      liv.numero_commande = dev;
+      liv.client = resolvedClient;
+      resolvedClients.push(resolvedClient);
+
       // Resolve sheet (ancien flux) + génère le bon PDF nouveau format (via config)
       var sheetName = resolveSheetFromClientAndPrestation(resolvedClient, liv.type_prestation);
       var bonPdfB64 = null;
       try {
         var cfg = await loadPrepConfig();
         var found = cfg ? findPrepPresta(cfg, resolvedClient, liv.type_prestation) : null;
-        if (found) { liv.prestaName = found.presta.name; bonPdfB64 = await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, extracted.numero_commande); }
+        if (found) { liv.prestaName = found.presta.name; bonPdfB64 = await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev); }
       } catch(e){ console.warn("bon PDF gen:", e); }
-      console.log("Resolved sheet:", sheetName, "| bonPDF:", !!bonPdfB64, "| client:", resolvedClient, "| presta:", liv.type_prestation);
+      console.log("Commande:", dev, "| sheet:", sheetName, "| bonPDF:", !!bonPdfB64, "| client:", resolvedClient, "| presta:", liv.type_prestation);
       if (!sheetName && !bonPdfB64) {
-        sheetErrors.push("Prestation non reconnue pour "+resolvedClient+" / "+liv.type_prestation);
+        sheetErrors.push("Prestation non reconnue pour "+resolvedClient+" / "+liv.type_prestation+(dev?(" ("+dev+")"):""));
+        processedLivs.push(liv);
         continue;
       }
       liv.sheetName = sheetName;
@@ -462,7 +492,7 @@ async function processEmail(msg) {
           body:JSON.stringify({
             googleToken:TOKEN,
             livraison:liv,
-            numero_commande:extracted.numero_commande,
+            numero_commande:dev,
             client:resolvedClient,
             blBase64:blBase64,
             bonPdfBase64:bonPdfB64
@@ -472,7 +502,8 @@ async function processEmail(msg) {
         console.log("process result:", result.pdfFileId, "calEvent:", result.calEventLink, "bonLink:", result.bonLink||"—");
         if (result.ok) {
           sheetResults.push({
-            sheetName:sheetName,
+            sheetName:sheetName||(liv.prestaName||liv.type_prestation),
+            dev:dev,
             nb:liv.nombre_personnes,
             pdfFileId:result.pdfFileId,
             pdfFileName:result.pdfFileName,
@@ -484,18 +515,27 @@ async function processEmail(msg) {
             blBase64:blBase64
           });
         } else {
-          sheetErrors.push(sheetName+": "+(result.error||"Erreur"));
+          sheetErrors.push((dev||sheetName)+": "+(result.error||"Erreur"));
         }
       } catch(e) {
-        sheetErrors.push(sheetName+": "+e.message);
+        sheetErrors.push((dev||sheetName)+": "+e.message);
       }
+      processedLivs.push(liv);
     }
 
     try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); }
 
+    var devSet=[]; processedLivs.forEach(function(l){ if(l.numero_commande&&devSet.indexOf(l.numero_commande)<0) devSet.push(l.numero_commande); });
+    var dataOut = {
+      numero_commande: devSet.join(" · ") || (extracted&&extracted.numero_commande) || "",
+      client: resolvedClients[0] || (extracted&&extracted.client) || "",
+      livraisons: processedLivs,
+      multiDev: devSet.length>1
+    };
+
     ORDERS[id] = {
       status:sheetResults.length?"success":"partial",
-      data:extracted,
+      data:dataOut,
       sheetResult:sheetResults.length?sheetResults:null,
       error:sheetErrors.length?sheetErrors.join(" | "):null,
       pdfParts:pdfParts,
@@ -800,10 +840,11 @@ function renderEmailList(){
     if (order&&order.data){
       var d=order.data, livs=d.livraisons||[];
       html+='<div class="result-box">';
-      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px">'+field("Client",d.client)+field("N° commande",d.numero_commande)+'</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px">'+field("Client",d.client)+field(d.multiDev?("Commandes ("+livs.length+")"):"N° commande",d.numero_commande)+'</div>';
       for (var li=0;li<livs.length;li++){
         var l=livs[li];
-        html+='<div class="liv-block"><div class="liv-title">Livraison '+(li+1)+'</div><div class="grid3">';
+        var livTitle='Livraison '+(li+1)+(d.multiDev&&l.numero_commande?(' · '+esc(l.numero_commande)):'');
+        html+='<div class="liv-block"><div class="liv-title">'+livTitle+'</div><div class="grid3">';
         html+=field("Prestation",l.type_prestation)+field("Personnes",l.nombre_personnes)+field("Date",l.date_evenement);
         html+=field("Mise en place",l.heure_mise_en_place)+field("Lieu",l.lieu)+field("Salle",l.salle);
         html+=field("Contact",l.contact);
@@ -812,7 +853,7 @@ function renderEmailList(){
       html+='</div><div class="action-bar">';
       if (order.sheetResult&&order.sheetResult.length){
         var tags=order.sheetResult.map(function(r){
-          var t='"'+esc(r.sheetName)+'" '+r.nb+' pers.';
+          var t=(r.dev&&d.multiDev?(esc(r.dev)+' · '):'')+'"'+esc(r.sheetName)+'" '+r.nb+' pers.';
           if (r.calEventLink) t+=' <a href="'+r.calEventLink+'" target="_blank" style="color:#22c55e;text-decoration:none">&#128197;</a>';
           if (r.pdfFileId) t+=' <a href="https://drive.google.com/file/d/'+r.pdfFileId+'" target="_blank" style="color:#22c55e;text-decoration:none">&#128196;</a>';
           return t;
@@ -1136,7 +1177,7 @@ async function printBonApp(msgId){
   entries.forEach(function(e){
     var found=findPrepPresta(config, e.client, e.tp);
     if(!found){ pages.push('<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(e.client)+' · '+esc(e.tp||'?')+'</div></div><div class="meta"><b>'+esc(String(e.pax||''))+' personnes</b></div></div><p style="font-family:monospace;color:#a02a2a">Prestation non reconnue dans la calculette — vérifie le nom / les mots-clés côté Paramétrage.</p></div>'); return; }
-    pages.push(prepBonHTML(found.client.name, found.presta, e.pax, e.liv, bl));
+    pages.push(prepBonHTML(found.client.name, found.presta, e.pax, e.liv, (e.liv&&e.liv.numero_commande)||bl));
   });
   prepPrintDoc(pages.join('<div style="page-break-after:always"></div>'));
 }
@@ -1171,12 +1212,12 @@ function printLabels(msgId, count){
   var bl=order.data.numero_commande||'';
   var entries=[];
   if(order.sheetResult&&order.sheetResult.length){
-    order.sheetResult.forEach(function(sr,idx){ var liv=livs[idx]||livs[0]||{}; entries.push({place:clientFromSheet(sr.sheetName)||order.data.client||liv.lieu, pax:sr.nb!=null?sr.nb:liv.nombre_personnes, date:liv.date_evenement, heure:liv.heure_mise_en_place}); });
+    order.sheetResult.forEach(function(sr,idx){ var liv=livs[idx]||livs[0]||{}; entries.push({place:clientFromSheet(sr.sheetName)||order.data.client||liv.lieu, pax:sr.nb!=null?sr.nb:liv.nombre_personnes, date:liv.date_evenement, heure:liv.heure_mise_en_place, bl:sr.dev||(liv&&liv.numero_commande)||bl}); });
   } else {
-    livs.forEach(function(l){ entries.push({place:order.data.client||l.lieu, pax:l.nombre_personnes, date:l.date_evenement, heure:l.heure_mise_en_place}); });
+    livs.forEach(function(l){ entries.push({place:order.data.client||l.lieu, pax:l.nombre_personnes, date:l.date_evenement, heure:l.heure_mise_en_place, bl:(l&&l.numero_commande)||bl}); });
   }
   var n=count||2, html='';
-  entries.forEach(function(e){ for(var k=0;k<n;k++){ html+=labelHTML(e.place, bl, e.pax, e.date, e.heure); } });
+  entries.forEach(function(e){ for(var k=0;k<n;k++){ html+=labelHTML(e.place, e.bl||bl, e.pax, e.date, e.heure); } });
   if(!html){alert('Aucune livraison à étiqueter.');return;}
   labelsPrintDoc(html);
 }
@@ -1290,7 +1331,7 @@ async function processModification(msg){
 var STATS_RECORDS=[];
 async function loadStats(){
   var host=document.getElementById("stats-content"); if(host) host.innerHTML='<div class="empty">Chargement...</div>';
-  try{ var r=await fetch("/api/stats",{cache:"no-store"}); var j=await r.json(); STATS_RECORDS=(j&&j.records)||[]; }
+  try{ var r=await fetch("/api/stats",{cache:"no-store"}); var t=await r.text(); var j=JSON.parse(t); STATS_RECORDS=(j&&j.records)||[]; }
   catch(e){ STATS_RECORDS=[]; }
   renderStats();
 }
@@ -1377,7 +1418,11 @@ async function importAgendaStats(){
     var count=0;
     for(var i=0;i<recs.length;i+=100){
       var r=await fetch("/api/stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({records:recs.slice(i,i+100)})});
-      var j=await r.json(); count+=(j&&j.count)||0;
+      var txt=await r.text(); var j;
+      try{ j=JSON.parse(txt); }
+      catch(_){ throw new Error("la fonction /api/stats est introuvable (réponse "+r.status+"). Vérifie que netlify/functions/stats.js est bien déployé (nom en minuscules) et la redirection /api/stats dans netlify.toml."); }
+      if(!r.ok) throw new Error((j&&j.error)||("HTTP "+r.status));
+      count+=(j&&j.count)||0;
     }
     alert("Import terminé : "+count+" commande(s) ajoutée(s) aux statistiques.");
     loadStats();
