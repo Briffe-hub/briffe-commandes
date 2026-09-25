@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Briffe · Signature & cachet</title>
+<title>Briffe · Outils PDF</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
@@ -81,6 +81,22 @@ input,select{font-family:'DM Mono',monospace}
 .file-btn{position:relative;overflow:hidden}
 .file-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
 .grp-title{font-size:10px;color:#666;letter-spacing:.12em;text-transform:uppercase;margin:22px 0 2px}
+
+/* --- Assembler --- */
+.asm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:14px;margin-top:16px}
+.asm-page{position:relative;border:1px solid #1e1e1e;border-radius:8px;background:#111;padding:8px;cursor:grab;user-select:none}
+.asm-page:active{cursor:grabbing}
+.asm-page.dragging{opacity:.35}
+.asm-page.over{border-color:#e8e8e0;box-shadow:0 0 0 1px #e8e8e0}
+.asm-thumb{width:100%;height:152px;display:flex;align-items:center;justify-content:center;background:#0c0c0c;border-radius:4px;overflow:hidden}
+.asm-thumb img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 0 0 1px #222;transition:transform .15s}
+.asm-meta{display:flex;align-items:center;justify-content:space-between;margin-top:7px;gap:6px}
+.asm-idx{font-size:11px;color:#888;min-width:18px}
+.asm-src{font-size:9px;color:#3a3a3a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.asm-actions{display:flex;gap:4px}
+.asm-actions button{border:1px solid #2a2a2a;background:#0c0c0c;color:#888;border-radius:3px;width:24px;height:24px;font-size:12px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
+.asm-actions button:hover{border-color:#444;color:#ccc}
+.asm-actions button.del:hover{border-color:#ef4444;color:#ef4444}
 </style>
 <style>
 /* Bouton retour menu principal */
@@ -160,6 +176,7 @@ input,select{font-family:'DM Mono',monospace}
 
 <div id="tab-bar">
   <button class="tab-btn active" id="tab-signer-btn" onclick="showTab('signer')">Signer</button>
+  <button class="tab-btn" id="tab-assembler-btn" onclick="showTab('assembler')">Assembler</button>
   <button class="tab-btn" id="tab-lib-btn" onclick="showTab('lib')">Bibliothèque</button>
 </div>
 
@@ -247,6 +264,28 @@ input,select{font-family:'DM Mono',monospace}
   <div class="lib-grid" id="lib-cachet"></div>
   <div class="grp-title">Bon pour accord</div>
   <div class="lib-grid" id="lib-accord"></div>
+</div>
+
+<!-- ============ ASSEMBLER ============ -->
+<div class="panel hidden" id="tab-assembler">
+  <div id="asm-drop" class="drop">
+    Dépose des <b>PDF</b> et/ou des <b>images</b> (JPG, PNG) ici, ou <b>clique pour choisir</b>.
+    <input type="file" id="asm-input" accept="application/pdf,image/png,image/jpeg" multiple style="display:none">
+  </div>
+
+  <div id="asm-editor" class="hidden">
+    <div class="toolbar">
+      <div class="section-label"><span id="asm-count">0</span> page(s) · glisse pour réordonner</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn small" id="asm-add-btn">+ Ajouter des fichiers</button>
+        <button class="btn small danger" onclick="asmReset()">Tout effacer</button>
+        <button class="btn primary" id="asm-gen-btn" onclick="asmGenerate()">Télécharger le PDF assemblé</button>
+      </div>
+    </div>
+    <div class="status" id="asm-status"></div>
+    <div class="hint">Glisse une vignette pour changer l'ordre · ⟳ pour pivoter · × pour supprimer la page.</div>
+    <div class="asm-grid" id="asm-grid"></div>
+  </div>
 </div>
 
 <script>
@@ -593,10 +632,187 @@ function dataUrlToBytes(u) {
 
 /* ---------------- Onglets ---------------- */
 function showTab(t) {
-  document.getElementById("tab-signer").classList.toggle("hidden", t !== "signer");
-  document.getElementById("tab-lib").classList.toggle("hidden", t !== "lib");
-  document.getElementById("tab-signer-btn").classList.toggle("active", t === "signer");
-  document.getElementById("tab-lib-btn").classList.toggle("active", t === "lib");
+  for (const name of ["signer", "assembler", "lib"]) {
+    document.getElementById("tab-" + name).classList.toggle("hidden", t !== name);
+    document.getElementById("tab-" + name + "-btn").classList.toggle("active", t === name);
+  }
+}
+
+/* ================================================================
+   ASSEMBLER — fusionner PDF + images, réordonner / pivoter / supprimer
+   ================================================================ */
+let asmSources = {};   // srcId -> { name, kind:'pdf'|'image', bytes(ArrayBuffer, pdf), jsDoc(pdf), dataUrl(image) }
+let asmPages = [];     // ordre d'affichage : { uid, srcId, pageIndex, rot, thumb }
+let asmSeq = 0;
+
+const asmDrop = document.getElementById("asm-drop");
+const asmInput = document.getElementById("asm-input");
+asmDrop.addEventListener("click", () => asmInput.click());
+document.getElementById("asm-add-btn").addEventListener("click", () => asmInput.click());
+["dragover", "dragenter"].forEach(ev => asmDrop.addEventListener(ev, e => { e.preventDefault(); asmDrop.classList.add("hot"); }));
+["dragleave", "drop"].forEach(ev => asmDrop.addEventListener(ev, e => { e.preventDefault(); asmDrop.classList.remove("hot"); }));
+asmDrop.addEventListener("drop", e => { if (e.dataTransfer.files.length) asmAddFiles(e.dataTransfer.files); });
+asmInput.addEventListener("change", e => { if (e.target.files.length) asmAddFiles(e.target.files); asmInput.value = ""; });
+
+function setAsmStatus(t, c) { const e = document.getElementById("asm-status"); e.textContent = t || ""; e.className = "status" + (c ? " " + c : ""); }
+
+async function asmAddFiles(fileList) {
+  setAsmStatus("Chargement…");
+  for (const file of Array.from(fileList)) {
+    try {
+      if (file.type === "application/pdf") {
+        const buf = await file.arrayBuffer();
+        const jsDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+        const srcId = "s" + (asmSeq++);
+        asmSources[srcId] = { name: file.name, kind: "pdf", bytes: buf, jsDoc };
+        for (let i = 0; i < jsDoc.numPages; i++) {
+          const thumb = await asmRenderPdfThumb(jsDoc, i);
+          asmPages.push({ uid: "a" + (asmSeq++), srcId, pageIndex: i, rot: 0, thumb });
+        }
+      } else if (file.type === "image/png" || file.type === "image/jpeg") {
+        const dataUrl = await asmReadDataUrl(file);
+        const srcId = "s" + (asmSeq++);
+        asmSources[srcId] = { name: file.name, kind: "image", dataUrl };
+        asmPages.push({ uid: "a" + (asmSeq++), srcId, pageIndex: 0, rot: 0, thumb: dataUrl });
+      } else {
+        setAsmStatus("Ignoré (format non pris en charge) : " + file.name, "err");
+      }
+    } catch (e) { setAsmStatus("Erreur sur " + file.name + " : " + e.message, "err"); }
+  }
+  document.getElementById("asm-drop").classList.add("hidden");
+  document.getElementById("asm-editor").classList.remove("hidden");
+  if (!document.getElementById("asm-status").classList.contains("err")) setAsmStatus("");
+  asmRenderGrid();
+}
+
+function asmReadDataUrl(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = rej;
+    fr.readAsDataURL(file);
+  });
+}
+
+async function asmRenderPdfThumb(jsDoc, pageIndex) {
+  const page = await jsDoc.getPage(pageIndex + 1);
+  const base = page.getViewport({ scale: 1 });
+  const scale = 220 / base.height;                 // vignette ~220px de haut
+  const vp = page.getViewport({ scale });
+  const cv = document.createElement("canvas");
+  cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  return cv.toDataURL("image/jpeg", 0.8);
+}
+
+function asmRenderGrid() {
+  const grid = document.getElementById("asm-grid");
+  document.getElementById("asm-count").textContent = asmPages.length;
+  grid.innerHTML = asmPages.map((p, i) => {
+    const src = asmSources[p.srcId] || {};
+    const label = src.kind === "pdf" ? (esc(src.name) + " · p." + (p.pageIndex + 1)) : esc(src.name || "image");
+    return '<div class="asm-page" draggable="true" data-uid="' + p.uid + '">' +
+        '<div class="asm-thumb"><img src="' + p.thumb + '" alt="" style="transform:rotate(' + p.rot + 'deg)"></div>' +
+        '<div class="asm-meta">' +
+          '<span class="asm-idx">' + (i + 1) + '</span>' +
+          '<span class="asm-src" title="' + label + '">' + label + '</span>' +
+          '<span class="asm-actions">' +
+            '<button title="Pivoter" onclick="asmRotate(\'' + p.uid + '\')">⟳</button>' +
+            '<button class="del" title="Supprimer" onclick="asmDelete(\'' + p.uid + '\')">×</button>' +
+          '</span>' +
+        '</div>' +
+      '</div>';
+  }).join("");
+  asmBindDnD();
+}
+
+function asmRotate(uid) {
+  const p = asmPages.find(x => x.uid === uid); if (!p) return;
+  p.rot = (p.rot + 90) % 360;
+  asmRenderGrid();
+}
+function asmDelete(uid) {
+  asmPages = asmPages.filter(x => x.uid !== uid);
+  if (!asmPages.length) return asmReset();
+  asmRenderGrid();
+}
+function asmReset() {
+  asmSources = {}; asmPages = [];
+  document.getElementById("asm-editor").classList.add("hidden");
+  document.getElementById("asm-drop").classList.remove("hidden");
+  setAsmStatus("");
+}
+
+/* Glisser-déposer pour réordonner */
+let asmDragUid = null;
+function asmBindDnD() {
+  document.querySelectorAll("#asm-grid .asm-page").forEach(el => {
+    el.addEventListener("dragstart", e => { asmDragUid = el.dataset.uid; el.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; });
+    el.addEventListener("dragend", () => { asmDragUid = null; el.classList.remove("dragging"); document.querySelectorAll(".asm-page.over").forEach(x => x.classList.remove("over")); });
+    el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("over"); });
+    el.addEventListener("dragleave", () => el.classList.remove("over"));
+    el.addEventListener("drop", e => {
+      e.preventDefault(); el.classList.remove("over");
+      const targetUid = el.dataset.uid;
+      if (!asmDragUid || asmDragUid === targetUid) return;
+      const from = asmPages.findIndex(x => x.uid === asmDragUid);
+      const to = asmPages.findIndex(x => x.uid === targetUid);
+      if (from < 0 || to < 0) return;
+      const [moved] = asmPages.splice(from, 1);
+      asmPages.splice(to, 0, moved);
+      asmRenderGrid();
+    });
+  });
+}
+
+/* Construit le PDF assemblé (Uint8Array). Isolé pour être testable. */
+async function buildAssembledPdf() {
+  const out = await PDFDocument.create();
+  const libCache = {};
+  const A4W = 595.28, A4H = 841.89;
+  for (const pg of asmPages) {
+    const src = asmSources[pg.srcId]; if (!src) continue;
+    if (src.kind === "pdf") {
+      let libDoc = libCache[pg.srcId];
+      if (!libDoc) { libDoc = await PDFDocument.load(src.bytes.slice(0)); libCache[pg.srcId] = libDoc; }
+      const [copied] = await out.copyPages(libDoc, [pg.pageIndex]);
+      const base = copied.getRotation().angle || 0;
+      copied.setRotation(degrees((base + pg.rot) % 360));
+      out.addPage(copied);
+    } else {
+      const bytes = dataUrlToBytes(src.dataUrl);
+      const img = /^data:image\/png/.test(src.dataUrl) ? await out.embedPng(bytes) : await out.embedJpg(bytes);
+      const landscape = img.width > img.height;
+      const pw = landscape ? A4H : A4W;
+      const ph = landscape ? A4W : A4H;
+      const page = out.addPage([pw, ph]);
+      const s = Math.min(pw / img.width, ph / img.height);
+      const w = img.width * s, h = img.height * s;
+      page.drawImage(img, { x: (pw - w) / 2, y: (ph - h) / 2, width: w, height: h });
+      if (pg.rot) page.setRotation(degrees(pg.rot % 360));
+    }
+  }
+  return out.save();
+}
+
+async function asmGenerate() {
+  if (!asmPages.length) { setAsmStatus("Ajoute au moins une page.", "err"); return; }
+  const btn = document.getElementById("asm-gen-btn");
+  btn.disabled = true; setAsmStatus("Assemblage du PDF…");
+  try {
+    const out = await buildAssembledPdf();
+    const blob = new Blob([out], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "assemblage.pdf"; a.click();
+    URL.revokeObjectURL(url);
+    setAsmStatus(asmPages.length + " page(s) assemblée(s) — PDF téléchargé.", "ok");
+  } catch (e) {
+    setAsmStatus("Erreur : " + e.message, "err");
+    console.error(e);
+  } finally { btn.disabled = false; }
 }
 
 /* ---------------- Init ---------------- */
