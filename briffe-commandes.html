@@ -322,15 +322,22 @@ function normalize(s) {
   return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 }
 
-async function extractFromBody(body, subject) {
-  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons.\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande.\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
+async function extractFromBody(body, subject, blHints) {
+  var devs=(blHints||[]).map(function(h){return h.dev;}).filter(Boolean);
+  var hint="";
+  if(blHints&&blHints.length){
+    hint="\n\nIMPORTANT : cet email comporte "+blHints.length+" bon(s) de livraison en pièce jointe, soit "+blHints.length+" COMMANDE(S) DISTINCTE(S). Tu DOIS retourner EXACTEMENT "+blHints.length+" élément(s) dans \"commandes\", un par bon de livraison.";
+    if(devs.length) hint+=" Numéros de commande attendus (un par commande) : "+devs.join(", ")+".";
+    hint+=" Ne fusionne jamais plusieurs bons en une seule commande.";
+  }
+  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons."+hint+"\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande. Les heures sont au format HH:MM (ex. 08:30).\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
 
   var resp = await fetch("/api/claude", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({
       model:"claude-sonnet-4-5",
-      max_tokens:1500,
+      max_tokens:4000,
       messages:[{role:"user",content:[{type:"text",text:prompt}]}]
     })
   });
@@ -430,11 +437,13 @@ async function processEmail(msg) {
   try {
     var body = getPlainBody(msg.payload);
     var subject = getHeader(msg,"subject");
-    var extracted = await extractFromBody(body, subject);
+    var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
+    // Indices pour l'extraction : nombre de BL joints + leurs numéros (un BL = une commande)
+    var blHints = pdfParts.map(function(p){ var m=(p.filename||"").match(/DEV-\d+/); return { filename:p.filename||"", dev:m?m[0]:"" }; });
+    var extracted = await extractFromBody(body, subject, blHints);
     var items = flattenExtraction(extracted);
     if (!items.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
 
-    var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
     var sheetResults=[], sheetErrors=[], processedLivs=[], resolvedClients=[];
 
     for (var li=0;li<items.length;li++) {
@@ -467,6 +476,7 @@ async function processEmail(msg) {
 
       liv.numero_commande = dev;
       liv.client = resolvedClient;
+      normLivTimes(liv);
       resolvedClients.push(resolvedClient);
 
       // Resolve sheet (ancien flux) + génère le bon PDF nouveau format (via config)
@@ -526,6 +536,10 @@ async function processEmail(msg) {
     try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); }
 
     var devSet=[]; processedLivs.forEach(function(l){ if(l.numero_commande&&devSet.indexOf(l.numero_commande)<0) devSet.push(l.numero_commande); });
+    if(pdfParts.length>1 && items.length<pdfParts.length){
+      console.warn("Sous-détection : "+pdfParts.length+" BL joints mais "+items.length+" commande(s) extraite(s).");
+      sheetErrors.push("⚠ "+pdfParts.length+" BL joints mais seulement "+items.length+" commande(s) détectée(s) — vérifie l'email.");
+    }
     var dataOut = {
       numero_commande: devSet.join(" · ") || (extracted&&extracted.numero_commande) || "",
       client: resolvedClients[0] || (extracted&&extracted.client) || "",
@@ -645,22 +659,22 @@ async function findBL(devNum, btn) {
   }
 }
 
-// Archive : ouvrir l'événement agenda correspondant à un DEV
-async function openAgendaForDev(dev, btn){
+// Archive : ouvrir l'événement agenda correspondant à un DEV (hint {date,presta} pour cibler le bon parmi plusieurs)
+async function openAgendaForDev(dev, btn, hint){
   if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
   var old=btn.innerHTML; btn.disabled=true; btn.textContent="...";
   try{
-    var a=await findAgendaByDev(dev);
+    var a=await findAgendaByDev(dev, hint);
     if(a&&a.htmlLink){ window.open(a.htmlLink,"_blank"); btn.innerHTML=old; btn.disabled=false; }
     else { btn.textContent="Agenda introuvable"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
   }catch(e){ btn.textContent="Erreur"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
 }
 // Archive : réimprimer les étiquettes d'un DEV à partir des infos de l'événement agenda
-async function labelsForDev(dev, btn){
+async function labelsForDev(dev, btn, hint){
   if(!TOKEN){ alert("Connecte-toi à Google (onglet Commandes) d'abord."); return; }
   var old=btn.innerHTML; btn.disabled=true; btn.textContent="...";
   try{
-    var a=await findAgendaByDev(dev);
+    var a=await findAgendaByDev(dev, hint);
     if(!a||!a.fields){ btn.textContent="Agenda introuvable"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); return; }
     var f=a.fields;
     var v=prompt("Nombre d'étiquettes :","2"); if(v===null){ btn.innerHTML=old; btn.disabled=false; return; }
@@ -671,6 +685,9 @@ async function labelsForDev(dev, btn){
     btn.innerHTML=old; btn.disabled=false;
   }catch(e){ btn.textContent="Erreur"; setTimeout(function(){btn.innerHTML=old;btn.disabled=false;},2500); }
 }
+// Variantes « par bon » (archive) : lisent data-dev / data-date pour cibler le bon précis
+function openAgendaForBon(btn){ openAgendaForDev(btn.dataset.dev, btn, {date:btn.dataset.date||"", presta:btn.dataset.presta||""}); }
+function labelsForBon(btn){ labelsForDev(btn.dataset.dev, btn, {date:btn.dataset.date||"", presta:btn.dataset.presta||""}); }
 
 async function loadAddresses(){
   document.getElementById("addr-list").innerHTML = '<div class="empty">Chargement...</div>';
@@ -936,52 +953,87 @@ function histParseDate(name){
 }
 function fileDev(name){ var m=(name||"").match(/DEV-\d+/); return m?m[0]:null; }
 function fileLabel(name){ return (name||"").replace(/\.pdf$/i,"").replace(/^BON MODIF\s*·\s*/i,"").replace(/^BON\s*·\s*/i,"").replace(/^BL MODIF\s*·\s*/i,"").replace(/^BL\s*·\s*/i,""); }
+// Décompose un nom de fichier Drive : type (BON/BL, modif ?), base identifiant le bon, DEV, date, prestation
+function parseBonName(name){
+  var raw=(name||'').replace(/\.pdf$/i,'');
+  var isBL=/^BL(\s+MODIF)?\s*·/i.test(raw);
+  var isModif=/MODIF/i.test(raw);
+  var base=raw.replace(/^(BON|BL)(\s+MODIF)?\s*·\s*/i,'').replace(/\s*·\s*\d{1,2}h\d{2}\s*$/i,'').trim();
+  var dev=(base.match(/DEV-\d+/)||[])[0]||'';
+  var date=(base.match(/\d{2}\/\d{2}\/\d{4}/)||[])[0]||'';
+  // prestation = segments entre le client et la date (heuristique sur " · ")
+  var parts=base.split(/\s*·\s*/), presta='';
+  if(parts.length>=3){ var end=parts.length; if(date && parts[parts.length-1]===date) end=parts.length-1; presta=parts.slice(2,end).join(' · '); }
+  return {isBL:isBL,isModif:isModif,base:base,dev:dev,date:date,presta:presta};
+}
 function renderHistoryRows(){
   var rowsEl=document.getElementById("hist-rows"); if(!rowsEl) return;
   var q=(document.getElementById("hist-search")||{}).value||"";
   var sort=(document.getElementById("hist-sort")||{}).value||"trait-desc";
   var nq=normalize(q);
-  // On regroupe les bons par n° de commande ; les fichiers BL sont exclus des lignes (repris via le bouton BL)
-  var bons=HISTORY_FILES.filter(function(f){ return !/^BL(\s+MODIF)?\s*·/i.test(f.name); });
+  // Regroupe par BASE (= un bon = une livraison) ; BON/BON MODIF -> versions, BL/BL MODIF -> pièce BL du bon.
   var groups={}, order=[];
-  bons.forEach(function(f){
-    var dev=fileDev(f.name)||("_"+f.id);
-    if(!groups[dev]){ groups[dev]={dev:fileDev(f.name), versions:[]}; order.push(dev); }
-    f._modif=/MODIF/i.test(f.name);
-    groups[dev].versions.push(f);
+  HISTORY_FILES.forEach(function(f){
+    var p=parseBonName(f.name); f._p=p;
+    var key=p.base||("_"+f.id);
+    if(!groups[key]){ groups[key]={base:p.base,dev:p.dev,date:p.date,presta:p.presta,versions:[],bls:[]}; order.push(key); }
+    if(p.isBL) groups[key].bls.push(f); else groups[key].versions.push(f);
   });
-  order.forEach(function(k){ var g=groups[k]; g.versions.sort(function(a,b){ return new Date(a.createdTime)-new Date(b.createdTime); }); g.latest=g.versions[g.versions.length-1]; });
-  var glist=order.map(function(k){return groups[k];}).filter(function(g){ return !nq || g.versions.some(function(v){return normalize(v.name).indexOf(nq)>=0;}); });
-  glist.sort(function(a,b){
+  var bons=[];
+  order.forEach(function(k){
+    var g=groups[k];
+    if(!g.versions.length) return; // BL sans bon associé -> le bon porte déjà le BL
+    g.versions.sort(function(a,b){return new Date(a.createdTime)-new Date(b.createdTime);});
+    g.bls.sort(function(a,b){return new Date(a.createdTime)-new Date(b.createdTime);});
+    g.latest=g.versions[g.versions.length-1];
+    g.bl=g.bls.length?g.bls[g.bls.length-1]:null;
+    bons.push(g);
+  });
+  // Combien de bons par DEV (pour l'étiquetage 15068-1, 15068-2...)
+  var devCount={}; bons.forEach(function(g){ if(g.dev) devCount[g.dev]=(devCount[g.dev]||0)+1; });
+  var list=bons.filter(function(g){ return !nq || g.versions.concat(g.bls).some(function(v){return normalize(v.name).indexOf(nq)>=0;}); });
+  list.sort(function(a,b){
     if(sort==="presta-desc") return histParseDate(b.latest.name)-histParseDate(a.latest.name);
     if(sort==="presta-asc")  return histParseDate(a.latest.name)-histParseDate(b.latest.name);
-    if(sort==="nom")         return normalize(fileLabel(a.latest.name)).localeCompare(normalize(fileLabel(b.latest.name)));
+    if(sort==="nom")         return normalize(a.base).localeCompare(normalize(b.base));
     return new Date(b.latest.createdTime)-new Date(a.latest.createdTime);
   });
-  var cnt=document.getElementById("hist-count"); if(cnt) cnt.textContent=glist.length+" commande(s)";
+  var cnt=document.getElementById("hist-count"); if(cnt) cnt.textContent=list.length+" bon(s)";
   if(!HISTORY_FILES.length){ rowsEl.innerHTML='<div class="empty">Aucune commande traitee trouvee dans Drive.</div>'; return; }
-  if(!glist.length){ rowsEl.innerHTML='<div class="empty">Aucun résultat.</div>'; return; }
-  var html="";
-  glist.forEach(function(g){
-    var latest=g.latest, dev=g.dev||"", nver=g.versions.length;
-    html+='<div style="border:1px solid #1e1e1e;border-radius:10px;margin-bottom:8px;background:#141414;overflow:hidden">';
-    html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e">'
-      +'<span style="flex:1;font-size:12px;color:#e8e8e0;font-weight:500">'+esc(fileLabel(latest.name))+'</span>'
+  if(!list.length){ rowsEl.innerHTML='<div class="empty">Aucun résultat.</div>'; return; }
+  var devSeen={}, html="";
+  list.forEach(function(g){
+    var dev=g.dev||"", nver=g.versions.length;
+    var idxLabel = (dev && devCount[dev]>1) ? (dev+"-"+(devSeen[dev]=(devSeen[dev]||0)+1)) : (dev||"—");
+    var titre = g.presta || fileLabel(g.latest.name);
+    var da=(g.date?(' · '+g.date):'');
+    html+='<div style="border:1px solid #1e1e1e;border-radius:10px;margin-bottom:10px;background:#141414;overflow:hidden">';
+    // En-tête : n° indexé + prestation/date + pastille modifs
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #1e1e1e;flex-wrap:wrap">'
+      +'<span style="font-family:monospace;font-size:13px;font-weight:700;color:#b3242e;min-width:104px">'+esc(idxLabel)+'</span>'
+      +'<span style="flex:1;min-width:150px;font-size:12px;color:#e8e8e0">'+esc(titre)+'<span style="color:#5a5a56">'+esc(da)+'</span></span>'
       +(nver>1?'<span class="pill" style="border:1px solid #f59e0b44;background:#f59e0b11;color:#f59e0b"><span class="dot" style="background:#f59e0b"></span>'+(nver-1)+' modif'+((nver-1)>1?'s':'')+'</span>':'')
-      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="openAgendaForDev(this.dataset.dev,this)">&#128197; Agenda</button>':'')
-      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="labelsForDev(this.dataset.dev,this)">&#127991;&#65039; Étiquettes</button>':'')
-      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>':'')
       +'</div>';
-    g.versions.slice().reverse().forEach(function(v,i){
-      var isLatest=(i===0), origIndex=(nver-1-i);
-      var vd=v.createdTime?new Date(v.createdTime).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
-      var lbl=(origIndex===0 && !v._modif)?"Originale":(v._modif?"Modification":"Version");
-      html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;'+(isLatest?'background:#181818':'')+'">'
-        +'<span style="min-width:110px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:'+(isLatest?'#22c55e':'#8a8a82')+'">'+lbl+(isLatest&&nver>1?' · à jour':'')+'</span>'
-        +'<span style="flex:1;font-size:11px;color:#5a5a56">'+vd+'</span>'
-        +'<a href="'+esc(v.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128196; Bon</a>'
-        +'</div>';
-    });
+    // Barre d'actions du bon (BL direct depuis Drive, agenda/étiquettes ciblés par date)
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:'+(nver>1?'1px solid #161616':'none')+'">'
+      +'<a href="'+esc(g.latest.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none;border-color:#921821">&#128196; Bon</a>'
+      +(g.bl?('<a href="'+esc(g.bl.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128248; BL</a>'):(dev?'<button class="btn" data-dev="'+esc(dev)+'" onclick="findBL(this.dataset.dev,this)">&#128248; BL</button>':''))
+      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" data-date="'+esc(g.date)+'" data-presta="'+esc(g.presta)+'" onclick="openAgendaForBon(this)">&#128197; Agenda</button>':'')
+      +(dev?'<button class="btn" data-dev="'+esc(dev)+'" data-date="'+esc(g.date)+'" data-presta="'+esc(g.presta)+'" onclick="labelsForBon(this)">&#127991;&#65039; Étiquettes</button>':'')
+      +'</div>';
+    // Versions (uniquement si modifications)
+    if(nver>1){
+      g.versions.slice().reverse().forEach(function(v,i){
+        var isLatest=(i===0), origIndex=(nver-1-i);
+        var vd=v.createdTime?new Date(v.createdTime).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+        var lbl=(origIndex===0 && !(v._p&&v._p.isModif))?"Originale":((v._p&&v._p.isModif)?"Modification":"Version");
+        html+='<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;'+(isLatest?'background:#181818':'')+'">'
+          +'<span style="min-width:104px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:'+(isLatest?'#22c55e':'#8a8a82')+'">'+lbl+(isLatest?' · à jour':'')+'</span>'
+          +'<span style="flex:1;font-size:11px;color:#5a5a56">'+vd+'</span>'
+          +'<a href="'+esc(v.webViewLink)+'" target="_blank" class="btn" style="text-decoration:none">&#128196; Bon</a>'
+          +'</div>';
+      });
+    }
     html+='</div>';
   });
   rowsEl.innerHTML=html;
@@ -1073,6 +1125,21 @@ var PREP_MATCH={
   sciencespo:[{kw:['dejeuner','pdj','petit'],p:'PDJ'}]
 };
 function nkey(s){return normalize(s).replace(/\s+/g,'');}
+// Normalise une heure libre en HH:MM ("0830","8h30","8:30" -> "08:30"). Renvoie l'entrée si non reconnue.
+function normHM(s){
+  s=(s==null?'':String(s)).trim(); if(!s) return '';
+  var h, mn, m;
+  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }
+  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }
+  else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }
+  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }
+  else return s;
+  if(isNaN(h)||h>23||mn>59) return s;
+  return ('0'+h).slice(-2)+':'+('0'+mn).slice(-2);
+}
+function normLivTimes(liv){ if(!liv) return liv; if(liv.heure_mise_en_place) liv.heure_mise_en_place=normHM(liv.heure_mise_en_place); if(liv.heure_evenement) liv.heure_evenement=normHM(liv.heure_evenement); return liv; }
+// Une ligne est-elle imprimée ? Non-optionnelle: toujours. Optionnelle: selon les options activées (en), sinon selon defaultOn.
+function bonLineOn(l, en){ if(!l.optional) return true; if(en) return !!en[l.id]; return !!l.defaultOn; }
 // Famille d'une prestation à partir d'un libellé (email) : un petit-déjeuner reste un PDJ
 // même s'il contient « café » ; une pause reste PC. '' = indéterminé.
 function prestaFamily(s){
@@ -1106,11 +1173,11 @@ function findPrepPresta(config, client, typePresta){
   if(famTp){ for(var q2=0;q2<clientObj.prestations.length;q2++){ if(nameFamily(clientObj.prestations[q2].name)===famTp) return {client:clientObj,presta:clientObj.prestations[q2]}; } }
   return null;
 }
-function prepBonHTML(clientName, presta, pax, liv, blNum){
+function prepBonHTML(clientName, presta, pax, liv, blNum, enabledOpts){
   pax=parseInt(pax,10)||0;
   var rows='';
   PREP_SECTIONS.forEach(function(sec){
-    var lines=(presta.lines||[]).filter(function(l){return l.section===sec && !l.optional;});
+    var lines=(presta.lines||[]).filter(function(l){return l.section===sec && bonLineOn(l, enabledOpts);});
     if(!lines.length) return;
     rows+='<tr class="secrow"><td colspan="3">'+sec+'</td></tr>';
     var lastGrp='';
@@ -1154,7 +1221,7 @@ function pdfEnc(s){
     .replace(/[^\x00-\xFF]/g,'');
 }
 function pdfClip(s,n){ s=pdfEnc(s); return s.length>n? s.slice(0,n-1)+'.' : s; }
-async function bonPdfBase64Gen(clientName, presta, pax, liv, blNum){
+async function bonPdfBase64Gen(clientName, presta, pax, liv, blNum, enabledOpts){
   pax=parseInt(pax,10)||0;
   var PL=window.PDFLib;
   var doc=await PL.PDFDocument.create();
@@ -1179,7 +1246,7 @@ async function bonPdfBase64Gen(clientName, presta, pax, liv, blNum){
   page.drawLine({start:{x:M,y:y},end:{x:W-M,y:y},thickness:1.2,color:black}); y-=17;
   var qx=W-M-210, nx=W-M-100;
   PREP_SECTIONS.forEach(function(sec){
-    var lines=(presta.lines||[]).filter(function(l){return l.section===sec && !l.optional;});
+    var lines=(presta.lines||[]).filter(function(l){return l.section===sec && bonLineOn(l, enabledOpts);});
     if(!lines.length) return;
     ensure(24);
     T(sec,M,y,9,bold,red); y-=15;
@@ -1291,7 +1358,7 @@ async function processManual(d){
   var config=await loadPrepConfig();
   var found=config?findPrestaByName(config,d.client,d.prestation):null;
   if(!found){ alert("Prestation introuvable dans la config : "+d.client+" / "+d.prestation); return; }
-  var liv={ type_prestation:d.prestation, prestaName:d.prestation, nombre_personnes:d.pax, date_evenement:d.date||"", heure_mise_en_place:d.heureMep||"07:00", heure_evenement:d.heureEv||"12:00", lieu:d.lieu||"", salle:d.salle||"", contact:d.contact||"" };
+  var liv={ type_prestation:d.prestation, prestaName:d.prestation, nombre_personnes:d.pax, date_evenement:d.date||"", heure_mise_en_place:normHM(d.heureMep)||"07:00", heure_evenement:normHM(d.heureEv)||"12:00", lieu:d.lieu||"", salle:d.salle||"", contact:d.contact||"" };
   // Détection d'un bon déjà traité portant la même référence -> modification (remplacement)
   var orig=null;
   if(d.blNum){ try{ orig=await findAgendaByDev(d.blNum); }catch(e){} }
@@ -1299,8 +1366,10 @@ async function processManual(d){
   if(isModif){
     if(!confirm("Un bon avec la référence « "+d.blNum+" » existe déjà à l'agenda"+(orig.fields.date?(" ("+orig.fields.date+")"):"")+".\n\nLe remplacer par cette version modifiée ?")) return;
   }
+  var enabledOpts=null;
+  if(d.opts&&d.opts.length){ enabledOpts={}; d.opts.forEach(function(idv){ enabledOpts[idv]=true; }); }
   var bonPdf;
-  try{ bonPdf=await bonPdfBase64Gen(found.client.name, found.presta, d.pax, liv, d.blNum); }
+  try{ bonPdf=await bonPdfBase64Gen(found.client.name, found.presta, d.pax, liv, d.blNum, enabledOpts); }
   catch(e){ alert("Erreur génération du bon : "+e.message); return; }
   try{
     var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1338,13 +1407,24 @@ async function extractModif(body, subject){
   var text=((data.content||[]).find(function(b){return b.type==="text";})||{}).text||"{}";
   try{ return JSON.parse(text.replace(/```json|```/g,"").trim()); }catch(e){ return null; }
 }
-async function findAgendaByDev(dev){
+async function findAgendaByDev(dev, hint){
   try{
     var CAL="logistique@briffe.me";
     var timeMin=new Date(Date.now()-1000*60*60*24*150).toISOString();
-    var data=await gFetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(CAL)+"/events?q="+encodeURIComponent(dev)+"&timeMin="+encodeURIComponent(timeMin)+"&singleEvents=true&maxResults=10");
+    var data=await gFetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(CAL)+"/events?q="+encodeURIComponent(dev)+"&timeMin="+encodeURIComponent(timeMin)+"&singleEvents=true&maxResults=25");
     var items=data.items||[];
-    var ev=items.find(function(e){ return ((e.description||"")+(e.summary||"")).indexOf(dev)>=0; }) || items[0];
+    var cands=items.filter(function(e){ return ((e.description||"")+(e.summary||"")).indexOf(dev)>=0; });
+    if(!cands.length) cands=items;
+    function evDate(e){ if(e.start&&e.start.dateTime){ var dt=new Date(e.start.dateTime); return ("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(); } return ""; }
+    var ev=cands[0];
+    if(hint){
+      var better=cands.find(function(e){
+        var okDate=hint.date?(evDate(e)===hint.date):true;
+        var okPresta=hint.presta?(normalize((e.summary||"")+" "+(e.description||"")).indexOf(normalize(hint.presta))>=0):true;
+        return okDate && okPresta && (hint.date||hint.presta);
+      });
+      if(better) ev=better;
+    }
     if(!ev) return null;
     var d=ev.description||"";
     function g(re){ var m=d.match(re); return m?m[1].trim():""; }
@@ -1382,6 +1462,7 @@ async function processModification(msg){
         heure_evenement: chg.heure_evenement||((b.ev||"").replace("h",":"))||"12:00",
         lieu: chg.lieu||b.lieu||"", salle: chg.salle||b.salle||"", contact:b.contact||""
       };
+      normLivTimes(liv);
       viewLivs.push({type_prestation:liv.type_prestation, nombre_personnes:liv.nombre_personnes, date_evenement:liv.date_evenement, lieu:liv.lieu});
       var found=cfg?findPrepPresta(cfg, client, liv.type_prestation):null;
       if(found) liv.prestaName=found.presta.name;
