@@ -998,8 +998,6 @@ function renderHistoryRows(){
     g.bl=g.bls.length?g.bls[g.bls.length-1]:null;
     bons.push(g);
   });
-  // Combien de bons par DEV (pour l'étiquetage 15068-1, 15068-2...)
-  var devCount={}; bons.forEach(function(g){ if(g.dev) devCount[g.dev]=(devCount[g.dev]||0)+1; });
   var list=bons.filter(function(g){ return !nq || g.versions.concat(g.bls).some(function(v){return normalize(v.name).indexOf(nq)>=0;}); });
   list.sort(function(a,b){
     if(sort==="presta-desc") return histParseDate(b.latest.name)-histParseDate(a.latest.name);
@@ -1010,10 +1008,10 @@ function renderHistoryRows(){
   var cnt=document.getElementById("hist-count"); if(cnt) cnt.textContent=list.length+" bon(s)";
   if(!HISTORY_FILES.length){ rowsEl.innerHTML='<div class="empty">Aucune commande traitee trouvee dans Drive.</div>'; return; }
   if(!list.length){ rowsEl.innerHTML='<div class="empty">Aucun résultat.</div>'; return; }
-  var devSeen={}, html="";
+  var html="";
   list.forEach(function(g){
     var dev=g.dev||"", nver=g.versions.length;
-    var idxLabel = (dev && devCount[dev]>1) ? (dev+"-"+(devSeen[dev]=(devSeen[dev]||0)+1)) : (dev||"—");
+    var idxLabel = dev || "—";   // le n° vient du fichier BL, on l'affiche tel quel (aucun index inventé)
     var titre = g.presta || fileLabel(g.latest.name);
     var da=(g.date?(' · '+g.date):'');
     html+='<div style="border:1px solid #1e1e1e;border-radius:10px;margin-bottom:10px;background:#141414;overflow:hidden">';
