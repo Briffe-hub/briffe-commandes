@@ -422,10 +422,16 @@ function flattenExtraction(ex){
   }
   return items;
 }
-// Choisit la PJ BL correspondant à une commande : par n° dans le nom de fichier, sinon positionnel.
-function pickBlPart(pdfParts, dev, idx){
+// Lit le VRAI numéro de BL dans le nom du fichier de la pièce jointe (ex. "BL-15068-1.pdf" -> "15068-1").
+// Ignore l'extension et une éventuelle date jointe ; prend le 1er nombre significatif (avec suffixe -N).
+function blNumFromFilename(name){
+  var raw=(name||'').replace(/\.[a-z0-9]+$/i,'');           // retire .pdf
+  var m=raw.match(/(?:DEV[-\s]?)?\d{3,}(?:-\d+)?/i);        // 15068-1 / DEV-15068 / 15069
+  return m ? m[0].replace(/^DEV[-\s]?/i,'DEV-') : '';
+}
+// Choisit la PJ BL correspondant à une commande (positionnel : les BL arrivent dans l'ordre des livraisons).
+function pickBlPart(pdfParts, idx){
   if(!pdfParts||!pdfParts.length) return null;
-  if(dev){ var m=pdfParts.find(function(p){ return (p.filename||"").indexOf(dev)>=0; }); if(m) return m; }
   return pdfParts[idx]||(pdfParts.length===1?pdfParts[0]:null);
 }
 
@@ -438,8 +444,8 @@ async function processEmail(msg) {
     var body = getPlainBody(msg.payload);
     var subject = getHeader(msg,"subject");
     var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
-    // Indices pour l'extraction : nombre de BL joints + leurs numéros (un BL = une commande)
-    var blHints = pdfParts.map(function(p){ var m=(p.filename||"").match(/DEV-\d+/); return { filename:p.filename||"", dev:m?m[0]:"" }; });
+    // Indices pour l'extraction : nombre de BL joints + leurs VRAIS numéros lus dans les noms de fichiers
+    var blHints = pdfParts.map(function(p){ return { filename:p.filename||"", dev:blNumFromFilename(p.filename) }; });
     var extracted = await extractFromBody(body, subject, blHints);
     var items = flattenExtraction(extracted);
     if (!items.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
@@ -449,12 +455,13 @@ async function processEmail(msg) {
     for (var li=0;li<items.length;li++) {
       var item = items[li];
       var liv = item.liv;
-      var dev = item.numero_commande || (extracted&&extracted.numero_commande) || "";
 
-      // Fetch BL PDF (par n° de commande si possible, sinon positionnel)
+      // Le BL de cette livraison (positionnel) est la SOURCE DE VÉRITÉ du numéro.
+      var pdfPart = pickBlPart(pdfParts, li);
       var blBase64 = null;
-      var pdfPart = pickBlPart(pdfParts, dev, li);
       if (pdfPart){try{blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId);}catch(e){}}
+      // Numéro réel lu dans le nom du fichier BL ; repli sur l'extraction email si aucune PJ.
+      var dev = (pdfPart && blNumFromFilename(pdfPart.filename)) || item.numero_commande || (extracted&&extracted.numero_commande) || "";
 
       // Address lookup
       var addrLookup = null;
@@ -959,7 +966,9 @@ function parseBonName(name){
   var isBL=/^BL(\s+MODIF)?\s*·/i.test(raw);
   var isModif=/MODIF/i.test(raw);
   var base=raw.replace(/^(BON|BL)(\s+MODIF)?\s*·\s*/i,'').replace(/\s*·\s*\d{1,2}h\d{2}\s*$/i,'').trim();
-  var dev=(base.match(/DEV-\d+/)||[])[0]||'';
+  // n° = 1er segment (le vrai numéro de BL, ex. 15068-1 ou DEV-015068)
+  var dev=((base.split(/\s*·\s*/)[0])||'').match(/(?:DEV-)?\d{3,}(?:-\d+)?/i);
+  dev=dev?dev[0]:'';
   var date=(base.match(/\d{2}\/\d{2}\/\d{4}/)||[])[0]||'';
   // prestation = segments entre le client et la date (heuristique sur " · ")
   var parts=base.split(/\s*·\s*/), presta='';
@@ -1242,27 +1251,32 @@ async function bonPdfBase64Gen(clientName, presta, pax, liv, blNum, enabledOpts)
   if(liv&&liv.lieu) metas.push('Lieu : '+liv.lieu+(liv.salle?(' - '+liv.salle):''));
   if(liv&&(liv.date_evenement||liv.heure_mise_en_place)) metas.push('Livraison : '+(liv.date_evenement||'')+(liv.heure_mise_en_place?(' à '+liv.heure_mise_en_place):''));
   metas.forEach(function(t){ T(t,M,y,10,font,grey); y-=13; });
-  y-=4;
-  page.drawLine({start:{x:M,y:y},end:{x:W-M,y:y},thickness:1.2,color:black}); y-=17;
-  var qx=W-M-210, nx=W-M-100;
+  y-=5;
+  page.drawLine({start:{x:M,y:y},end:{x:W-M,y:y},thickness:1.2,color:black}); y-=20;
+  // Quantité alignée à droite ; note sous l'élément (pas de troncature)
+  function TR(t,xr,yy,s,f,c){ t=pdfEnc(t); var w=(f||font).widthOfTextAtSize(t,s); page.drawText(t,{x:xr-w,y:yy,size:s,font:f||font,color:c||black}); }
+  var secRule=PL.rgb(0.80,0.72,0.72);
   PREP_SECTIONS.forEach(function(sec){
     var lines=(presta.lines||[]).filter(function(l){return l.section===sec && bonLineOn(l, enabledOpts);});
     if(!lines.length) return;
-    ensure(24);
-    T(sec,M,y,9,bold,red); y-=15;
+    ensure(30);
+    T(sec,M,y,10,bold,red); y-=7;
+    page.drawLine({start:{x:M,y:y},end:{x:W-M,y:y},thickness:0.8,color:secRule}); y-=14;
     var lastGrp='';
     lines.forEach(function(l){
-      if(l.group&&l.group!==lastGrp){ ensure(14); T(l.group,M+4,y,8,font,red); y-=12; lastGrp=l.group; }
+      if(l.group&&l.group!==lastGrp){ ensure(16); T(l.group,M+2,y,8,bold,red); y-=12; lastGrp=l.group; }
       if(!l.group) lastGrp='';
       var r=prepComputeLine(l,pax);
-      ensure(15);
-      T(pdfClip(r.label,58),M,y,10,font,black);
-      T(r.qty||'',qx,y,10,bold,black);
-      if(r.note) T(pdfClip(r.note,24),nx,y,8,font,grey);
-      y-=14;
-      page.drawLine({start:{x:M,y:y+4},end:{x:W-M,y:y+4},thickness:0.4,color:lg});
+      var hasNote=!!r.note;
+      ensure(hasNote?26:16);
+      T(pdfClip(r.label,52),M,y,10.5,font,black);
+      TR(r.qty||'',W-M,y,10.5,bold,black);
+      y-=13;
+      if(hasNote){ T(pdfClip(r.note,72),M+10,y,8,font,grey); y-=11; }
+      page.drawLine({start:{x:M,y:y+4},end:{x:W-M,y:y+4},thickness:0.35,color:lg});
+      y-=4;
     });
-    y-=7;
+    y-=9;
   });
   T('Édité le '+new Date().toLocaleDateString('fr-FR')+'   ·   briffetools',M,M-16,8,font,grey);
   var bytes=await doc.save();
