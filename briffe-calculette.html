@@ -53,6 +53,15 @@ input[type=number]{width:90px}
 .btn.danger:hover{background:#2a1414;border-color:var(--red)}
 .status{font-size:12px;letter-spacing:.03em;color:var(--mut);min-height:16px;margin-left:6px}
 .status.ok{color:var(--green)} .status.warn{color:var(--amber)} .status.err{color:#ef4444}
+.addr-drop{position:absolute;top:100%;left:0;right:0;z-index:50;background:#141414;border:1px solid #2a2a2a;border-radius:8px;margin-top:2px;max-height:220px;overflow:auto;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.addr-drop.open{display:block}
+.addr-drop .it{padding:7px 10px;font-size:12px;color:#e8e8e0;cursor:pointer;text-transform:none;letter-spacing:0;border-bottom:1px solid #1e1e1e}
+.addr-drop .it:hover{background:#1f1f1f}
+.addr-drop .it small{display:block;color:#8a8a82;font-size:10.5px;margin-top:1px}
+.mdl-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:200}
+.mdl-bx{background:#161616;border:1px solid #2a2a2a;border-radius:12px;padding:18px;max-width:440px;width:90%}
+.mdl-bx h3{margin:0 0 8px;font-size:14px;color:#e8e8e0} .mdl-bx p{font-size:12px;color:#b5b5ad;line-height:1.5;margin:0 0 14px}
+.mdl-bx .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 
 /* editor */
 .sec{margin:18px 0 6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--red2);border-bottom:1px solid var(--line);padding-bottom:6px;display:flex;justify-content:space-between;align-items:center}
@@ -156,10 +165,12 @@ input[type=number]{width:90px}
   <div class="bar no-print" style="border-top:1px solid var(--line);padding-top:12px">
     <label class="fld">N° BL<input type="text" id="m-bl" placeholder="DEV-XXXXX"></label>
     <label class="fld">Date<input type="text" id="m-date" placeholder="JJ/MM/AAAA"></label>
-    <label class="fld">Livraison (h)<input type="text" id="m-mep" placeholder="07:00" style="width:80px"></label>
-    <label class="fld">Événement (h)<input type="text" id="m-ev" placeholder="12:00" style="width:80px"></label>
-    <label class="fld" style="flex:1;min-width:160px">Lieu<input type="text" id="m-lieu" placeholder="adresse" style="width:100%"></label>
-    <label class="fld">Salle<input type="text" id="m-salle" style="width:90px"></label>
+    <label class="fld">Livraison (h)<input type="text" id="m-mep" placeholder="0700" style="width:80px" onblur="this.value=calcNormHM(this.value)"></label>
+    <label class="fld">Événement (h)<input type="text" id="m-ev" placeholder="1200" style="width:80px" onblur="this.value=calcNormHM(this.value)"></label>
+    <label class="fld" style="min-width:150px;position:relative">Nom du lieu<input type="text" id="m-nom" placeholder="Université de Lille" autocomplete="off" oninput="lieuxSuggest()" onfocus="lieuxSuggest()"><div id="lieux-drop" class="addr-drop"></div></label>
+    <label class="fld" style="min-width:120px">Bâtiment / Pôle<input type="text" id="m-bat" placeholder="Pôle Médecine"></label>
+    <label class="fld" style="flex:1;min-width:190px;position:relative">Adresse<input type="text" id="m-adr" placeholder="1 place de Verdun 59000 Lille" autocomplete="off" oninput="banSuggest()" style="width:100%"><div id="ban-drop" class="addr-drop"></div></label>
+    <label class="fld">Salle<input type="text" id="m-salle" placeholder="Salle 25" style="width:90px"></label>
     <button class="btn primary" onclick="validerManuel()" title="Génère le bon (nouveau format), l'imprime et l'ajoute à l'agenda">Valider et traiter</button>
     <button class="btn small" onclick="reprendreManuel()" title="Recharger un bon manuel déjà traité (par n° de BL/référence) pour le modifier">Reprendre un bon traité</button>
     <span class="status" id="m-status"></span>
@@ -505,20 +516,97 @@ function generate(){
 document.getElementById('c-presta').addEventListener('change',renderOptionToggles);
 function mval(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
 function setM(t,c){ var e=document.getElementById('m-status'); if(e){ e.textContent=t; e.className='status'+(c?' '+c:''); } }
-function validerManuel(){
+/* ===== Carnet de lieux (base structurée) + autocomplétion Base Adresse Nationale ===== */
+var LIEUX=[];
+function lnrm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'').trim(); }
+async function loadLieux(){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-list'})}); var j=await r.json(); LIEUX=(j&&j.records)||[]; }catch(e){ LIEUX=[]; } }
+async function saveLieu(rec){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-save',record:rec})}); var j=await r.json(); if(j&&j.record) LIEUX.push(j.record); return j; }catch(e){ return null; } }
+function closeDrops(){ ['ban-drop','lieux-drop'].forEach(function(id){ var d=document.getElementById(id); if(d){ d.className='addr-drop'; d.innerHTML=''; } }); }
+document.addEventListener('click', function(e){ if(!e.target.closest('.fld')) closeDrops(); });
+
+var _banT=null;
+function banSuggest(){
+  var inp=document.getElementById('m-adr'), drop=document.getElementById('ban-drop');
+  var q=inp.value.trim();
+  if(_banT) clearTimeout(_banT);
+  if(q.length<3){ drop.className='addr-drop'; drop.innerHTML=''; return; }
+  _banT=setTimeout(function(){
+    fetch('https://api-adresse.data.gouv.fr/search/?limit=5&q='+encodeURIComponent(q))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var feats=(d&&d.features)||[];
+        if(!feats.length){ drop.className='addr-drop'; drop.innerHTML=''; return; }
+        drop.innerHTML=feats.map(function(f){ var p=f.properties||{}; return '<div class="it" data-lbl="'+esc(p.label||'')+'">'+esc(p.label||'')+'<small>'+esc(p.context||'')+'</small></div>'; }).join('');
+        drop.className='addr-drop open';
+        drop.querySelectorAll('.it').forEach(function(it){ it.onclick=function(){ document.getElementById('m-adr').value=it.getAttribute('data-lbl'); closeDrops(); }; });
+      }).catch(function(){ drop.className='addr-drop'; drop.innerHTML=''; });
+  },300);
+}
+function lieuxSuggest(){
+  var inp=document.getElementById('m-nom'), drop=document.getElementById('lieux-drop');
+  var q=lnrm(inp.value);
+  var list=LIEUX.filter(function(r){ return !q || lnrm(r.nomLieu).indexOf(q)>=0 || lnrm(r.adresse).indexOf(q)>=0; }).slice(0,8);
+  if(!list.length){ drop.className='addr-drop'; drop.innerHTML=''; return; }
+  drop.innerHTML=list.map(function(r,i){ return '<div class="it" data-i="'+i+'">'+esc(r.nomLieu||r.adresse||'(sans nom)')+'<small>'+esc([r.batiment,r.adresse,r.salle].filter(Boolean).join(' · '))+'</small></div>'; }).join('');
+  drop.className='addr-drop open';
+  drop.querySelectorAll('.it').forEach(function(it){ it.onclick=function(){ var r=list[+it.getAttribute('data-i')]; document.getElementById('m-nom').value=r.nomLieu||''; document.getElementById('m-bat').value=r.batiment||''; document.getElementById('m-adr').value=r.adresse||''; if(!mval('m-salle')&&r.salle) document.getElementById('m-salle').value=r.salle; closeDrops(); }; });
+}
+function choiceModal(title, msg, buttons){
+  return new Promise(function(resolve){
+    var ov=document.createElement('div'); ov.className='mdl-ov';
+    var h='<div class="mdl-bx"><h3>'+title+'</h3><p>'+msg+'</p><div class="row">';
+    buttons.forEach(function(b,i){ h+='<button class="btn '+(b.primary?'primary':'small')+'" data-i="'+i+'">'+esc(b.label)+'</button>'; });
+    h+='</div></div>';
+    ov.innerHTML=h; document.body.appendChild(ov);
+    ov.querySelectorAll('button[data-i]').forEach(function(btn){ btn.onclick=function(){ var i=+btn.getAttribute('data-i'); document.body.removeChild(ov); resolve(buttons[i].key); }; });
+  });
+}
+
+async function validerManuel(){
   var ci=+document.getElementById('c-client').value, pi=+document.getElementById('c-presta').value;
   var client=CONFIG.clients[ci]; if(!client){ setM('Choisis un client.','err'); return; }
   var presta=client.prestations[pi]; if(!presta){ setM('Choisis une prestation.','err'); return; }
   var pax=parseInt(document.getElementById('c-pax').value,10)||0;
   if(pax<1){ setM('Indique le nombre de personnes.','err'); return; }
   generate();
+  var opts=[]; document.querySelectorAll('#c-options input[data-optid]').forEach(function(cb){ if(cb.checked) opts.push(cb.getAttribute('data-optid')); });
+
+  // Dédoublonnage / enregistrement de l'adresse dans le carnet
+  var adr=mval('m-adr');
+  if(adr){
+    if(!LIEUX.length) await loadLieux();
+    var match=LIEUX.find(function(r){ return r.adresse && lnrm(r.adresse)===lnrm(adr); });
+    if(match){
+      var choice=await choiceModal('Adresse déjà connue',
+        'Cette adresse existe déjà dans ta base :<br><b>'+esc(match.nomLieu||'')+'</b><br>'+esc(match.adresse||'')+(match.salle?(' — '+esc(match.salle)):'')+'<br><br>Que veux-tu faire ?',
+        [{key:'base',label:'Utiliser l\'adresse de la base',primary:true},{key:'new',label:'Garder ma saisie (nouvelle entrée)'},{key:'cancel',label:'Annuler'}]);
+      if(choice==='cancel'){ setM('Validation annulée.','warn'); return; }
+      if(choice==='base'){ document.getElementById('m-nom').value=match.nomLieu||''; document.getElementById('m-bat').value=match.batiment||''; document.getElementById('m-adr').value=match.adresse||''; if(!mval('m-salle')&&match.salle) document.getElementById('m-salle').value=match.salle; }
+      else if(choice==='new'){ await saveLieu({nomLieu:mval('m-nom'),batiment:mval('m-bat'),adresse:mval('m-adr'),salle:mval('m-salle')}); }
+    } else {
+      await saveLieu({nomLieu:mval('m-nom'),batiment:mval('m-bat'),adresse:mval('m-adr'),salle:mval('m-salle')});
+    }
+  }
+
+  var lieu=[mval('m-nom'),mval('m-bat'),mval('m-adr')].filter(Boolean).join(' · ');
   var payload={ type:'bt-bon-manuel', client:client.name, prestation:presta.name, pax:pax,
-    blNum:mval('m-bl'), date:mval('m-date'), heureMep:mval('m-mep')||'07:00', heureEv:mval('m-ev')||'12:00',
-    lieu:mval('m-lieu'), salle:mval('m-salle') };
+    blNum:mval('m-bl'), date:mval('m-date'), heureMep:calcNormHM(mval('m-mep'))||'07:00', heureEv:calcNormHM(mval('m-ev'))||'12:00',
+    lieu:lieu, salle:mval('m-salle'), opts:opts };
   try{
-    if(window.parent && window.parent!==window){ window.parent.postMessage(payload,'*'); setM('Envoyé : impression + agenda en cours...','ok'); }
+    if(window.parent && window.parent!==window){ window.parent.postMessage(payload,'*'); setM('Envoyé : impression + agenda en cours…','ok'); }
     else { setM("À utiliser depuis l'onglet « Paramétrage prépa » de la page Commandes (connexion Google requise).",'warn'); }
   }catch(e){ setM('Erreur : '+e.message,'err'); }
+}
+function calcNormHM(s){
+  s=(s==null?'':String(s)).trim(); if(!s) return '';
+  var h, mn, m;
+  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }
+  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }
+  else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }
+  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }
+  else return s;
+  if(isNaN(h)||h>23||mn>59) return s;
+  return ('0'+h).slice(-2)+':'+('0'+mn).slice(-2);
 }
 /* ===== Reprise / modification d'un bon manuel déjà traité ===== */
 function mnrm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\(modifiee?\)/g,'').trim(); }
@@ -547,7 +635,9 @@ function fillManuelForm(f){
   mvalSet('m-date', f.date||'');
   mvalSet('m-mep', f.mep||f.heureMep||'');
   mvalSet('m-ev', f.ev||f.heureEv||'');
-  mvalSet('m-lieu', f.lieu||'');
+  mvalSet('m-nom', f.lieu||'');  // l'agenda ne stocke que le lieu composé -> on le remet dans « Nom du lieu »
+  mvalSet('m-bat', '');
+  mvalSet('m-adr', '');
   mvalSet('m-salle', f.salle||'');
   if(typeof renderOptionToggles==='function') renderOptionToggles();
   try{ generate(); }catch(e){}
@@ -562,6 +652,7 @@ if(location.search.indexOf('embed')>=0) document.body.classList.add('embed');
   await loadConfig();
   refreshSelectors();
   renderEditor();
+  loadLieux();  // carnet de lieux (best-effort)
 })();
 </script>
 </body>
