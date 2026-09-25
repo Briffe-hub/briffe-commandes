@@ -8,10 +8,28 @@
 const SITE_ID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
 const TOKEN   = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
 const STORE   = "briffe-addresses";
+const LIEUX_STORE = "briffe-lieux";
 
 function blobUrl(key) {
   return `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${STORE}/${encodeURIComponent(key)}`;
 }
+
+// Helpers génériques (store paramétrable) pour le carnet de lieux
+function urlS(store, key) { return `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${store}/${encodeURIComponent(key)}`; }
+async function getS(store, key) {
+  const r = await fetch(urlS(store, key), { headers: { "Authorization": "Bearer " + TOKEN } });
+  if (r.status === 404) return null; if (!r.ok) throw new Error("Blob GET " + r.status); return r.json();
+}
+async function setS(store, key, value) {
+  const r = await fetch(urlS(store, key), { method: "PUT", headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(value) });
+  if (!r.ok) throw new Error("Blob PUT " + r.status);
+}
+async function delS(store, key) { await fetch(urlS(store, key), { method: "DELETE", headers: { "Authorization": "Bearer " + TOKEN } }); }
+async function listS(store) {
+  const r = await fetch(`https://api.netlify.com/api/v1/blobs/${SITE_ID}/${store}`, { headers: { "Authorization": "Bearer " + TOKEN } });
+  if (!r.ok) return []; const data = await r.json(); return data.blobs || [];
+}
+function lieuKey(id) { return String(id || ("L_" + Date.now() + "_" + Math.random().toString(36).slice(2))).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 120); }
 
 function normalizeAddress(addr) {
   return (addr || "")
@@ -103,6 +121,38 @@ exports.handler = async function(event) {
       if (body.action === "delete") {
         const key = normalizeAddress(body.address);
         await blobDelete(key);
+        return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true }) };
+      }
+
+      // ===== Carnet de lieux structuré (nom du lieu / bâtiment / adresse / salle) =====
+      if (body.action === "lieux-list") {
+        const blobs = await listS(LIEUX_STORE);
+        const records = [];
+        for (let i = 0; i < blobs.length; i += 20) {
+          const batch = blobs.slice(i, i + 20);
+          const vals = await Promise.all(batch.map(b => getS(LIEUX_STORE, b.key).catch(() => null)));
+          vals.forEach(v => { if (v) records.push(v); });
+        }
+        return { statusCode: 200, headers: cors(), body: JSON.stringify({ records }) };
+      }
+
+      if (body.action === "lieux-save") {
+        const rec = body.record || {};
+        const id = lieuKey(rec.id);
+        const value = {
+          id,
+          nomLieu:  rec.nomLieu  || "",
+          batiment: rec.batiment || "",
+          adresse:  rec.adresse  || "",
+          salle:    rec.salle    || "",
+          savedAt:  new Date().toISOString()
+        };
+        await setS(LIEUX_STORE, id, value);
+        return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, id, record: value }) };
+      }
+
+      if (body.action === "lieux-delete") {
+        await delS(LIEUX_STORE, lieuKey(body.id));
         return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true }) };
       }
     }
