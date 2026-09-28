@@ -48,8 +48,8 @@ exports.handler = async function(event) {
     // resolvedSheetName may be updated after PDF extraction
     const nb = livraison.nombre_personnes;
     const dateEv = livraison.date_evenement || "";
-    const heureMep = livraison.heure_mise_en_place || "06:00";
-    const heureEv = livraison.heure_evenement || "08:00";
+    const heureMep = normHM(livraison.heure_mise_en_place) || "06:00";
+    const heureEv = normHM(livraison.heure_evenement);   // "" si non fournie : on ne l'invente pas
     const lieu = livraison.lieu || "";
     const salle = livraison.salle || "";
     const contact = livraison.contact || "";
@@ -146,7 +146,9 @@ exports.handler = async function(event) {
       dateISO = `${y}-${m}-${d}`;
     }
     const startISO = `${dateISO}T${heureMep}:00`;
-    const endISO   = `${dateISO}T${heureEv}:00`;
+    let endISO;
+    if (heureEv && heureEv > heureMep) { endISO = `${dateISO}T${heureEv}:00`; }
+    else { const hh = ("0"+((parseInt(heureMep.slice(0,2),10)+1)%24)).slice(-2); endISO = `${dateISO}T${hh}:${heureMep.slice(3)}:00`; }
 
     // Extract phone number from contact for tel: link
     let contactHtml = contact || "";
@@ -166,7 +168,7 @@ exports.handler = async function(event) {
       "Prestation : " + (livraison.type_prestation || "—"),
       "Nombre de personnes : " + nb,
       "Mise en place : " + heureMep,
-      "Événement : " + heureEv,
+      "Événement : " + (heureEv || "à préciser"),
       lieu ? "Adresse : " + lieu : "",
       salle ? "Salle : " + salle : "",
       contact ? "Contact : " + (contact.replace(/<[^>]+>/g, "")) : "",
@@ -339,14 +341,15 @@ async function driveUpload(googleToken, fileName, buffer){
 
 // Flux app : archive le bon (PDF fourni) + le BL séparément, agenda avec les deux liens, GreenLoop.
 // Normalise une heure saisie librement en HH:MM ("0830","8h30","8:30","8" -> "08:30"/"08:00"). "" si vide/invalide.
+// Extrait la PREMIÈRE heure d'une chaîne (gère "10:00-12:00", "à partir de 10h", "0830") et la normalise en HH:MM. "" si rien.
 function normHM(s){
   s=(s==null?"":String(s)).trim();
   if(!s) return "";
   let h, mn, m;
-  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }        // 8:30 / 8h30 / 8.30
-  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }            // 8h
+  if((m=s.match(/(\d{1,2})\s*[:hH.]\s*(\d{2})/)))    { h=+m[1]; mn=+m[2]; }        // 10:00 / 10h00 / 10.00 (n'importe où)
+  else if((m=s.match(/(\d{1,2})\s*[hH](?![0-9])/)))  { h=+m[1]; mn=0; }            // 10h
   else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }        // 0830
-  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }            // 8
+  else if((m=s.match(/(\d{1,2})/)))                  { h=+m[1]; mn=0; }            // 1er nombre
   else return "";
   if(isNaN(h)||h>23||mn>59) return "";
   return ("0"+h).slice(-2)+":"+("0"+mn).slice(-2);
@@ -366,7 +369,7 @@ async function handleAppBon(googleToken, body){
     const nb       = livraison.nombre_personnes;
     const dateEv   = livraison.date_evenement || "";
     const heureMep = normHM(livraison.heure_mise_en_place) || "06:00";
-    const heureEv  = normHM(livraison.heure_evenement) || "08:00";
+    const heureEv  = normHM(livraison.heure_evenement);   // peut être "" si non fournie : on ne l'invente pas
     const lieu     = livraison.lieu || "";
     const salle    = livraison.salle || "";
     const contact  = livraison.contact || "";
@@ -388,9 +391,10 @@ async function handleAppBon(googleToken, body){
     let dateWarn = "";
     if (!dateISO) { dateISO = new Date().toISOString().split("T")[0]; dateWarn = " ⚠ date non lue (" + (dateEv||"vide") + ")"; console.warn("handleAppBon: date illisible, repli aujourd'hui:", dateEv); }
     const startISO = `${dateISO}T${heureMep}:00`;
-    // Fin = heure événement si postérieure à la mise en place, sinon mise en place + 2h
-    let endISO = `${dateISO}T${heureEv}:00`;
-    if (heureEv <= heureMep) { const hh = ("0"+((parseInt(heureMep.slice(0,2),10)+2)%24)).slice(-2); endISO = `${dateISO}T${hh}:${heureMep.slice(3)}:00`; }
+    // Fin = heure événement si fournie et postérieure à la mise en place, sinon mise en place + 2h
+    let endISO;
+    if (heureEv && heureEv > heureMep) { endISO = `${dateISO}T${heureEv}:00`; }
+    else { const hh = ("0"+((parseInt(heureMep.slice(0,2),10)+1)%24)).slice(-2); endISO = `${dateISO}T${hh}:${heureMep.slice(3)}:00`; }
 
     const tp = (presta || "").toLowerCase();
     let emoji = "☕";
@@ -404,7 +408,7 @@ async function handleAppBon(googleToken, body){
       "Prestation : " + presta,
       "Nombre de personnes : " + nb,
       "Mise en place : " + heureMep,
-      "Événement : " + heureEv,
+      "Événement : " + (heureEv || "à préciser"),
       lieu ? "Adresse : " + lieu : "",
       salle ? "Salle : " + salle : "",
       contact ? "Contact : " + contact.replace(/<[^>]+>/g, "") : "",
