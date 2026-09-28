@@ -374,6 +374,9 @@ async function handleAppBon(googleToken, body){
     const salle    = livraison.salle || "";
     const contact  = livraison.contact || "";
     const presta   = livraison.prestaName || livraison.type_prestation || "";
+    const service  = parseInt(livraison.service, 10) || 0;
+    const heureEvFin = normHM(livraison.heure_evenement_fin);
+    const svcHours = (heureEv && heureEvFin && heureEvFin !== heureEv) ? (heureEv + " - " + heureEvFin) : (heureEv || "à préciser");
 
     const safe = s => (s || "").toString().replace(/[\\/:*?"<>|]+/g, "-").trim();
     const base = [numero_commande || "CMD", safe(client), safe(presta), dateEv].filter(Boolean).join(" · ");
@@ -403,12 +406,14 @@ async function handleAppBon(googleToken, body){
     else if (tp.includes("buffet")||tp.includes("repas")||tp.includes("diner")||tp.includes("dîner")) emoji = "🍽";
 
     const description = [
+      service > 0 ? "🔔 SERVICE : " + service + " personne" + (service > 1 ? "s" : "") + " — " + svcHours : "",
       "N° BL : " + (numero_commande || "—"),
       "Client : " + (client || "—"),
       "Prestation : " + presta,
       "Nombre de personnes : " + nb,
       "Mise en place : " + heureMep,
       "Événement : " + (heureEv || "à préciser"),
+      service > 0 ? "Service : " + service + " personne" + (service > 1 ? "s" : "") + " (" + svcHours + ")" : "",
       lieu ? "Adresse : " + lieu : "",
       salle ? "Salle : " + salle : "",
       contact ? "Contact : " + contact.replace(/<[^>]+>/g, "") : "",
@@ -419,7 +424,7 @@ async function handleAppBon(googleToken, body){
     ].filter(Boolean).join("\n");
 
     const evBody = {
-      summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.` + (isModif ? " (modifiée)" : "") + dateWarn,
+      summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.` + (service > 0 ? " · 🔔 SERVICE ×" + service : "") + (isModif ? " (modifiée)" : "") + dateWarn,
       location: [lieu, salle].filter(Boolean).join(" — "),
       description,
       start: { dateTime: startISO, timeZone: "Europe/Paris" },
