@@ -185,6 +185,33 @@ function resolveSheetFromClientAndPrestation(client, typePrestation) {
 
 let TOKEN=null, LABEL_ID=null, ANNULE_LABEL_ID=null, EMAILS=[], ORDERS={};
 
+/* ===== Notifications : aucun échec de script ne doit être silencieux ===== */
+function btNotify(msg, type){
+  try{
+    var host=document.getElementById('bt-toasts');
+    if(!host){ host=document.createElement('div'); host.id='bt-toasts';
+      host.style.cssText='position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(420px,90vw)';
+      document.body.appendChild(host); }
+    var c=(type==='ok')?'#22c55e':(type==='warn')?'#f59e0b':'#ef4444';
+    var el=document.createElement('div');
+    el.style.cssText='background:#161616;border:1px solid '+c+'55;border-left:3px solid '+c+';border-radius:8px;color:#e8e8e0;padding:10px 12px;font-size:12.5px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer';
+    el.textContent=(type==='ok'?'✓ ':type==='warn'?'⚠ ':'✕ ')+msg;
+    el.title='Cliquer pour fermer';
+    el.onclick=function(){ try{host.removeChild(el);}catch(e){} };
+    host.appendChild(el);
+    if(type!=='error') setTimeout(function(){ try{host.removeChild(el);}catch(e){} }, 9000);
+  }catch(e){ try{ console.error('btNotify KO', e); }catch(_){} }
+}
+window.addEventListener('error', function(ev){
+  var m=(ev&&ev.message)||'Erreur script';
+  var src=ev&&ev.filename?(' ('+String(ev.filename).split('/').pop()+':'+ev.lineno+')'):'';
+  btNotify('Erreur script : '+m+src, 'error');
+});
+window.addEventListener('unhandledrejection', function(ev){
+  var r=ev&&ev.reason; var m=(r&&(r.message||r))||'Promesse rejetée';
+  btNotify('Échec non géré : '+m, 'error');
+});
+
 function signIn() {
   var client = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
@@ -330,7 +357,7 @@ async function extractFromBody(body, subject, blHints) {
     if(devs.length) hint+=" Numéros de commande attendus (un par commande) : "+devs.join(", ")+".";
     hint+=" Ne fusionne jamais plusieurs bons en une seule commande.";
   }
-  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons."+hint+"\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place, heure evenement, type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande. Les heures sont au format HH:MM (ex. 08:30).\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
+  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons."+hint+"\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place (heure de DÉBUT au format HH:MM), heure evenement (heure de DÉBUT de l'événement au format HH:MM ; si une plage « HH:MM - HH:MM » est indiquée, prends l'heure de début), type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande. Les heures sont au format HH:MM (ex. 08:30).\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
 
   var resp = await fetch("/api/claude", {
     method:"POST",
@@ -459,13 +486,13 @@ async function processEmail(msg) {
       // Le BL de cette livraison (positionnel) est la SOURCE DE VÉRITÉ du numéro.
       var pdfPart = pickBlPart(pdfParts, li);
       var blBase64 = null;
-      if (pdfPart){try{blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId);}catch(e){}}
       // Numéro réel lu dans le nom du fichier BL ; repli sur l'extraction email si aucune PJ.
       var dev = (pdfPart && blNumFromFilename(pdfPart.filename)) || item.numero_commande || (extracted&&extracted.numero_commande) || "";
+      if (pdfPart){ try{ blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId); }catch(e){ console.warn("BL fetch:", e); sheetErrors.push((dev||"?")+" : BL non récupéré ("+e.message+")"); } }
 
       // Address lookup
       var addrLookup = null;
-      if (liv.lieu){try{addrLookup=await lookupAddress(liv.lieu);}catch(e){}}
+      if (liv.lieu){try{addrLookup=await lookupAddress(liv.lieu);}catch(e){ console.warn("lookupAddress:", e); }}
 
       // Resolve client
       var resolvedClient = null;
@@ -493,7 +520,7 @@ async function processEmail(msg) {
         var cfg = await loadPrepConfig();
         var found = cfg ? findPrepPresta(cfg, resolvedClient, liv.type_prestation) : null;
         if (found) { liv.prestaName = found.presta.name; bonPdfB64 = await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev); }
-      } catch(e){ console.warn("bon PDF gen:", e); }
+      } catch(e){ console.warn("bon PDF gen:", e); sheetErrors.push((dev||"?")+" : erreur génération du bon ("+e.message+")"); }
       console.log("Commande:", dev, "| client:", resolvedClient, "| libellé email:", liv.type_prestation, "| prestation retenue:", (found?found.presta.name:"—"), "| sheet:", sheetName, "| bonPDF:", !!bonPdfB64);
       if (!sheetName && !bonPdfB64) {
         sheetErrors.push("Prestation non reconnue pour "+resolvedClient+" / "+liv.type_prestation+(dev?(" ("+dev+")"):""));
@@ -542,7 +569,7 @@ async function processEmail(msg) {
       processedLivs.push(liv);
     }
 
-    try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); }
+    try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); btNotify("Email non archivé (reste dans la boîte de réception) : "+e.message, "warn"); }
 
     var devSet=[]; processedLivs.forEach(function(l){ if(l.numero_commande&&devSet.indexOf(l.numero_commande)<0) devSet.push(l.numero_commande); });
     if(pdfParts.length>1 && items.length<pdfParts.length){
@@ -785,7 +812,7 @@ async function regenerate(msgId) {
 
     var blBase64 = null;
     var pdfPart = pdfParts[li]||pdfParts[0];
-    if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){}}
+    if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){ console.warn("BL fetch:", e); sheetErrors.push("BL non récupéré ("+e.message+")"); }}
 
     try {
       var resp = await fetch("/api/process",{
@@ -913,6 +940,7 @@ function renderEmailList(){
           return t;
         }).join(" | ");
         html+='<span class="tag ok">&#10003; '+tags+'</span>';
+        if (order.error) html+='<span class="tag warn" style="margin-left:6px">&#9888; '+esc(order.error)+'</span>';
       } else {
         html+='<span class="tag warn">&#9888; '+esc(order.error||"Onglet non mis a jour")+'</span>';
       }
@@ -1135,14 +1163,15 @@ var PREP_MATCH={
   sciencespo:[{kw:['dejeuner','pdj','petit'],p:'PDJ'}]
 };
 function nkey(s){return normalize(s).replace(/\s+/g,'');}
-// Normalise une heure libre en HH:MM ("0830","8h30","8:30" -> "08:30"). Renvoie l'entrée si non reconnue.
+// Extrait la PREMIÈRE heure d'une chaîne et la normalise en HH:MM.
+// Gère les plages et libellés : "10:00-12:00"->10:00, "à partir de 10h"->10:00, "0830"->08:30. Renvoie l'entrée si rien trouvé.
 function normHM(s){
   s=(s==null?'':String(s)).trim(); if(!s) return '';
   var h, mn, m;
-  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }
-  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }
-  else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }
-  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }
+  if((m=s.match(/(\d{1,2})\s*[:hH.]\s*(\d{2})/)))    { h=+m[1]; mn=+m[2]; }   // 10:00 / 10h00 / 10.00 (n'importe où)
+  else if((m=s.match(/(\d{1,2})\s*[hH](?![0-9])/)))  { h=+m[1]; mn=0; }        // 10h
+  else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }    // 0830
+  else if((m=s.match(/(\d{1,2})/)))                  { h=+m[1]; mn=0; }        // 1er nombre
   else return s;
   if(isNaN(h)||h>23||mn>59) return s;
   return ('0'+h).slice(-2)+':'+('0'+mn).slice(-2);
@@ -1390,7 +1419,11 @@ async function processManual(d){
     var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({ googleToken:TOKEN, livraison:liv, numero_commande:d.blNum||"", client:found.client.name, blBase64:null, bonPdfBase64:bonPdf, replaceEventId:(isModif?orig.eventId:null), isModif:isModif })});
     var result=await resp.json();
-    if(result.ok){ autoPrint(bonPdf); alert(isModif?"Bon manuel modifié : entrée agenda remplacée et bon réimprimé.":"Bon manuel traité : imprimé et ajouté à l'agenda."); }
+    if(result.ok){
+      autoPrint(bonPdf);
+      if(result.calOk===false){ alert("Bon manuel imprimé, MAIS agenda non mis à jour : "+(result.calError||"échec agenda")); }
+      else { alert(isModif?"Bon manuel modifié : entrée agenda remplacée et bon réimprimé.":"Bon manuel traité : imprimé et ajouté à l'agenda."); }
+    }
     else { alert("Erreur traitement : "+(result.error||"inconnue")); }
   }catch(e){ alert("Erreur réseau : "+e.message); }
 }
@@ -1482,13 +1515,13 @@ async function processModification(msg){
       var found=cfg?findPrepPresta(cfg, client, liv.type_prestation):null;
       if(found) liv.prestaName=found.presta.name;
       var bonPdf=found?await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev):null;
-      var blB64=null, pp=pdfParts[li]||pdfParts[0]; if(pp){ try{ blB64=await fetchAttachment(msg.id, pp.body.attachmentId); }catch(e){} }
+      var blB64=null, pp=pdfParts[li]||pdfParts[0]; if(pp){ try{ blB64=await fetchAttachment(msg.id, pp.body.attachmentId); }catch(e){ console.warn("BL fetch (modif):", e); btNotify((dev||"?")+" : BL non récupéré ("+e.message+")","warn"); } }
       var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({googleToken:TOKEN, livraison:liv, numero_commande:dev, client:(found?found.client.name:client), blBase64:blB64, bonPdfBase64:bonPdf, replaceEventId:(orig?orig.eventId:null), isModif:true})});
       var result=await resp.json();
-      if(result.ok){ results.push({nb:liv.nombre_personnes, sheetName:(found?found.client.name:client)+" · "+liv.type_prestation, bonPdfBase64:bonPdf, blBase64:blB64, calEventLink:result.calEventLink, pdfFileId:result.bonFileId}); }
+      if(result.ok){ if(result.calOk===false) btNotify((dev||"?")+" : "+(result.calError||"agenda non mis à jour"),"warn"); results.push({nb:liv.nombre_personnes, sheetName:(found?found.client.name:client)+" · "+liv.type_prestation, bonPdfBase64:bonPdf, blBase64:blB64, calEventLink:result.calEventLink, pdfFileId:result.bonFileId}); }
       else { throw new Error(result.error||"Traitement refusé"); }
     }
-    try{ await archiveEmail(msg.id); }catch(e){}
+    try{ await archiveEmail(msg.id); }catch(e){ console.warn("Archive failed (modif):", e); btNotify("Email de modification non archivé : "+e.message,"warn"); }
     ORDERS[id]={status:results.length?"success":"partial", data:{numero_commande:dev, client:ex.client||((orig&&orig.fields.client)||""), isModif:true, livraisons:viewLivs}, sheetResult:results.length?results:null, msgId:msg.id, agendaReplaced:!!(orig&&orig.eventId)};
     renderEmailList();
     (async function(){ for(var i=0;i<results.length;i++){ var r=results[i]; if(r.blBase64){autoPrint(r.blBase64); await new Promise(function(res){setTimeout(res,4000);});} if(r.bonPdfBase64){autoPrint(r.bonPdfBase64); await new Promise(function(res){setTimeout(res,4000);});} } })();
@@ -1500,7 +1533,7 @@ var STATS_RECORDS=[];
 async function loadStats(){
   var host=document.getElementById("stats-content"); if(host) host.innerHTML='<div class="empty">Chargement...</div>';
   try{ var r=await fetch("/api/stats",{cache:"no-store"}); var t=await r.text(); var j=JSON.parse(t); STATS_RECORDS=(j&&j.records)||[]; }
-  catch(e){ STATS_RECORDS=[]; }
+  catch(e){ STATS_RECORDS=[]; console.warn("loadStats:", e); btNotify("Statistiques indisponibles : "+e.message, "warn"); }
   renderStats();
 }
 function statParseDate(s){ if(!s) return null; var m=String(s).match(/(\d{2})\/(\d{2})\/(\d{4})/); if(m) return new Date(+m[3],+m[2]-1,+m[1]); var d=new Date(s); return isNaN(d.getTime())?null:d; }
