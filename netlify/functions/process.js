@@ -338,13 +338,35 @@ async function driveUpload(googleToken, fileName, buffer){
 }
 
 // Flux app : archive le bon (PDF fourni) + le BL séparément, agenda avec les deux liens, GreenLoop.
+// Normalise une heure saisie librement en HH:MM ("0830","8h30","8:30","8" -> "08:30"/"08:00"). "" si vide/invalide.
+function normHM(s){
+  s=(s==null?"":String(s)).trim();
+  if(!s) return "";
+  let h, mn, m;
+  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }        // 8:30 / 8h30 / 8.30
+  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }            // 8h
+  else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }        // 0830
+  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }            // 8
+  else return "";
+  if(isNaN(h)||h>23||mn>59) return "";
+  return ("0"+h).slice(-2)+":"+("0"+mn).slice(-2);
+}
+// Convertit une date libre en "YYYY-MM-DD" (JJ/MM/AAAA, JJ/MM/AA, JJ-MM-AAAA, AAAA-MM-JJ). null si illisible.
+function toISODate(s){
+  s=(s==null?"":String(s)).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if(m){ let d=("0"+m[1]).slice(-2), mo=("0"+m[2]).slice(-2), y=m[3]; if(y.length===2) y="20"+y; return `${y}-${mo}-${d}`; }
+  return null;
+}
 async function handleAppBon(googleToken, body){
   const { livraison, numero_commande, client, blBase64, bonPdfBase64, replaceEventId, isModif } = body;
   try {
     const nb       = livraison.nombre_personnes;
     const dateEv   = livraison.date_evenement || "";
-    const heureMep = livraison.heure_mise_en_place || "06:00";
-    const heureEv  = livraison.heure_evenement || "08:00";
+    const heureMep = normHM(livraison.heure_mise_en_place) || "06:00";
+    const heureEv  = normHM(livraison.heure_evenement) || "08:00";
     const lieu     = livraison.lieu || "";
     const salle    = livraison.salle || "";
     const contact  = livraison.contact || "";
@@ -361,11 +383,14 @@ async function handleAppBon(googleToken, body){
     let blFile = null;
     if (blBase64) { try { blFile = await driveUpload(googleToken, blPfx + " · " + base + stamp + ".pdf", Buffer.from(blBase64, "base64")); } catch(e){ console.warn("BL upload fail:", e.message); } }
 
-    // 2. Événement agenda, avec les deux liens
-    let dateISO = new Date().toISOString().split("T")[0];
-    if (dateEv && /\d{2}\/\d{2}\/\d{4}/.test(dateEv)) { const [d,m,y] = dateEv.split("/"); dateISO = `${y}-${m}-${d}`; }
+    // 2. Événement agenda : positionné à l'heure de MISE EN PLACE, le jour de la prestation
+    let dateISO = toISODate(dateEv);
+    let dateWarn = "";
+    if (!dateISO) { dateISO = new Date().toISOString().split("T")[0]; dateWarn = " ⚠ date non lue (" + (dateEv||"vide") + ")"; console.warn("handleAppBon: date illisible, repli aujourd'hui:", dateEv); }
     const startISO = `${dateISO}T${heureMep}:00`;
-    const endISO   = `${dateISO}T${heureEv}:00`;
+    // Fin = heure événement si postérieure à la mise en place, sinon mise en place + 2h
+    let endISO = `${dateISO}T${heureEv}:00`;
+    if (heureEv <= heureMep) { const hh = ("0"+((parseInt(heureMep.slice(0,2),10)+2)%24)).slice(-2); endISO = `${dateISO}T${hh}:${heureMep.slice(3)}:00`; }
 
     const tp = (presta || "").toLowerCase();
     let emoji = "☕";
@@ -390,7 +415,7 @@ async function handleAppBon(googleToken, body){
     ].filter(Boolean).join("\n");
 
     const evBody = {
-      summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.` + (isModif ? " (modifiée)" : ""),
+      summary: `AO ${emoji} ${client || ""} · ${presta} · ${nb} pers.` + (isModif ? " (modifiée)" : "") + dateWarn,
       location: [lieu, salle].filter(Boolean).join(" — "),
       description,
       start: { dateTime: startISO, timeZone: "Europe/Paris" },
@@ -410,6 +435,10 @@ async function handleAppBon(googleToken, body){
       calResp = await fetch(calBase, { method: "POST", headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" }, body: JSON.stringify(evBody) });
     }
     const calEvent = await calResp.json();
+    // Agenda : on remonte explicitement un échec de création (sinon panne silencieuse)
+    const calOk = !!(calEvent && calEvent.id);
+    const calError = calOk ? null : ("Agenda non créé (HTTP " + calResp.status + (calEvent && calEvent.error && calEvent.error.message ? " – " + calEvent.error.message : "") + ")");
+    if (!calOk) console.error("handleAppBon calendar KO:", calResp.status, JSON.stringify(calEvent).slice(0,300), "| start:", startISO, "end:", endISO);
 
     // 3. GreenLoop (best-effort)
     let greenloop = null;
@@ -431,6 +460,7 @@ async function handleAppBon(googleToken, body){
       blFileId: blFile ? blFile.id : null, blLink: blFile ? driveLink(blFile.id) : null,
       pdfFileId: bonFile.id, pdfFileName: "BON · " + base + ".pdf",
       calEventId: calEvent.id, calEventLink: calEvent.htmlLink,
+      calOk: calOk, calError: calError,
       greenloop
     }) };
   } catch(e){
