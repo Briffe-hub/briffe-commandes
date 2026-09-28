@@ -516,11 +516,30 @@ function generate(){
 document.getElementById('c-presta').addEventListener('change',renderOptionToggles);
 function mval(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
 function setM(t,c){ var e=document.getElementById('m-status'); if(e){ e.textContent=t; e.className='status'+(c?' '+c:''); } }
+/* ===== Notifications : aucun échec de script ne doit être silencieux ===== */
+function calcNotify(msg, type){
+  try{
+    var host=document.getElementById('bt-toasts');
+    if(!host){ host=document.createElement('div'); host.id='bt-toasts';
+      host.style.cssText='position:fixed;right:14px;bottom:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:min(420px,90vw)';
+      document.body.appendChild(host); }
+    var c=(type==='ok')?'#2ec27e':(type==='warn')?'#e0a83a':'#ef4444';
+    var el=document.createElement('div');
+    el.style.cssText='background:#161616;border:1px solid '+c+'55;border-left:3px solid '+c+';border-radius:8px;color:#e8e8e0;padding:9px 11px;font-size:12px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer';
+    el.textContent=(type==='ok'?'✓ ':type==='warn'?'⚠ ':'✕ ')+msg; el.title='Cliquer pour fermer';
+    el.onclick=function(){ try{host.removeChild(el);}catch(e){} };
+    host.appendChild(el);
+    if(type!=='error') setTimeout(function(){ try{host.removeChild(el);}catch(e){} }, 9000);
+  }catch(e){ try{console.error('calcNotify KO',e);}catch(_){} }
+}
+window.addEventListener('error', function(ev){ calcNotify('Erreur script : '+((ev&&ev.message)||'?'), 'error'); });
+window.addEventListener('unhandledrejection', function(ev){ var r=ev&&ev.reason; calcNotify('Échec non géré : '+((r&&(r.message||r))||'?'), 'error'); });
+
 /* ===== Carnet de lieux (base structurée) + autocomplétion Base Adresse Nationale ===== */
 var LIEUX=[];
 function lnrm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'').trim(); }
-async function loadLieux(){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-list'})}); var j=await r.json(); LIEUX=(j&&j.records)||[]; }catch(e){ LIEUX=[]; } }
-async function saveLieu(rec){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-save',record:rec})}); var j=await r.json(); if(j&&j.record) LIEUX.push(j.record); return j; }catch(e){ return null; } }
+async function loadLieux(){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-list'})}); var j=await r.json(); LIEUX=(j&&j.records)||[]; }catch(e){ LIEUX=[]; console.warn('loadLieux:', e); } }
+async function saveLieu(rec){ try{ var r=await fetch('/api/addresses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'lieux-save',record:rec})}); var j=await r.json(); if(j&&j.record){ LIEUX.push(j.record); return j; } throw new Error((j&&j.error)||'réponse invalide'); }catch(e){ console.warn('saveLieu:', e); calcNotify('Adresse non enregistrée dans le carnet : '+e.message, 'warn'); return null; } }
 function closeDrops(){ ['ban-drop','lieux-drop'].forEach(function(id){ var d=document.getElementById(id); if(d){ d.className='addr-drop'; d.innerHTML=''; } }); }
 document.addEventListener('click', function(e){ if(!e.target.closest('.fld')) closeDrops(); });
 
@@ -600,10 +619,10 @@ async function validerManuel(){
 function calcNormHM(s){
   s=(s==null?'':String(s)).trim(); if(!s) return '';
   var h, mn, m;
-  if((m=s.match(/^(\d{1,2})\s*[:hH.]\s*(\d{2})$/))) { h=+m[1]; mn=+m[2]; }
-  else if((m=s.match(/^(\d{1,2})[hH]$/)))            { h=+m[1]; mn=0; }
+  if((m=s.match(/(\d{1,2})\s*[:hH.]\s*(\d{2})/)))    { h=+m[1]; mn=+m[2]; }
+  else if((m=s.match(/(\d{1,2})\s*[hH](?![0-9])/)))  { h=+m[1]; mn=0; }
   else if((m=s.match(/^(\d{2})(\d{2})$/)))           { h=+m[1]; mn=+m[2]; }
-  else if((m=s.match(/^(\d{1,2})$/)))                { h=+m[1]; mn=0; }
+  else if((m=s.match(/(\d{1,2})/)))                  { h=+m[1]; mn=0; }
   else return s;
   if(isNaN(h)||h>23||mn>59) return s;
   return ('0'+h).slice(-2)+':'+('0'+mn).slice(-2);
@@ -640,7 +659,7 @@ function fillManuelForm(f){
   mvalSet('m-adr', '');
   mvalSet('m-salle', f.salle||'');
   if(typeof renderOptionToggles==='function') renderOptionToggles();
-  try{ generate(); }catch(e){}
+  try{ generate(); }catch(e){ console.warn('generate:', e); calcNotify('Aperçu non généré : '+e.message, 'warn'); }
   setM('Bon « '+(f.ref||f.blNum||'')+' » chargé — modifie puis « Valider et traiter » pour remplacer.','ok');
 }
 window.addEventListener('message', function(ev){
