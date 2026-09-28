@@ -357,7 +357,7 @@ async function extractFromBody(body, subject, blHints) {
     if(devs.length) hint+=" Numéros de commande attendus (un par commande) : "+devs.join(", ")+".";
     hint+=" Ne fusionne jamais plusieurs bons en une seule commande.";
   }
-  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons."+hint+"\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place (heure de DÉBUT au format HH:MM), heure evenement (heure de DÉBUT de l'événement au format HH:MM ; si une plage « HH:MM - HH:MM » est indiquée, prends l'heure de début), type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact.\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande. Les heures sont au format HH:MM (ex. 08:30).\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\"}]}]}";
+  var prompt = "Analyse ce corps d'email de La Consignerie. Un même email peut contenir PLUSIEURS COMMANDES distinctes (chacune avec son propre numéro DEV / son propre BL), typiquement pour le même lieu mais à des horaires ou dates différents. Chaque commande peut elle-même comporter une ou plusieurs livraisons."+hint+"\n\nSujet: "+subject+"\n\nCorps:\n"+body+"\n\nPour CHAQUE commande, extrais son numero_commande (DEV-XXXXX) et son client, puis pour chaque livraison de cette commande : date (JJ/MM/AAAA), heure de mise en place (heure de DÉBUT au format HH:MM), heure evenement (heure de DÉBUT de l'événement au format HH:MM ; si une plage « HH:MM - HH:MM » est indiquée, prends l'heure de début), heure evenement fin (heure de FIN de l'événement au format HH:MM si une plage est indiquée, sinon vide), type de prestation (nom exact du produit en minuscules sans accents), nombre de personnes (ignorer vaisselle), lieu, salle, contact, ET service (nombre de personnes en SERVICE si une ligne « service » figure au BL, ex. « service - 1 » -> 1 ; 0 si aucun service demandé).\n\nCLIENT : UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI. Sinon Inconnu.\n\nS'il n'y a qu'une seule commande, renvoie quand même un tableau \"commandes\" à un seul élément. Ne fusionne jamais deux DEV différents dans la même commande. Les heures sont au format HH:MM (ex. 08:30).\n\nReponds UNIQUEMENT en JSON valide sans markdown :\n{\"commandes\":[{\"numero_commande\":\"DEV-XXXXX\",\"client\":\"EuraTech\",\"livraisons\":[{\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"heure_evenement_fin\":\"14:00\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"salle\",\"contact\":\"nom - tel\",\"service\":0}]}]}";
 
   var resp = await fetch("/api/claude", {
     method:"POST",
@@ -923,11 +923,13 @@ function renderEmailList(){
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px">'+field("Client",d.client)+field(d.multiDev?("Commandes ("+livs.length+")"):"N° commande",d.numero_commande)+'</div>';
       for (var li=0;li<livs.length;li++){
         var l=livs[li];
-        var livTitle='Livraison '+(li+1)+(d.multiDev&&l.numero_commande?(' · '+esc(l.numero_commande)):'');
+        var livSvc=parseInt(l.service,10)||0;
+        var livTitle='Livraison '+(li+1)+(d.multiDev&&l.numero_commande?(' · '+esc(l.numero_commande)):'')
+          +(livSvc>0?' <span style="background:#921821;color:#fff;border-radius:4px;padding:1px 7px;font-size:10px;letter-spacing:.04em;margin-left:6px">SERVICE ×'+livSvc+'</span>':'');
         html+='<div class="liv-block"><div class="liv-title">'+livTitle+'</div><div class="grid3">';
         html+=field("Prestation",l.type_prestation)+field("Personnes",l.nombre_personnes)+field("Date",l.date_evenement);
         html+=field("Mise en place",l.heure_mise_en_place)+field("Lieu",l.lieu)+field("Salle",l.salle);
-        html+=field("Contact",l.contact);
+        html+=field("Contact",l.contact)+(livSvc>0?field("Service",livSvc+" personne"+(livSvc>1?"s":"")):"");
         html+='</div></div>';
       }
       html+='</div><div class="action-bar">';
@@ -1176,7 +1178,15 @@ function normHM(s){
   if(isNaN(h)||h>23||mn>59) return s;
   return ('0'+h).slice(-2)+':'+('0'+mn).slice(-2);
 }
-function normLivTimes(liv){ if(!liv) return liv; if(liv.heure_mise_en_place) liv.heure_mise_en_place=normHM(liv.heure_mise_en_place); if(liv.heure_evenement) liv.heure_evenement=normHM(liv.heure_evenement); return liv; }
+function normLivTimes(liv){ if(!liv) return liv; if(liv.heure_mise_en_place) liv.heure_mise_en_place=normHM(liv.heure_mise_en_place); if(liv.heure_evenement) liv.heure_evenement=normHM(liv.heure_evenement); if(liv.heure_evenement_fin) liv.heure_evenement_fin=normHM(liv.heure_evenement_fin); return liv; }
+// Horaires de l'événement (= horaires de service) : plage si dispo, sinon heure de début, sinon "à préciser"
+function eventHoursStr(liv){
+  var a=(liv&&liv.heure_evenement)?normHM(liv.heure_evenement):'';
+  var b=(liv&&liv.heure_evenement_fin)?normHM(liv.heure_evenement_fin):'';
+  if(a&&b&&b!==a) return a+' - '+b;
+  if(a) return a;
+  return 'horaires à préciser';
+}
 // Une ligne est-elle imprimée ? Non-optionnelle: toujours. Optionnelle: selon les options activées (en), sinon selon defaultOn.
 function bonLineOn(l, en){ if(!l.optional) return true; if(en) return !!en[l.id]; return !!l.defaultOn; }
 // Famille d'une prestation à partir d'un libellé (email) : un petit-déjeuner reste un PDJ
@@ -1233,7 +1243,10 @@ function prepBonHTML(clientName, presta, pax, liv, blNum, enabledOpts){
     (liv&&liv.lieu)?('Lieu : '+esc(liv.lieu)+(liv.salle?(' — '+esc(liv.salle)):'')):'',
     (liv&&(liv.date_evenement||liv.heure_mise_en_place))?('Livraison : '+esc(liv.date_evenement||'')+(liv.heure_mise_en_place?(' à '+esc(liv.heure_mise_en_place)):'')):''
   ].filter(Boolean).join('<br>');
+  var svc=liv?parseInt(liv.service,10):0; if(isNaN(svc)) svc=0;
+  var svcBanner = svc>0 ? '<div style="margin:8px 0;padding:8px 12px;border:1.5px solid #921821;background:#fbeaea;color:#921821;font-weight:700;font-size:13px;border-radius:6px">SERVICE : '+svc+' personne'+(svc>1?'s':'')+' — '+esc(eventHoursStr(liv))+'</div>' : '';
   return '<div class="bon"><div class="bhead"><div><h1>Bon de préparation</h1><div class="sub2">'+esc(clientName)+' · '+esc(presta.name)+'</div></div><div class="meta"><b>'+pax+' personnes</b><br>'+meta+'<br><span style="color:#999">Édité le '+today+'</span></div></div>'
+    +svcBanner
     +'<table><thead><tr><th>Élément</th><th>Quantité</th><th>Note</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 function prepPrintDoc(inner){
@@ -1282,6 +1295,14 @@ async function bonPdfBase64Gen(clientName, presta, pax, liv, blNum, enabledOpts)
   if(liv&&(liv.date_evenement||liv.heure_mise_en_place)) metas.push('Livraison : '+(liv.date_evenement||'')+(liv.heure_mise_en_place?(' à '+liv.heure_mise_en_place):''));
   metas.forEach(function(t){ T(t,M,y,10,font,grey); y-=13; });
   y-=5;
+  // Bandeau SERVICE bien visible (si service demandé au BL)
+  var svc=liv?parseInt(liv.service,10):0; if(isNaN(svc)) svc=0;
+  if(svc>0){
+    y-=2;
+    page.drawRectangle({x:M,y:y-20,width:W-2*M,height:22,color:PL.rgb(0.98,0.90,0.90),borderColor:red,borderWidth:1.2});
+    T('>>> SERVICE : '+svc+' personne'+(svc>1?'s':'')+' - '+eventHoursStr(liv),M+8,y-14,11,bold,red);
+    y-=30;
+  }
   page.drawLine({start:{x:M,y:y},end:{x:W-M,y:y},thickness:1.2,color:black}); y-=20;
   // Quantité alignée à droite ; note sous l'élément (pas de troncature)
   function TR(t,xr,yy,s,f,c){ t=pdfEnc(t); var w=(f||font).widthOfTextAtSize(t,s); page.drawText(t,{x:xr-w,y:yy,size:s,font:f||font,color:c||black}); }
@@ -1482,6 +1503,7 @@ async function findAgendaByDev(dev, hint){
       client:g(/Client\s*:\s*(.+)/), presta:g(/Prestation\s*:\s*(.+)/),
       pax:(parseInt(g(/Nombre de personnes\s*:\s*(\d+)/),10)||undefined),
       mep:g(/Mise en place\s*:\s*([0-9:hH]+)/), ev:g(/Événement\s*:\s*([0-9:hH]+)/),
+      service:(parseInt(g(/Service\s*:\s*(\d+)/),10)||0),
       lieu:g(/Adresse\s*:\s*(.+)/), salle:g(/Salle\s*:\s*(.+)/), contact:g(/Contact\s*:\s*(.+)/), date:dateStr
     }};
   }catch(e){ console.warn("findAgendaByDev", e); return null; }
@@ -1508,10 +1530,11 @@ async function processModification(msg){
         date_evenement: chg.date_evenement||b.date||"",
         heure_mise_en_place: chg.heure_mise_en_place||((b.mep||"").replace("h",":"))||"07:00",
         heure_evenement: chg.heure_evenement||((b.ev||"").replace("h",":"))||"12:00",
-        lieu: chg.lieu||b.lieu||"", salle: chg.salle||b.salle||"", contact:b.contact||""
+        lieu: chg.lieu||b.lieu||"", salle: chg.salle||b.salle||"", contact:b.contact||"",
+        service: (chg.service!=null?chg.service:(b.service||0))
       };
       normLivTimes(liv);
-      viewLivs.push({type_prestation:liv.type_prestation, nombre_personnes:liv.nombre_personnes, date_evenement:liv.date_evenement, lieu:liv.lieu});
+      viewLivs.push({type_prestation:liv.type_prestation, nombre_personnes:liv.nombre_personnes, date_evenement:liv.date_evenement, lieu:liv.lieu, service:liv.service});
       var found=cfg?findPrepPresta(cfg, client, liv.type_prestation):null;
       if(found) liv.prestaName=found.presta.name;
       var bonPdf=found?await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, dev):null;
