@@ -212,8 +212,11 @@ window.addEventListener('unhandledrejection', function(ev){
   btNotify('Échec non géré : '+m, 'error');
 });
 
-function signIn() {
-  var client = google.accounts.oauth2.initTokenClient({
+/* ===== Jeton Google : client persistant + rafraîchissement silencieux ===== */
+var TOKEN_CLIENT=null, TOKEN_EXPIRY=0, _tokenWaiters=[], _refreshP=null;
+function ensureTokenClient(){
+  if(TOKEN_CLIENT) return TOKEN_CLIENT;
+  TOKEN_CLIENT = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: [
       "https://mail.google.com/",
@@ -221,26 +224,60 @@ function signIn() {
       "https://www.googleapis.com/auth/drive",
       "https://www.googleapis.com/auth/calendar"
     ].join(" "),
-    callback: function(resp) {
-      if (resp.error) {
-        document.getElementById("auth-error").textContent = resp.error;
-        document.getElementById("auth-error").style.display = "block";
-        return;
+    callback: function(resp){
+      var ws=_tokenWaiters; _tokenWaiters=[];
+      if(resp && resp.access_token){
+        TOKEN=resp.access_token;
+        TOKEN_EXPIRY=Date.now()+(((parseInt(resp.expires_in,10)||3600)-90)*1000);  // marge 90 s
+        ws.forEach(function(w){ w.resolve(resp.access_token); });
+      } else {
+        var e=new Error((resp&&resp.error)||"Authentification refusée");
+        ws.forEach(function(w){ w.reject(e); });
       }
-      TOKEN = resp.access_token;
-      onSignedIn();
     }
   });
-  client.requestAccessToken({});
+  return TOKEN_CLIENT;
+}
+// interactive=true : première connexion (peut afficher un popup) ; false : rafraîchissement silencieux
+function requestToken(interactive){
+  return new Promise(function(resolve,reject){
+    try{ ensureTokenClient(); _tokenWaiters.push({resolve:resolve,reject:reject}); TOKEN_CLIENT.requestAccessToken(interactive?{}:{prompt:""}); }
+    catch(e){ reject(e); }
+  });
+}
+// Rafraîchissement silencieux dédoublonné (un seul en vol à la fois)
+function refreshToken(){
+  if(_refreshP) return _refreshP;
+  _refreshP = requestToken(false).catch(function(e){ throw e; });
+  _refreshP.finally(function(){ _refreshP=null; });
+  return _refreshP;
+}
+function signIn() {
+  requestToken(true).then(function(){ onSignedIn(); }).catch(function(e){
+    var el=document.getElementById("auth-error"); if(el){ el.textContent=e.message; el.style.display="block"; }
+  });
 }
 
 async function gFetch(url, opts) {
   opts = opts || {};
-  var r = await fetch(url, {
-    method: opts.method || "GET",
-    headers: Object.assign({"Authorization":"Bearer "+TOKEN,"Content-Type":"application/json"}, opts.headers||{}),
-    body: opts.body || undefined
-  });
+  // Rafraîchissement proactif si le token est (bientôt) expiré
+  if (TOKEN_EXPIRY && Date.now() > TOKEN_EXPIRY) {
+    try { await refreshToken(); } catch(e){ console.warn("refresh proactif:", e); }
+  }
+  function doFetch(){
+    return fetch(url, {
+      method: opts.method || "GET",
+      headers: Object.assign({"Authorization":"Bearer "+TOKEN,"Content-Type":"application/json"}, opts.headers||{}),
+      body: opts.body || undefined,
+      cache: "no-store"
+    });
+  }
+  var r = await doFetch();
+  if (r.status === 401 || r.status === 403) {
+    // Token expiré/invalide → on rafraîchit une fois et on réessaie
+    try { await refreshToken(); r = await doFetch(); }
+    catch(e){ btNotify("Session Google expirée — reconnecte-toi (bouton « Se connecter » en haut).", "warn"); }
+  }
   return r.json();
 }
 
