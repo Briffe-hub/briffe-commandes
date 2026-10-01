@@ -1,6 +1,26 @@
 [build]
   functions = "netlify/functions"
 
+# --- API du menu de liens (placée en premier pour rester joignable depuis le sous-domaine menu) ---
+[[redirects]]
+  from = "/api/liens"
+  to = "/.netlify/functions/liens"
+  status = 200
+
+# --- Sous-domaine du menu (QR carte de visite) : tout menu.briffe.me -> page publique ---
+# (Prérequis : ajouter menu.briffe.me comme domaine du site dans Netlify.)
+[[redirects]]
+  from = "https://menu.briffe.me/*"
+  to = "/briffe-liens.html"
+  status = 200
+  force = true
+
+# Accès direct à la page publique sur le domaine principal (test)
+[[redirects]]
+  from = "/menu"
+  to = "/briffe-liens.html"
+  status = 200
+
 [[redirects]]
   from = "/"
   to = "/briffe-commandes.html"
