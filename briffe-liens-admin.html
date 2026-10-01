@@ -129,10 +129,36 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function getPass(){ try{return sessionStorage.getItem('bt_liens_pass')||'';}catch(e){return '';} }
 function setPass(p){ try{sessionStorage.setItem('bt_liens_pass',p);}catch(e){} }
 
+/* ---------- API liens : /api/liens avec repli direct sur la fonction ---------- */
+var LIENS_URLS=['/api/liens','/.netlify/functions/liens'];
+async function liensGet(){
+  var last;
+  for(var i=0;i<LIENS_URLS.length;i++){
+    try{ var r=await fetch(LIENS_URLS[i],{cache:'no-store'});
+      var ct=(r.headers.get('content-type')||'');
+      if(r.ok&&ct.indexOf('json')>=0) return r;
+      last=new Error('HTTP '+r.status);
+    }catch(e){ last=e; }
+  }
+  throw last||new Error('API injoignable');
+}
+async function liensPost(body){
+  var last;
+  for(var i=0;i<LIENS_URLS.length;i++){
+    try{ var r=await fetch(LIENS_URLS[i],{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':getPass()},body:body});
+      if(r.status===401) return r;
+      var ct=(r.headers.get('content-type')||'');
+      if(ct.indexOf('json')>=0) return r;
+      last=new Error('HTTP '+r.status);
+    }catch(e){ last=e; }
+  }
+  throw last||new Error('API injoignable');
+}
+
 /* ---------- Chargement ---------- */
 async function load(){
   try{
-    var r=await fetch('/api/liens',{cache:'no-store'}); var j=await r.json();
+    var r=await liensGet(); var j=await r.json();
     CONFIG=j&&j.config?j.config:{brand:{},cards:[]};
   }catch(e){ CONFIG={brand:{},cards:[]}; setStatus('Chargement impossible : '+e.message,'err'); }
   if(!CONFIG.brand) CONFIG.brand={}; if(!Array.isArray(CONFIG.cards)) CONFIG.cards=[];
@@ -234,7 +260,7 @@ async function saveConfig(){
   CONFIG.cards.forEach(function(c){ if(!c.id)c.id=uid(); });
   var btn=document.getElementById('save-btn'); btn.disabled=true; setStatus('Enregistrement…');
   try{
-    var r=await fetch('/api/liens',{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':getPass()},body:JSON.stringify({config:CONFIG})});
+    var r=await liensPost(JSON.stringify({config:CONFIG}));
     if(r.status===401){ btn.disabled=false; setStatus('',''); showGate(); return; }
     var j=await r.json();
     if(j&&j.ok){ setStatus('Enregistré ✓ — en ligne sur la page publique.','ok'); renderPreview(); }
