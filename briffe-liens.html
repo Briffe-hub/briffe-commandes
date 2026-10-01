@@ -101,10 +101,16 @@ function render(cfg){
 }
 
 (function(){
-  fetch('/api/liens',{cache:'no-store'})
-    .then(function(r){ return r.json(); })
-    .then(function(j){ render(j&&j.config?j.config:{}); })
-    .catch(function(e){ document.getElementById('cards').innerHTML='<div class="empty">Contenu momentanément indisponible.</div>'; });
+  var urls=['/api/liens','/.netlify/functions/liens'];
+  function tryGet(i){
+    if(i>=urls.length){ render({}); return; }
+    fetch(urls[i],{cache:'no-store'}).then(function(r){
+      var ct=(r.headers.get('content-type')||'');
+      if(!r.ok||ct.indexOf('json')<0){ tryGet(i+1); return; }
+      return r.json().then(function(j){ render(j&&j.config?j.config:{}); });
+    }).catch(function(){ tryGet(i+1); });
+  }
+  tryGet(0);
 })();
 </script>
 </body>
