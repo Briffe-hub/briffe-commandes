@@ -16,6 +16,7 @@ body{font-family:'DM Mono',ui-monospace,monospace; background:var(--bg); color:v
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(15,15,15,.92);backdrop-filter:blur(6px);z-index:20;flex-wrap:wrap}
 .brand{font-family:'Archivo',sans-serif;font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:13px;color:var(--ink)}
 .brand i{color:var(--red);font-style:normal}
+.iconrow{display:flex;gap:6px;align-items:center}.iconrow input{width:68px}.iconprev{display:inline-flex;width:34px;height:34px;flex:0 0 34px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}.iconprev img{width:100%;height:100%;object-fit:cover}
 .sub{font-size:11px;color:var(--mut);letter-spacing:.04em;margin-left:8px}
 .sp{flex:1}
 .btn{font-family:inherit;font-size:12px;background:#0f0f0f;border:1px solid var(--line-2);color:var(--ink);padding:9px 13px;border-radius:9px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:border-color .12s,background .12s}
@@ -194,7 +195,11 @@ function renderCards(){
         +'</span>'
       +'</div>'
       +'<div class="row"><label class="fld" style="flex:2">Titre<input type="text" value="'+esc(c.title||'')+'" oninput="upd('+i+',\'title\',this.value)"></label>'
-      +'<label class="fld" style="flex:0 0 90px">Icône<input type="text" value="'+esc(c.icon||'')+'" placeholder="emoji/🔗" oninput="upd('+i+',\'icon\',this.value)"></label></div>'
+      +'<div class="fld" style="flex:0 0 160px">Icône<div class="iconrow">'
+        +(isImgIcon(c.icon)?'<span class="iconprev"><img src="'+esc(c.icon)+'" alt=""></span>':'<input type="text" value="'+esc(c.icon||'')+'" placeholder="emoji 🔗" oninput="upd('+i+',\'icon\',this.value)">')
+        +'<button type="button" class="btn small" title="Importer une image" onclick="pickCardIcon('+i+')">🖼️</button>'
+        +(isImgIcon(c.icon)?'<button type="button" class="btn small ghost" title="Revenir à un emoji" onclick="clearCardIcon('+i+')">✕</button>':'')
+      +'</div></div></div>'
       +'<label class="fld">Sous-titre<input type="text" value="'+esc(c.subtitle||'')+'" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
       +'<label class="fld">Lien (URL)<input type="text" value="'+esc(c.url||'')+'" placeholder="https://…" oninput="upd('+i+',\'url\',this.value)"></label>'
       +'<label class="toggle"><input type="checkbox" '+(c.enabled!==false?'checked':'')+' onchange="upd('+i+',\'enabled\',this.checked)"> Visible sur la page</label>'
@@ -206,6 +211,35 @@ function upd(i,k,v){ CONFIG.cards[i][k]=v; if(k==='title'){ var t=document.query
 function addCard(){ CONFIG.cards.push({id:uid(),title:'Nouveau lien',subtitle:'',url:'',icon:'🔗',enabled:true}); renderCards(); schedulePreview(); }
 function delCard(i){ if(!confirm('Supprimer cette carte ?'))return; CONFIG.cards.splice(i,1); renderCards(); schedulePreview(); }
 function move(i,d){ var j=i+d; if(j<0||j>=CONFIG.cards.length)return; var a=CONFIG.cards; var t=a[i]; a[i]=a[j]; a[j]=t; renderCards(); schedulePreview(); }
+
+/* ---------- Icône image par carte ---------- */
+function isImgIcon(v){ return typeof v==='string' && (/^data:image\//i.test(v) || /^https?:\/\//i.test(v) && /(\.png|\.jpe?g|\.svg|\.webp|\.gif)(\?|$)/i.test(v)); }
+function pickCardIcon(i){
+  var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0]; if(!f)return;
+    if(f.size>3000000){ setStatus('Image trop lourde (max ~3 Mo).','warn'); return; }
+    var rd=new FileReader();
+    rd.onload=function(){
+      var img=new Image();
+      img.onload=function(){
+        try{
+          var S=128, cv=document.createElement('canvas'); cv.width=S; cv.height=S;
+          var ctx=cv.getContext('2d');
+          var r=Math.max(S/img.width,S/img.height), w=img.width*r, h=img.height*r;
+          ctx.drawImage(img,(S-w)/2,(S-h)/2,w,h);
+          CONFIG.cards[i].icon=cv.toDataURL('image/png');
+        }catch(e){ CONFIG.cards[i].icon=rd.result; }
+        renderCards(); schedulePreview();
+      };
+      img.onerror=function(){ CONFIG.cards[i].icon=rd.result; renderCards(); schedulePreview(); };
+      img.src=rd.result;
+    };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+function clearCardIcon(i){ CONFIG.cards[i].icon='🔗'; renderCards(); schedulePreview(); }
 
 /* drag & drop réordonnancement */
 var _dragI=null;
