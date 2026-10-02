@@ -63,6 +63,12 @@ a.card:hover .go,a.card:active .go{opacity:1; transform:translateX(2px)}
 .empty{text-align:center; color:var(--mut); font-size:13px; padding:30px 10px}
 footer{text-align:center; margin-top:30px; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.18em; font-size:9.5px; color:var(--mut)}
 footer b{color:var(--red); font-weight:700}
+/* Blocs typés : titre de section, texte */
+.sec{margin:20px 2px 2px; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.18em; font-size:11px; color:var(--red); font-weight:700; line-height:1.3}
+.cards > .sec:first-child{margin-top:0}
+.note{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 15px; font-family:var(--f-body); font-size:12.5px; color:var(--mut); line-height:1.55}
+.note .nt{display:block; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.14em; font-size:10.5px; color:var(--red); margin-bottom:5px; font-weight:700}
+.card.dl .go,.card.ct .go{font-size:18px}
 @media (max-width:360px){ .logo-img{max-width:200px} .ic{flex-basis:42px;width:42px;height:42px;font-size:21px} }
 </style>
 </head>
@@ -78,6 +84,57 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function isImg(v){ return typeof v==='string' && (/^https?:\/\//i.test(v) || /^data:image\//i.test(v)) && /(\.png|\.jpe?g|\.svg|\.webp|\.gif|^data:image\/)/i.test(v); }
 function safeUrl(u){ u=String(u||'').trim(); if(!u) return ''; if(/^(https?:|mailto:|tel:)/i.test(u)) return u; return 'https://'+u.replace(/^\/+/,''); }
 
+function blkType(c){ var t=String(c&&c.type||'link').toLowerCase(); return ['link','download','contact','heading','text'].indexOf(t)>=0?t:'link'; }
+function blkLive(c){
+  if(!c || c.enabled===false) return false;
+  var t=blkType(c);
+  if(t==='heading') return !!String(c.title||'').trim();
+  if(t==='text')    return !!String(c.text||c.subtitle||'').trim();
+  if(t==='contact') return !!(String(c.tel||'').trim()||String(c.email||'').trim()||String(c.website||'').trim());
+  return !!String(c.url||'').trim();
+}
+function iconFor(c,def){ return isImg(c.icon) ? '<img src="'+esc(c.icon)+'" alt="">' : esc(c.icon||def); }
+function vcardStr(c){
+  var L=['BEGIN:VCARD','VERSION:3.0'];
+  L.push('FN:'+(c.title||'BRIFFE'));
+  L.push('ORG:'+(c.org||'BRIFFE'));
+  if(c.tel)     L.push('TEL;TYPE=CELL:'+c.tel);
+  if(c.email)   L.push('EMAIL;TYPE=INTERNET:'+c.email);
+  if(c.website) L.push('URL:'+c.website);
+  if(c.address) L.push('ADR;TYPE=WORK:;;'+c.address);
+  L.push('END:VCARD');
+  return L.join('\r\n');
+}
+function renderBlock(c){
+  var t=blkType(c);
+  if(t==='heading') return '<div class="sec">'+esc(c.title||'')+'</div>';
+  if(t==='text') return '<div class="note">'+(c.title?'<span class="nt">'+esc(c.title)+'</span>':'')+esc(c.text||c.subtitle||'').replace(/\n/g,'<br>')+'</div>';
+  if(t==='contact'){
+    var mode=String(c.mode||'vcard').toLowerCase();
+    var sub=c.subtitle||[c.tel,c.email].filter(Boolean).join(' · ');
+    var href,dl='',go='+',dic='👤';
+    if(mode==='email'){ href='mailto:'+String(c.email||'').trim(); if(c.subject) href+='?subject='+encodeURIComponent(c.subject); go='\u2709'; dic='✉️'; }
+    else if(mode==='tel'){ href='tel:'+String(c.tel||'').replace(/[^+0-9]/g,''); go='\u260E'; dic='📞'; }
+    else { href='data:text/vcard;charset=utf-8,'+encodeURIComponent(vcardStr(c)); dl=' download="'+esc((c.title||'contact').replace(/[^A-Za-z0-9]+/g,'-'))+'.vcf"'; go='+'; dic='👤'; }
+    return '<a class="card ct" href="'+href+'"'+dl+'>'
+      +'<span class="ic">'+iconFor(c,dic)+'</span>'
+      +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(sub?'<span class="s">'+esc(sub)+'</span>':'')+'</span>'
+      +'<span class="go">'+go+'</span></a>';
+  }
+  if(t==='download'){
+    var internal=/^\/api\/liens-files/i.test(String(c.url||''));
+    var dlAttr=' download'+(c.filename?'="'+esc(c.filename)+'"':'');
+    var ext=internal?'':' target="_blank" rel="noopener"';
+    return '<a class="card dl" href="'+esc(safeUrl(c.url))+'"'+dlAttr+ext+'>'
+      +'<span class="ic">'+iconFor(c,'📄')+'</span>'
+      +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
+      +'<span class="go">&#8595;</span></a>';
+  }
+  return '<a class="card" href="'+esc(safeUrl(c.url))+'" target="_blank" rel="noopener">'
+    +'<span class="ic">'+iconFor(c,'🔗')+'</span>'
+    +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
+    +'<span class="go">&rsaquo;</span></a>';
+}
 function render(cfg){
   var b=(cfg&&cfg.brand)||{};
   var head=document.getElementById('head');
@@ -85,19 +142,11 @@ function render(cfg){
   head.innerHTML = '<img class="logo-img" src="'+esc(logoSrc)+'" alt="BRIFFE">'
     + (b.subtitle?'<div class="subtitle">'+esc(b.subtitle)+'</div>':'')
     + '<div class="rule"></div>';
-
   var cards=(cfg&&cfg.cards)||[];
-  var live=cards.filter(function(c){ return c && c.enabled!==false && String(c.url||'').trim(); });
+  var live=cards.filter(blkLive);
   var host=document.getElementById('cards');
   if(!live.length){ host.innerHTML='<div class="empty">Bientôt disponible.</div>'; return; }
-  host.innerHTML = live.map(function(c){
-    var ic = isImg(c.icon) ? '<img src="'+esc(c.icon)+'" alt="">' : esc(c.icon||'🔗');
-    return '<a class="card" href="'+esc(safeUrl(c.url))+'" target="_blank" rel="noopener">'
-      + '<span class="ic">'+ic+'</span>'
-      + '<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'
-      + (c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
-      + '<span class="go">&rsaquo;</span></a>';
-  }).join('');
+  host.innerHTML = live.map(renderBlock).join('');
 }
 
 (function(){
