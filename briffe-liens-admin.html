@@ -38,6 +38,9 @@ input[type=text],textarea,input:not([type]){font-family:inherit;background:#0f0f
 input:focus,textarea:focus{border-color:var(--red)}
 textarea{resize:vertical;min-height:46px}
 .row{display:flex;gap:10px;flex-wrap:wrap}
+select{font-family:inherit;background:#0f0f0f;border:1px solid var(--line-2);border-radius:8px;color:var(--ink);padding:9px 11px;font-size:13px;outline:none;width:100%}select:focus{border-color:var(--red)}
+.filerow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.fileok{font-size:11px;color:#9cc49c;text-transform:none;letter-spacing:0}
 .row > *{flex:1;min-width:120px}
 /* carte éditable */
 .citem{border:1px solid var(--line-2);border-radius:12px;padding:12px;margin-bottom:12px;background:#121212}
@@ -86,9 +89,9 @@ textarea{resize:vertical;min-height:46px}
     </div>
 
     <div class="panel">
-      <h2>Cartes (services &amp; liens)</h2>
+      <h2>Blocs (liens, fichiers, contacts, textes…)</h2>
       <div id="cards-list"></div>
-      <div class="add-row"><button class="btn" onclick="addCard()">+ Ajouter une carte</button></div>
+      <div class="add-row"><button class="btn" onclick="addCard()">+ Ajouter un bloc</button></div>
     </div>
   </div>
 
@@ -178,34 +181,97 @@ function readBrand(){
   };
 }
 
-/* ---------- Cartes ---------- */
+/* ---------- Blocs (cartes typées) ---------- */
+var TYPE_LABELS={link:'Lien',download:'Téléchargement',contact:'Contact',heading:'Titre de section',text:'Texte'};
+function typeSelect(i,t){
+  var o=''; for(var k in TYPE_LABELS){ o+='<option value="'+k+'"'+(k===t?' selected':'')+'>'+TYPE_LABELS[k]+'</option>'; }
+  return '<label class="fld">Type de bloc<select onchange="setType('+i+',this.value)">'+o+'</select></label>';
+}
+function iconField(i,c){
+  return '<div class="fld" style="flex:0 0 150px">Icône<div class="iconrow">'
+    +(isImgIcon(c.icon)?'<span class="iconprev"><img src="'+esc(c.icon)+'" alt=""></span>':'<input type="text" value="'+esc(c.icon||'')+'" placeholder="emoji" oninput="upd('+i+',\'icon\',this.value)">')
+    +'<button type="button" class="btn small" title="Importer une image" onclick="pickCardIcon('+i+')">🖼️</button>'
+    +(isImgIcon(c.icon)?'<button type="button" class="btn small ghost" title="Revenir à un emoji" onclick="clearCardIcon('+i+')">✕</button>':'')
+    +'</div></div>';
+}
+function titleRow(i,c,label){
+  return '<div class="row"><label class="fld" style="flex:2">'+(label||'Titre')+'<input type="text" value="'+esc(c.title||'')+'" oninput="upd('+i+',\'title\',this.value)"></label>'+iconField(i,c)+'</div>';
+}
 function renderCards(){
   var host=document.getElementById('cards-list'); var cards=CONFIG.cards;
-  if(!cards.length){ host.innerHTML='<div class="hint">Aucune carte. Ajoute-en une ci-dessous.</div>'; return; }
+  if(!cards.length){ host.innerHTML='<div class="hint">Aucun bloc. Ajoute-en un ci-dessous.</div>'; return; }
   host.innerHTML=cards.map(function(c,i){
-    return '<div class="citem'+(c.enabled===false?' off':'')+'" draggable="true" data-i="'+i+'">'
-      +'<div class="chead">'
-        +'<span class="grip" title="Glisser pour réordonner">⠿</span>'
-        +'<span class="idx">'+(i+1)+'</span>'
-        +'<span class="ttl">'+esc(c.title||'(sans titre)')+'</span>'
-        +'<span class="acts">'
-          +'<button class="btn small ghost" title="Monter" onclick="move('+i+',-1)">▲</button>'
-          +'<button class="btn small ghost" title="Descendre" onclick="move('+i+',1)">▼</button>'
-          +'<button class="btn small danger" title="Supprimer" onclick="delCard('+i+')">✕</button>'
-        +'</span>'
-      +'</div>'
-      +'<div class="row"><label class="fld" style="flex:2">Titre<input type="text" value="'+esc(c.title||'')+'" oninput="upd('+i+',\'title\',this.value)"></label>'
-      +'<div class="fld" style="flex:0 0 160px">Icône<div class="iconrow">'
-        +(isImgIcon(c.icon)?'<span class="iconprev"><img src="'+esc(c.icon)+'" alt=""></span>':'<input type="text" value="'+esc(c.icon||'')+'" placeholder="emoji 🔗" oninput="upd('+i+',\'icon\',this.value)">')
-        +'<button type="button" class="btn small" title="Importer une image" onclick="pickCardIcon('+i+')">🖼️</button>'
-        +(isImgIcon(c.icon)?'<button type="button" class="btn small ghost" title="Revenir à un emoji" onclick="clearCardIcon('+i+')">✕</button>':'')
-      +'</div></div></div>'
-      +'<label class="fld">Sous-titre<input type="text" value="'+esc(c.subtitle||'')+'" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
-      +'<label class="fld">Lien (URL)<input type="text" value="'+esc(c.url||'')+'" placeholder="https://…" oninput="upd('+i+',\'url\',this.value)"></label>'
+    var t=(c.type||'link');
+    var head='<div class="chead"><span class="grip" title="Glisser pour réordonner">⠿</span><span class="idx">'+(i+1)+'</span><span class="ttl">'+esc(c.title||TYPE_LABELS[t]||'(sans titre)')+'</span><span class="acts">'
+      +'<button class="btn small ghost" title="Monter" onclick="move('+i+',-1)">▲</button>'
+      +'<button class="btn small ghost" title="Descendre" onclick="move('+i+',1)">▼</button>'
+      +'<button class="btn small danger" title="Supprimer" onclick="delCard('+i+')">✕</button></span></div>';
+    var body='';
+    if(t==='heading'){
+      body='<label class="fld">Titre de section<input type="text" value="'+esc(c.title||'')+'" placeholder="ex. Nos documents" oninput="upd('+i+',\'title\',this.value)"></label>';
+    } else if(t==='text'){
+      body='<label class="fld">Titre (optionnel)<input type="text" value="'+esc(c.title||'')+'" oninput="upd('+i+',\'title\',this.value)"></label>'
+        +'<label class="fld">Texte<textarea rows="3" oninput="upd('+i+',\'text\',this.value)">'+esc(c.text||'')+'</textarea></label>';
+    } else if(t==='contact'){
+      var mode=(c.mode||'vcard');
+      body=titleRow(i,c,'Nom affiché')
+        +'<label class="fld">Sous-titre (optionnel)<input type="text" value="'+esc(c.subtitle||'')+'" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
+        +'<label class="fld">Action au clic<select onchange="upd('+i+',\'mode\',this.value)">'
+          +'<option value="vcard"'+(mode==='vcard'?' selected':'')+'>Enregistrer le contact (vCard)</option>'
+          +'<option value="email"'+(mode==='email'?' selected':'')+'>Envoyer un email (mailto)</option>'
+          +'<option value="tel"'+(mode==='tel'?' selected':'')+'>Appeler (tel)</option>'
+        +'</select></label>'
+        +'<div class="row"><label class="fld">Téléphone<input type="text" value="'+esc(c.tel||'')+'" placeholder="+33…" oninput="upd('+i+',\'tel\',this.value)"></label>'
+        +'<label class="fld">Email<input type="text" value="'+esc(c.email||'')+'" placeholder="contact@briffe.me" oninput="upd('+i+',\'email\',this.value)"></label></div>'
+        +'<label class="fld">Site (optionnel, vCard)<input type="text" value="'+esc(c.website||'')+'" placeholder="https://briffe.me" oninput="upd('+i+',\'website\',this.value)"></label>';
+    } else if(t==='download'){
+      var fileState = c.filename ? ('<span class="fileok">📎 '+esc(c.filename)+'</span>') : (c.url? '<span class="fileok">🔗 lien défini</span>' : '<span class="hint" style="margin:0">aucun fichier</span>');
+      body=titleRow(i,c)
+        +'<label class="fld">Sous-titre<input type="text" value="'+esc(c.subtitle||'')+'" placeholder="ex. PDF · 2 Mo" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
+        +'<div class="filerow">'+fileState+'<button type="button" class="btn small" onclick="pickCardFile('+i+')">Importer un fichier…</button>'+(c.url?'<button type="button" class="btn small ghost" onclick="clearCardFile('+i+')">Retirer</button>':'')+'</div>'
+        +'<label class="fld">… ou coller un lien de fichier<input type="text" value="'+esc(c.url||'')+'" placeholder="https://…" oninput="updFileUrl('+i+',this.value)"></label>';
+    } else {
+      body=titleRow(i,c)
+        +'<label class="fld">Sous-titre<input type="text" value="'+esc(c.subtitle||'')+'" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
+        +'<label class="fld">Lien (URL)<input type="text" value="'+esc(c.url||'')+'" placeholder="https://…" oninput="upd('+i+',\'url\',this.value)"></label>';
+    }
+    return '<div class="citem'+(c.enabled===false?' off':'')+'" draggable="true" data-i="'+i+'">'+head+typeSelect(i,t)+body
       +'<label class="toggle"><input type="checkbox" '+(c.enabled!==false?'checked':'')+' onchange="upd('+i+',\'enabled\',this.checked)"> Visible sur la page</label>'
       +'</div>';
   }).join('');
   bindDrag();
+}
+function setType(i,v){ CONFIG.cards[i].type=v; renderCards(); schedulePreview(); }
+function updFileUrl(i,v){ CONFIG.cards[i].url=v; if(v) delete CONFIG.cards[i].filename; schedulePreview(); }
+function clearCardFile(i){ CONFIG.cards[i].url=''; delete CONFIG.cards[i].filename; renderCards(); schedulePreview(); }
+async function liensFilePost(body){
+  var urls=['/api/liens-files','/.netlify/functions/liens-files'], last;
+  for(var i=0;i<urls.length;i++){
+    try{ var r=await fetch(urls[i],{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':getPass()},body:body});
+      if(r.status===401) return r;
+      var ct=(r.headers.get('content-type')||''); if(ct.indexOf('json')>=0) return r;
+      last=new Error('HTTP '+r.status);
+    }catch(e){ last=e; }
+  }
+  throw last||new Error('Upload injoignable');
+}
+function pickCardFile(i){
+  var inp=document.createElement('input'); inp.type='file';
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0]; if(!f)return;
+    if(f.size>4000000){ setStatus('Fichier trop lourd pour l’upload (max ~4 Mo). Colle plutôt un lien pour les gros fichiers.','warn'); return; }
+    setStatus('Upload de '+f.name+'…');
+    var rd=new FileReader();
+    rd.onload=function(){
+      var b64=String(rd.result||'').replace(/^data:[^;]+;base64,/,'');
+      liensFilePost(JSON.stringify({filename:f.name,contentType:f.type||'application/octet-stream',dataBase64:b64}))
+        .then(function(r){ if(r.status===401){ showGate(); setStatus('Mot de passe requis pour l’upload.','err'); return; }
+          return r.json().then(function(j){ if(j&&j.url){ CONFIG.cards[i].url=j.url; CONFIG.cards[i].filename=j.name; setStatus('Fichier ajouté ✓','ok'); renderCards(); schedulePreview(); } else { setStatus('Upload échoué : '+((j&&j.error)||r.status),'err'); } }); })
+        .catch(function(e){ setStatus('Upload échoué : '+e.message,'err'); });
+    };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
 }
 function upd(i,k,v){ CONFIG.cards[i][k]=v; if(k==='title'){ var t=document.querySelectorAll('.citem')[i]; if(t) t.querySelector('.ttl').textContent=v||'(sans titre)'; } if(k==='enabled'){ renderCards(); } schedulePreview(); }
 function addCard(){ CONFIG.cards.push({id:uid(),title:'Nouveau lien',subtitle:'',url:'',icon:'🔗',enabled:true}); renderCards(); schedulePreview(); }
@@ -320,15 +386,17 @@ var PREVIEW_HTML = '<!doctype html><html lang="fr"><head><meta charset="utf-8"><
 +'.cards{display:flex;flex-direction:column;gap:11px}a.card{display:flex;align-items:center;gap:13px;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px 15px;box-shadow:0 10px 22px -18px rgba(146,27,33,.5)}'
 +'.ic{flex:0 0 44px;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(146,27,33,.08);border:1px solid rgba(146,27,33,.18);overflow:hidden}.ic img{width:100%;height:100%;object-fit:cover;border-radius:11px}'
 +'.txt{flex:1;min-width:0}.txt .t{display:block;font-family:var(--f-caps);font-weight:600;font-size:15px;line-height:1.25;letter-spacing:.2px}.txt .s{display:block;font-size:11px;color:var(--mut);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
-+'.go{color:var(--red);font-size:20px;opacity:.5}.empty{text-align:center;color:var(--mut);font-size:12px;padding:20px}footer{text-align:center;margin-top:26px;font-family:var(--f-caps);text-transform:uppercase;letter-spacing:.18em;font-size:9px;color:var(--mut)}footer b{color:var(--red)}'
++'.go{color:var(--red);font-size:20px;opacity:.5}.sec{margin:16px 2px 2px;font-family:var(--f-caps);text-transform:uppercase;letter-spacing:.18em;font-size:10.5px;color:var(--red);font-weight:700}.note{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:11.5px;color:var(--mut);line-height:1.5}.note .nt{display:block;font-family:var(--f-caps);text-transform:uppercase;letter-spacing:.14em;font-size:10px;color:var(--red);margin-bottom:4px;font-weight:700}.empty{text-align:center;color:var(--mut);font-size:12px;padding:20px}footer{text-align:center;margin-top:26px;font-family:var(--f-caps);text-transform:uppercase;letter-spacing:.18em;font-size:9px;color:var(--mut)}footer b{color:var(--red)}'
 +'</style></head><body><div class="wrap"><header id="head"></header><div class="cards" id="cards"></div><footer></footer></div>'
 +'<script>/*__CFG__*/'
 +'function esc(s){return String(s==null?"":s).replace(/[&<>"\\x27]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\\x22":"&quot;","\\x27":"&#39;"}[c];});}'
 +'function isImg(v){return typeof v==="string"&&(/^https?:\\/\\//i.test(v)||/^data:image\\//i.test(v))&&/(\\.png|\\.jpe?g|\\.svg|\\.webp|\\.gif|^data:image\\/)/i.test(v);}'
 +'var cfg=window.__CFG__||{};var b=cfg.brand||{};'
 +'document.getElementById("head").innerHTML="<img class=\\"logo-img\\" src=\\""+esc(b.logo||"")+"\\" alt=\\"\\">"+(b.subtitle?"<div class=\\"subtitle\\">"+esc(b.subtitle)+"</div>":"")+"<div class=\\"rule\\"></div>";'
-+'var live=(cfg.cards||[]).filter(function(c){return c&&c.enabled!==false&&String(c.url||"").trim();});'
-+'document.getElementById("cards").innerHTML=live.length?live.map(function(c){var ic=isImg(c.icon)?"<img src=\\""+esc(c.icon)+"\\">":esc(c.icon||"🔗");return "<a class=\\"card\\" href=\\"#\\" onclick=\\"return false\\"><span class=\\"ic\\">"+ic+"</span><span class=\\"txt\\"><span class=\\"t\\">"+esc(c.title||"")+"</span>"+(c.subtitle?"<span class=\\"s\\">"+esc(c.subtitle)+"</span>":"")+"</span><span class=\\"go\\">&rsaquo;</span></a>";}).join(""):"<div class=\\"empty\\">Ajoute une carte avec un lien pour la voir ici.</div>";'
++'function blkType(c){var t=String(c&&c.type||"link").toLowerCase();return ["link","download","contact","heading","text"].indexOf(t)>=0?t:"link";}'
++'function blive(c){if(!c||c.enabled===false)return false;var t=blkType(c);if(t==="heading")return !!String(c.title||"").trim();if(t==="text")return !!String(c.text||c.subtitle||"").trim();if(t==="contact")return !!(String(c.tel||"").trim()||String(c.email||"").trim()||String(c.website||"").trim());return !!String(c.url||"").trim();}'
++'var live=(cfg.cards||[]).filter(blive);'
++'document.getElementById("cards").innerHTML=live.length?live.map(function(c){var t=blkType(c);if(t==="heading")return "<div class=\\"sec\\">"+esc(c.title||"")+"</div>";if(t==="text")return "<div class=\\"note\\">"+(c.title?"<span class=\\"nt\\">"+esc(c.title)+"</span>":"")+esc(c.text||c.subtitle||"")+"</div>";var md=String(c.mode||"vcard");var cls=t==="download"?" dl":(t==="contact"?" ct":"");var def=t==="download"?"📄":(t==="contact"?(md==="email"?"✉️":(md==="tel"?"📞":"👤")):"🔗");var go=t==="download"?"&#8595;":(t==="contact"?(md==="email"?"\\u2709":(md==="tel"?"\\u260E":"+")):"&rsaquo;");var sub=c.subtitle||(t==="contact"?[c.tel,c.email].filter(Boolean).join(" · "):"");var ic=isImg(c.icon)?"<img src=\\""+esc(c.icon)+"\\">":esc(c.icon||def);return "<a class=\\"card"+cls+"\\" href=\\"#\\" onclick=\\"return false\\"><span class=\\"ic\\">"+ic+"</span><span class=\\"txt\\"><span class=\\"t\\">"+esc(c.title||"")+"</span>"+(sub?"<span class=\\"s\\">"+esc(sub)+"</span>":"")+"</span><span class=\\"go\\">"+go+"</span></a>";}).join(""):"<div class=\\"empty\\">Ajoute un bloc pour le voir ici.</div>";'
 +'<\/script></body></html>';
 
 load();
