@@ -83,6 +83,7 @@ var DEFAULT_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeAAAADsCAYAAACs
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function isImg(v){ return typeof v==='string' && (/^https?:\/\//i.test(v) || /^data:image\//i.test(v)) && /(\.png|\.jpe?g|\.svg|\.webp|\.gif|^data:image\/)/i.test(v); }
 function safeUrl(u){ u=String(u||'').trim(); if(!u) return ''; if(/^(https?:|mailto:|tel:)/i.test(u)) return u; return 'https://'+u.replace(/^\/+/,''); }
+function fileHref(u){ u=String(u||'').trim(); if(!u) return '#'; if(/^(https?:|mailto:|tel:)/i.test(u)) return u; if(u.charAt(0)==='/') return u; return 'https://'+u.replace(/^\/+/,''); }
 
 function blkType(c){ var t=String(c&&c.type||'link').toLowerCase(); return ['link','download','contact','heading','text'].indexOf(t)>=0?t:'link'; }
 function blkLive(c){
@@ -125,7 +126,7 @@ function renderBlock(c){
     var internal=/^\/api\/liens-files/i.test(String(c.url||''));
     var dlAttr=' download'+(c.filename?'="'+esc(c.filename)+'"':'');
     var ext=internal?'':' target="_blank" rel="noopener"';
-    return '<a class="card dl" href="'+esc(safeUrl(c.url))+'"'+dlAttr+ext+'>'
+    return '<a class="card dl" href="'+esc(fileHref(c.url))+'"'+dlAttr+ext+'>'
       +'<span class="ic">'+iconFor(c,'📄')+'</span>'
       +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
       +'<span class="go">&#8595;</span></a>';
