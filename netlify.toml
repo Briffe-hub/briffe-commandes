@@ -7,6 +7,12 @@
   to = "/.netlify/functions/liens"
   status = 200
 
+# --- Fichiers téléchargeables du menu (plaquettes, etc.) ---
+[[redirects]]
+  from = "/api/liens-files"
+  to = "/.netlify/functions/liens-files"
+  status = 200
+
 # --- Sous-domaine du menu (QR carte de visite) : tout menu.briffe.me -> page publique ---
 # (Prérequis : ajouter menu.briffe.me comme domaine du site dans Netlify.)
 [[redirects]]
