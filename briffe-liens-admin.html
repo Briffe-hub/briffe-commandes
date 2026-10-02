@@ -228,7 +228,7 @@ function renderCards(){
       var fileState = c.filename ? ('<span class="fileok">📎 '+esc(c.filename)+'</span>') : (c.url? '<span class="fileok">🔗 lien défini</span>' : '<span class="hint" style="margin:0">aucun fichier</span>');
       body=titleRow(i,c)
         +'<label class="fld">Sous-titre<input type="text" value="'+esc(c.subtitle||'')+'" placeholder="ex. PDF · 2 Mo" oninput="upd('+i+',\'subtitle\',this.value)"></label>'
-        +'<div class="filerow">'+fileState+'<button type="button" class="btn small" onclick="pickCardFile('+i+')">Importer un fichier…</button>'+(c.url?'<button type="button" class="btn small ghost" onclick="clearCardFile('+i+')">Retirer</button>':'')+'</div>'
+        +'<div class="filerow">'+fileState+'<button type="button" class="btn small" onclick="pickCardFile('+i+')">Importer un fichier…</button>'+(c.url?'<a class="btn small ghost" href="'+esc(absFileUrl(c.url))+'" target="_blank" rel="noopener">Ouvrir \u2197</a><button type="button" class="btn small ghost" onclick="clearCardFile('+i+')">Retirer</button>':'')+'</div>'
         +'<label class="fld">… ou coller un lien de fichier<input type="text" value="'+esc(c.url||'')+'" placeholder="https://…" oninput="updFileUrl('+i+',this.value)"></label>';
     } else {
       body=titleRow(i,c)
@@ -243,6 +243,7 @@ function renderCards(){
 }
 function setType(i,v){ CONFIG.cards[i].type=v; renderCards(); schedulePreview(); }
 function updFileUrl(i,v){ CONFIG.cards[i].url=v; if(v) delete CONFIG.cards[i].filename; schedulePreview(); }
+function absFileUrl(u){ u=String(u||'').trim(); if(!u) return '#'; if(/^https?:/i.test(u)) return u; try{ return location.origin + (u.charAt(0)==='/'?u:'/'+u); }catch(e){ return u; } }
 function clearCardFile(i){ CONFIG.cards[i].url=''; delete CONFIG.cards[i].filename; renderCards(); schedulePreview(); }
 async function liensFilePost(body){
   var urls=['/api/liens-files','/.netlify/functions/liens-files'], last;
