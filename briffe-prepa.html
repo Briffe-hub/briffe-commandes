@@ -109,6 +109,18 @@ th{font-size:9px;color:#3a3a3a;letter-spacing:.1em;text-transform:uppercase;font
 .bt-back:hover{color:#e8e8e0;border-color:#921821;background:#181818}
 .bt-back .ar{display:inline-block;transition:transform .18s ease}
 .bt-back:hover .ar{transform:translateX(-3px)}
+/* Édition ligne par ligne */
+.elin,.qtyin,.catin,.celltext{width:100%;background:transparent;border:1px solid transparent;border-radius:6px;color:inherit;font:inherit;padding:3px 5px;box-sizing:border-box}
+.elin:hover,.qtyin:hover,.catin:hover,.celltext:hover{border-color:#2d2d2d}
+.elin:focus,.qtyin:focus,.catin:focus,.celltext:focus{border-color:#b3242e;outline:none;background:#0f0f0f}
+.qtyin{text-align:right;max-width:72px;margin-left:auto;display:block}
+td.act{width:28px;text-align:center}
+.rowdel{background:transparent;border:1px solid transparent;color:#a05;border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:3px 6px}
+.rowdel:hover{border-color:#b3242e;color:#e24}
+.addline{margin-left:10px;background:transparent;border:1px solid #2d2d2d;color:#9a9a9a;border-radius:6px;cursor:pointer;font-size:11px;padding:2px 8px;vertical-align:middle}
+.addline:hover{border-color:#b3242e;color:#eee}
+tr.added td.cat .catin{font-style:italic}
+@media print{ .no-print{display:none!important} .elin,.qtyin,.catin,.celltext{border:none!important;padding:0!important} }
 </style>
 </head>
 <body>
@@ -134,6 +146,8 @@ th{font-size:9px;color:#3a3a3a;letter-spacing:.1em;text-transform:uppercase;font
   <button class="tab-btn" data-type="froid" onclick="setType('froid')">Repas froid</button>
   <button class="tab-btn" data-type="cocktail" onclick="setType('cocktail')">Cocktail / planches</button>
   <button class="tab-btn" data-type="bbq" onclick="setType('bbq')">BBQ / brasero</button>
+  <button class="tab-btn" data-type="pdj" onclick="setType('pdj')">Petit-déjeuner</button>
+  <button class="tab-btn" data-type="pc" onclick="setType('pc')">Pause café</button>
 </div>
 <div class="wrap">
   <div class="panel" id="panel"></div>
@@ -158,13 +172,17 @@ const S = {
   tblNb:0, tblHousse:false, mdNb:0, mdHousse:false, nappesOn:false, nappesNb:null,
   // planches (cocktail)
   sale:false, sucre:false, fromage:false, mixte:false, vege:false,
+  // petit-déjeuner / pause café
+  boissFroides:true, pdjVienno:true, pdjPain:false, pdjFruits:true, pdjYaourt:false, pcSucre:true, pcSale:false,
   // alcool : réglages + extras
   verresPer:2, pBiere:0.7, pBlanc:0.2, pRouge:0.1,
   rose:0, futs:0, cremant:0, champagne:0, alcoolAutre:0, softAutre:0,
   // choix fournisseur / livraison + commentaires par ligne
   choice:{}, choiceOther:{}, comment:{},
   // sections repliées du panneau
-  collapsed:{}
+  collapsed:{},
+  // édition ligne par ligne (par prestation)
+  elO:{}, qtyO:{}, hid:{}, add:{}
 };
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -485,8 +503,110 @@ function modelBBQ(){
   return grp;
 }
 
-const MODELS = {chaud:modelChaud, froid:modelFroid, cocktail:modelCocktail, bbq:modelBBQ};
-const TITLES = {chaud:"Repas chaud · chafing dish", froid:"Repas froid", cocktail:"Cocktail / planches", bbq:"BBQ / brasero"};
+// ══════════════════════════════════════════════════════════════════════════
+//  MODÈLES : PETIT-DÉJEUNER / PAUSE CAFÉ  (recette générique, par pax)
+// ══════════════════════════════════════════════════════════════════════════
+function hotDrinks(cupRatio){
+  const nb=N(S.nb);
+  const cups=nb*cupRatio;
+  return {
+    thermos: RU(cups/15),      // airpot ~2,2 L ≈ 15 tasses
+    cafeG:   RU(cups*8),       // 8 g de café moulu / tasse
+    the:     RU(nb*0.30),      // thé = 30% des convives
+    laitL:   RUd(nb*0.03,1),   // ~3 cl/pax, briques de 1 L
+    sucre:   RU(nb*1.2)        // sticks de sucre
+  };
+}
+function froidesRows(jusLabel,jusRatio){
+  const nb=N(S.nb), L={loc:["Briffe","Direct client"]};
+  return [
+    line("Boisson",jusLabel+" (L)",RUd(nb*jusRatio,1),"Chambre froide","Briffe","",L),
+    line("Boisson","Eau plate (bouteilles 50 cl)",RUd(nb*0.15,0.5),"Quai","Briffe","15 cl/pers · caisse de 12",L)
+  ];
+}
+function hygieneGroup(){
+  return {title:"Hygiène", rows:[
+    line("Hygiène","Gants","x","Camion","Briffe"),
+    line("Hygiène","Caisse de nettoyage","x","Camion","Briffe"),
+    line("Hygiène","Sacs poubelles et sac compost","x","Camion","Briffe")
+  ]};
+}
+function modelPDJ(){
+  const nb=N(S.nb), d=hotDrinks(1.5), froid=S.boissFroides;
+  const gobChaud=RU(nb*1.6), gobFroid=froid?RU(nb*1.3):0;
+  const grp=[];
+  grp.push({title:"Boissons chaudes", noLoc:true, rows:[
+    line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
+    line("Boisson","Thermos / airpot",d.thermos,"Platerie"),
+    line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
+    line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
+    line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
+    line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
+    line("Boisson","Touillettes",gobChaud,"Économat")
+  ]});
+  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus d'orange",0.15)});
+  const food=[];
+  if(S.pdjVienno) food.push(line("Food","Viennoiseries (pièces)",RU(nb*1.5),"Chambre froide","","croissant + pain choc"));
+  if(S.pdjPain)   food.push(line("Food","Pains / mini-pains (pièces)",RU(nb*1),"Chambre froide"));
+  if(S.pdjVienno||S.pdjPain){
+    food.push(line("Food","Beurre (portions)",nb,"Chambre froide"));
+    food.push(line("Food","Confiture / miel (portions)",nb,"Chambre froide"));
+  }
+  if(S.pdjFruits) food.push(line("Food","Fruits / corbeille",RUd(nb,10),"Chambre froide"));
+  if(S.pdjYaourt) food.push(line("Food","Yaourts / fromage blanc",nb,"Chambre froide"));
+  if(food.length) grp.push({title:"Solide", noLoc:true, rows:food});
+  grp.push({title:"Vaisselle & matériel", colStore:"Fournisseur", colLoc:"Livraison", rows:[
+    vline("Assiettes de présentation",nb),
+    vline("Set de couverts",S.pdjYaourt?nb:0),
+    vline("Petites cuillères (yaourt)",S.pdjYaourt?nb:0),
+    vline("Gobelets boissons chaudes",gobChaud),
+    vline("Gobelets boissons froides",gobFroid),
+    vline("Serviettes",RU(nb*1.5)),
+    vline("Plateaux de présentation",RUd(nb,15)),
+    vline("Corbeilles (viennoiseries / pain)",RUd(nb,20))
+  ]});
+  grp.push(hygieneGroup());
+  grp.push(mobilierGroup());
+  grp.push({title:"Service", rows:serviceBlock(alcoolQty())});
+  return grp;
+}
+function modelPC(){
+  const nb=N(S.nb), d=hotDrinks(1.3), froid=S.boissFroides;
+  const gobChaud=RU(nb*1.6), gobFroid=froid?RU(nb*1.2):0;
+  const grp=[];
+  grp.push({title:"Boissons chaudes", noLoc:true, rows:[
+    line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
+    line("Boisson","Thermos / airpot",d.thermos,"Platerie"),
+    line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
+    line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
+    line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
+    line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
+    line("Boisson","Touillettes",gobChaud,"Économat")
+  ]});
+  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus de fruits",0.10)});
+  const gm=[];
+  if(S.pcSucre){
+    gm.push(line("Gourmandise","Mignardises sucrées (pièces)",RU(nb*2),"Chambre froide"));
+    gm.push(line("Gourmandise","Mini-viennoiseries (pièces)",RU(nb*1),"Chambre froide"));
+  }
+  if(S.pcSale) gm.push(line("Gourmandise","Pièces salées (pièces)",RU(nb*2),"Chambre froide"));
+  if(gm.length) grp.push({title:"Gourmandises", noLoc:true, rows:gm});
+  grp.push({title:"Vaisselle & matériel", colStore:"Fournisseur", colLoc:"Livraison", rows:[
+    vline("Gobelets boissons chaudes",gobChaud),
+    vline("Gobelets boissons froides",gobFroid),
+    vline("Serviettes",RU(nb*1.5)),
+    vline("Assiettes (gourmandises)",(S.pcSucre||S.pcSale)?nb:0),
+    vline("Plateaux de présentation",RUd(nb,20)),
+    vline("Corbeilles",RUd(nb,20))
+  ]});
+  grp.push(hygieneGroup());
+  grp.push(mobilierGroup());
+  grp.push({title:"Service", rows:serviceBlock(alcoolQty())});
+  return grp;
+}
+
+const MODELS = {chaud:modelChaud, froid:modelFroid, cocktail:modelCocktail, bbq:modelBBQ, pdj:modelPDJ, pc:modelPC};
+const TITLES = {chaud:"Repas chaud · chafing dish", froid:"Repas froid", cocktail:"Cocktail / planches", bbq:"BBQ / brasero", pdj:"Petit-déjeuner", pc:"Pause café"};
 
 // ══════════════════════════════════════════════════════════════════════════
 //  RENDU FORMULAIRE
@@ -524,6 +644,10 @@ function renderPanel(){
     add('compo','Composition','<div class="chk">'+chk('dessert','Dessert')+'</div>');
   if(t==='cocktail')
     add('planches','Planches','<div class="chk">'+chk('sale','Salé')+chk('sucre','Sucré')+chk('fromage','Fromage')+chk('mixte','Mixte')+chk('vege','Végé')+'</div>');
+  if(t==='pdj')
+    add('compo','Composition','<div class="chk">'+chk('pdjVienno','Viennoiseries')+chk('pdjPain','Pain')+chk('pdjFruits','Fruits')+chk('pdjYaourt','Yaourts')+'</div>');
+  if(t==='pc')
+    add('compo','Gourmandises','<div class="chk">'+chk('pcSucre','Sucré')+chk('pcSale','Salé')+'</div>');
 
   // Bacs gastro / plats
   if(t==='chaud')
@@ -540,6 +664,9 @@ function renderPanel(){
       +'<div class="mini" style="margin-top:8px"><span class="f-label" style="margin:0">Assiettes (option client)</span><input type="number" min="0" class="m-num" value="'+S.cocktailAssiettes+'" oninput="S.cocktailAssiettes=+this.value;renderSheet()"></div>');
 
   // Boissons
+  if(t==='pdj'||t==='pc'){
+    add('boissons','Boissons',toggleRow('Boissons froides (jus, eau)','boissFroides'));
+  } else {
   let bo=toggleRow('Softs','softs')+toggleRow('Alcool','alcool');
   if(S.alcool){
     bo+='<div style="padding:8px 0 2px"><div class="f-label">Verres / pers · % Bière / Blanc / Rouge</div><div class="row4">'
@@ -554,6 +681,7 @@ function renderPanel(){
       +'<input type="number" min="0" title="champagne" value="'+S.champagne+'" oninput="S.champagne=+this.value;renderSheet()"></div></div>';
   }
   add('boissons','Boissons',bo);
+  }
 
   // Service
   let sv=toggleRow("Maître d'hôtel",'mhOn');
@@ -572,6 +700,7 @@ function renderPanel(){
   add('mobilier','Mobilier',mo);
 
   // Technique
+  if(t!=='pdj'&&t!=='pc'){
   let te=toggleRow('Technique','technique');
   if(S.technique){
     const chaf=chafingOf();
@@ -582,8 +711,8 @@ function renderPanel(){
   }
   add('technique','Technique',te);
 
-  // Options
   add('options','Options',toggleRow('Étuve + échelle','etuve'));
+  }
 
   let h='';
   secs.forEach(s=>{
@@ -625,6 +754,70 @@ function bulkSel(title,which,opts){
   const o=['<option value="">tout ↓</option>'].concat(opts.map(op=>'<option>'+esc(op)+'</option>')).join('');
   return '<select class="bulksel" title="appliquer à toute la colonne" onchange="setColumn(\''+esc(title)+'\',\''+which+'\',this.value)">'+o+'</select>';
 }
+// ── Édition ligne par ligne (par prestation) ─────────────────────────────────
+function lkey(title,el){ return S.type+'|'+slug(title)+'|'+slug(el); }
+function setEl(k,v){ S.elO[k]=v; }
+function setQtyO(k,v){ S.qtyO[k]=v; }
+function delLine(k){ S.hid[k]=true; renderSheet(); }
+function addLine(grp){ (S.add[S.type]=S.add[S.type]||[]).push({grp:grp,cat:'',el:'',qty:'',store:'',loc:'',cmt:''}); renderSheet(); }
+function setAdd(type,idx,field,val){ if(S.add[type]&&S.add[type][idx]) S.add[type][idx][field]=val; }
+function delAdd(type,idx){ if(S.add[type]){ S.add[type].splice(idx,1); renderSheet(); } }
+
+function rowEditable(g,r,showLoc){
+  if(r.opts && r.opts.loc && !r.opts.store){
+    const lk='l_'+slug(g.title)+'_'+slug(r.el);
+    const lv=(S.choice[lk]!=null?S.choice[lk]:r.loc);
+    if(lv==='Direct client') r.store='';
+  }
+  const key=lkey(g.title,r.el);
+  const el=(S.elO[key]!=null)?S.elO[key]:r.el;
+  const qd=(S.qtyO[key]!=null&&S.qtyO[key]!=='')?S.qtyO[key]:(r.qty==='x'?'✓':(r.qty||0));
+  const qph=(r.qty==='x'?'✓':(r.qty||0));
+  return '<tr><td class="cat">'+esc(r.cat)+'</td>'
+    +'<td class="el"><input class="elin" value="'+esc(el)+'" oninput="setEl(\''+key+'\',this.value)"></td>'
+    +'<td class="qty"><input class="qtyin" value="'+esc(qd)+'" placeholder="'+esc(qph)+'" oninput="setQtyO(\''+key+'\',this.value)"></td>'
+    +cell(g,r,'store')+(showLoc?cell(g,r,'loc'):'')+cmtCell(g,r)
+    +'<td class="act no-print"><button class="rowdel" title="Supprimer la ligne" onclick="delLine(\''+key+'\')">✕</button></td></tr>';
+}
+function addedRow(type,idx,a,showLoc){
+  const f=(field,cls,ph)=>'<input class="'+cls+'" value="'+esc(a[field]||'')+'" placeholder="'+ph+'" oninput="setAdd(\''+type+'\','+idx+',\''+field+'\',this.value)">';
+  return '<tr class="added"><td class="cat">'+f('cat','catin','cat.')+'</td>'
+    +'<td class="el">'+f('el','elin','élément')+'</td>'
+    +'<td class="qty">'+f('qty','qtyin','qté')+'</td>'
+    +'<td class="store">'+f('store','celltext','stockage')+'</td>'
+    +(showLoc?'<td class="loc">'+f('loc','celltext','livraison')+'</td>':'')
+    +'<td class="cmt">'+f('cmt','celltext','commentaire')+'</td>'
+    +'<td class="act no-print"><button class="rowdel" title="Supprimer la ligne" onclick="delAdd(\''+type+'\','+idx+')">✕</button></td></tr>';
+}
+function grpBlock(g,addedForG){
+  let rows=g.rows.filter(r=>!(r.qty===0 && r.el!==''));
+  rows=rows.filter(r=>!S.hid[lkey(g.title,r.el)]);
+  if(!rows.length && !addedForG.length && !g.always) return '';
+  const showLoc=!g.noLoc;
+  const soRow=rows.find(r=>r.opts&&r.opts.store); const so=soRow&&soRow.opts.store;
+  const loRow=rows.find(r=>r.opts&&r.opts.loc);   const lo=loRow&&loRow.opts.loc;
+  let x='<div class="grp"><div class="grp-title">'+esc(g.title)
+    +'<button class="addline no-print" onclick="addLine(\''+esc(g.title)+'\')">+ ligne</button></div><table>';
+  x+='<tr><th>Catégorie</th><th>Élément</th><th style="text-align:right">Qté</th>';
+  x+='<th>'+(g.colStore||'Stockage')+(so?bulkSel(g.title,'store',so):'')+'</th>';
+  if(showLoc) x+='<th>'+(g.colLoc||'Location')+(lo?bulkSel(g.title,'loc',lo):'')+'</th>';
+  x+='<th>Commentaire</th><th class="no-print"></th></tr>';
+  rows.forEach(r=>{ x+=rowEditable(g,r,showLoc); });
+  addedForG.forEach(a=>{ x+=addedRow(S.type,a._i,a,showLoc); });
+  x+='</table></div>';
+  return x;
+}
+function renderGroups(groups){
+  const type=S.type;
+  const added=(S.add[type]||[]); added.forEach((a,i)=>a._i=i);
+  const baseTitles=groups.map(g=>g.title);
+  let h='';
+  groups.forEach(g=>{ h+=grpBlock(g, added.filter(a=>a.grp===g.title)); });
+  const freeAdded=added.filter(a=>a.grp==='Ajouts manuels' || baseTitles.indexOf(a.grp)<0);
+  h+=grpBlock({title:'Ajouts manuels', always:true, rows:[]}, freeAdded);
+  return h;
+}
+
 function renderSheet(){
   const groups=MODELS[S.type]();
   let h='<div class="sheet-head"><div>'
@@ -645,29 +838,7 @@ function renderSheet(){
 
   if(!S.nb){ h+='<div class="empty">Renseigne le nombre de convives pour générer la feuille.</div>'; document.getElementById('sheet').innerHTML=h; return; }
 
-  groups.forEach(g=>{
-    const rows=g.rows.filter(r=>!(r.qty===0 && r.el!==''));
-    if(!rows.length) return;
-    const showLoc=!g.noLoc;
-    const soRow=rows.find(r=>r.opts&&r.opts.store); const so=soRow&&soRow.opts.store;
-    const loRow=rows.find(r=>r.opts&&r.opts.loc);   const lo=loRow&&loRow.opts.loc;
-    h+='<div class="grp"><div class="grp-title">'+esc(g.title)+'</div><table>';
-    h+='<tr><th>Catégorie</th><th>Élément</th><th style="text-align:right">Qté</th>';
-    h+='<th>'+(g.colStore||'Stockage')+(so?bulkSel(g.title,'store',so):'')+'</th>';
-    if(showLoc) h+='<th>'+(g.colLoc||'Location')+(lo?bulkSel(g.title,'loc',lo):'')+'</th>';
-    h+='<th>Commentaire</th></tr>';
-    rows.forEach(r=>{
-      // Softs/Alcool : livraison "Direct client" → stockage vidé
-      if(r.opts && r.opts.loc && !r.opts.store){
-        const lk='l_'+slug(g.title)+'_'+slug(r.el);
-        const lv=(S.choice[lk]!=null?S.choice[lk]:r.loc);
-        if(lv==='Direct client') r.store='';
-      }
-      h+='<tr><td class="cat">'+esc(r.cat)+'</td><td class="el">'+esc(r.el)+'</td>'+fmtQty(r.qty)
-        +cell(g,r,'store')+(showLoc?cell(g,r,'loc'):'')+cmtCell(g,r)+'</tr>';
-    });
-    h+='</table></div>';
-  });
+  h+=renderGroups(groups);
   document.getElementById('sheet').innerHTML=h;
 }
 
@@ -703,8 +874,9 @@ function resetForm(){
     mhOn:false,mhDuree:2,serveurNb:0,serveurDuree:2,
     tblNb:0,tblHousse:false,mdNb:0,mdHousse:false,nappesOn:false,nappesNb:null,
     sale:false,sucre:false,fromage:false,mixte:false,vege:false,
+    boissFroides:true,pdjVienno:true,pdjPain:false,pdjFruits:true,pdjYaourt:false,pcSucre:true,pcSale:false,
     verresPer:2,pBiere:0.7,pBlanc:0.2,pRouge:0.1,rose:0,futs:0,cremant:0,champagne:0,alcoolAutre:0,softAutre:0,
-    choice:{},choiceOther:{},comment:{}});
+    choice:{},choiceOther:{},comment:{},elO:{},qtyO:{},hid:{},add:{}});
   S.type=keep;
   const sx=document.getElementById('sx'); if(sx) sx.value='';
   const st=document.getElementById('ib-status'); if(st) st.textContent='';
@@ -720,7 +892,9 @@ function mapSextanToForm(ev){
   const nb=+ev.nbr_pax||0;
   const type=(ev.type||"").toUpperCase();
   let model="chaud";
-  if(/COCKTAIL|APERITIF|DINATOIRE/.test(type)) model="cocktail";
+  if(/PETIT.?D[EÉ]J|\bPDJ\b|BRUNCH/.test(type)) model="pdj";
+  else if(/PAUSE|CAF[EÉ]|COLLATION|GO[UÛ]TER|VIENNOISERIE/.test(type)) model="pc";
+  else if(/COCKTAIL|APERITIF|DINATOIRE/.test(type)) model="cocktail";
   const items=[];
   const steps=(ev.menu&&ev.menu.steps)||[];
   const stypes=steps.map(s=>(s.step_type||"").toUpperCase());
