@@ -13,6 +13,12 @@
   to = "/.netlify/functions/liens-files"
   status = 200
 
+# --- Défauts partagés des onglets de la tuile Préparation prestation ---
+[[redirects]]
+  from = "/api/prepa-defaults"
+  to = "/.netlify/functions/prepa-defaults"
+  status = 200
+
 # --- Sous-domaine du menu (QR carte de visite) : tout menu.briffe.me -> page publique ---
 # (Prérequis : ajouter menu.briffe.me comme domaine du site dans Netlify.)
 [[redirects]]
