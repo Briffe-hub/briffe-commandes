@@ -88,9 +88,9 @@ table.list{width:100%;border-collapse:collapse}
   <div class="brand"><span class="lk"><b>briffe</b>tools</span><span class="sub">cartels allergènes</span></div>
   <div class="header-right">
     <select id="rotsel" class="btn" onchange="setRot(this.value)" title="Sens d'impression (si l'étiquette sort tournée, change ici)">
+      <option value="0">Sens 0° (normal)</option>
       <option value="90">Sens ⟳ 90°</option>
       <option value="270">Sens ⟳ 270°</option>
-      <option value="0">Sens 0°</option>
       <option value="180">Sens 180°</option>
     </select>
     <button class="btn" onclick="printSelected()" id="btnPrintSel">🖨️ Imprimer la sélection</button>
@@ -244,7 +244,7 @@ function hidePreview(){ document.getElementById('previewwrap').style.display='no
 /* ---------- Sens d'impression (rotation pour coller au ruban 62 mm) ---------- */
 // 62 mm = LARGEUR du ruban (en travers), 32 mm = longueur (sens de défilement).
 // Le pilote Brother fait parfois pivoter la page : ce réglage compense côté fichier.
-function getRot(){ try{ var v=parseInt(sessionStorage.getItem('bt_cartel_rot'),10); return isNaN(v)?90:v; }catch(e){ return 90; } }
+function getRot(){ try{ var v=parseInt(sessionStorage.getItem('bt_cartel_rot'),10); return isNaN(v)?0:v; }catch(e){ return 0; } }
 function setRot(v){ try{ sessionStorage.setItem('bt_cartel_rot', String(parseInt(v,10)||0)); }catch(e){} var s=document.getElementById('rotsel'); if(s) s.value=String(parseInt(v,10)||0); setStatus('Sens d’impression : '+(parseInt(v,10)||0)+'°'); }
 
 /* ---------- Rendu étiquette en image (mêmes polices que l'aperçu) ---------- */
