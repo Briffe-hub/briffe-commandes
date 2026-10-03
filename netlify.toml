@@ -13,6 +13,18 @@
   to = "/.netlify/functions/liens-files"
   status = 200
 
+# --- Cartels allergènes : produits d'une réception + allergènes ---
+[[redirects]]
+  from = "/api/cartels"
+  to = "/.netlify/functions/cartels"
+  status = 200
+
+# --- Cartels : bibliothèque partagée des étiquettes par produit ---
+[[redirects]]
+  from = "/api/cartels-lib"
+  to = "/.netlify/functions/cartels-lib"
+  status = 200
+
 # --- Défauts partagés des onglets de la tuile Préparation prestation ---
 [[redirects]]
   from = "/api/prepa-defaults"
@@ -57,6 +69,11 @@
   from = "/api/sextan"
   to = "/.netlify/functions/sextan"
   status = 200
+
+[[redirects]]
+  from = "/cartels"
+  to = "/briffe-cartels.html"
+  status = 301
 
 [[redirects]]
   from = "/prepa"
