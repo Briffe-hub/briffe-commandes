@@ -87,6 +87,12 @@ table.list{width:100%;border-collapse:collapse}
   <a class="bt-back" href="index.html" title="Retour au menu principal">&larr;&nbsp;Menu</a>
   <div class="brand"><span class="lk"><b>briffe</b>tools</span><span class="sub">cartels allergènes</span></div>
   <div class="header-right">
+    <select id="rotsel" class="btn" onchange="setRot(this.value)" title="Sens d'impression (si l'étiquette sort tournée, change ici)">
+      <option value="90">Sens ⟳ 90°</option>
+      <option value="270">Sens ⟳ 270°</option>
+      <option value="0">Sens 0°</option>
+      <option value="180">Sens 180°</option>
+    </select>
     <button class="btn" onclick="printSelected()" id="btnPrintSel">🖨️ Imprimer la sélection</button>
     <button class="btn" onclick="pdfSelected()" id="btnPdfSel">⤓ PDF de la sélection</button>
     <button class="btn" onclick="saveAll()" id="btnSaveAll">💾 Tout enregistrer</button>
@@ -235,8 +241,14 @@ function showPreview(i){ _pvIdx=i; document.getElementById('pvframe').innerHTML=
 function syncPreview(i){ if(_pvIdx===i && document.getElementById('previewwrap').style.display==='block'){ document.getElementById('pvframe').innerHTML=labelHTML(P[i]); } }
 function hidePreview(){ document.getElementById('previewwrap').style.display='none'; _pvIdx=null; }
 
-/* ---------- Rendu étiquette en image 62×32 (mêmes polices que l'aperçu) ---------- */
-async function renderLabelImage(p){
+/* ---------- Sens d'impression (rotation pour coller au ruban 62 mm) ---------- */
+// 62 mm = LARGEUR du ruban (en travers), 32 mm = longueur (sens de défilement).
+// Le pilote Brother fait parfois pivoter la page : ce réglage compense côté fichier.
+function getRot(){ try{ var v=parseInt(sessionStorage.getItem('bt_cartel_rot'),10); return isNaN(v)?90:v; }catch(e){ return 90; } }
+function setRot(v){ try{ sessionStorage.setItem('bt_cartel_rot', String(parseInt(v,10)||0)); }catch(e){} var s=document.getElementById('rotsel'); if(s) s.value=String(parseInt(v,10)||0); setStatus('Sens d’impression : '+(parseInt(v,10)||0)+'°'); }
+
+/* ---------- Rendu étiquette en image (mêmes polices que l'aperçu) ---------- */
+async function renderLabelCanvas(p){
   var holder=document.getElementById('render-holder');
   if(!holder){ holder=document.createElement('div'); holder.id='render-holder'; document.body.appendChild(holder); }
   holder.innerHTML=labelHTML(p);
@@ -244,7 +256,18 @@ async function renderLabelImage(p){
   try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
   var canvas=await html2canvas(node,{scale:4,backgroundColor:'#ffffff',logging:false,useCORS:true});
   holder.innerHTML='';
-  return canvas.toDataURL('image/png');
+  return canvas;
+}
+function rotateCanvas(src, deg){
+  deg=((deg%360)+360)%360;
+  if(!deg) return src;
+  var w=src.width, h=src.height, c=document.createElement('canvas');
+  if(deg===90||deg===270){ c.width=h; c.height=w; } else { c.width=w; c.height=h; }
+  var ctx=c.getContext('2d');
+  ctx.translate(c.width/2, c.height/2);
+  ctx.rotate(deg*Math.PI/180);
+  ctx.drawImage(src, -w/2, -h/2);
+  return c;
 }
 
 /* ---------- PDF 62×32 (source unique pour impression ET export) ---------- */
@@ -252,11 +275,15 @@ async function makePdf(list){
   if(!list.length){ alert('Aucune étiquette.'); return null; }
   var JP=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF; if(!JP){ alert('Librairie PDF indisponible.'); return null; }
   if(typeof html2canvas==='undefined'){ alert('Librairie de rendu indisponible (html2canvas).'); return null; }
-  var doc=new JP({orientation:'landscape',unit:'mm',format:[62,32]});
+  var deg=getRot(); var swap=(deg===90||deg===270);
+  var pageW=swap?32:62, pageH=swap?62:32;           // 62 = largeur ruban, 32 = longueur
+  var orient=pageW>pageH?'landscape':'portrait';
+  var doc=new JP({orientation:orient,unit:'mm',format:[pageW,pageH]});
   for(var i=0;i<list.length;i++){
-    if(i>0) doc.addPage([62,32],'landscape');
-    var img=await renderLabelImage(list[i]);
-    doc.addImage(img,'PNG',0,0,62,32);
+    if(i>0) doc.addPage([pageW,pageH],orient);
+    var canvas=await renderLabelCanvas(list[i]);
+    var rc=rotateCanvas(canvas, deg);
+    doc.addImage(rc.toDataURL('image/png'),'PNG',0,0,pageW,pageH);
   }
   return doc;
 }
@@ -307,6 +334,7 @@ async function saveAll(){
 }
 
 /* ---------- Init ---------- */
+(function(){ var s=document.getElementById('rotsel'); if(s) s.value=String(getRot()); })();
 loadLib();
 </script>
 </body>
