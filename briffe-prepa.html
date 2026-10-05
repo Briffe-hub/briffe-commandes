@@ -230,12 +230,12 @@ const PARAMS_DEFAULT = {
   technique: { chafing_par_prise:2, eau_l_par_chafing:3 },
   // Logistique / vaisselle (ratios "1 pour X couverts")
   logistique: { porte_serviettes_par_pax:50, caisse_sale_par_pax:50, corbeille_pain_par_pax:20, cartes_par_pax:3, couteau_fromage_par_pax:20 },
-  // Boissons chaudes (commun PDJ & Pause café)
-  hd: { the_pct:0.30, cafe_g_tasse:8, tasses_par_thermos:15, lait_l_pers:0.03, sucre_pers:1.2, gob_chaud_pers:1.6, serviettes_pers:1.5 },
+  // Boissons chaudes (commun PDJ & Pause café) — café préparé à l'avance, raisonné en litres
+  hd: { the_pct:0.30, tasses_pers:1, cafe_l_tasse:0.10, lait_l_pers:0.03, sucre_g_pers:2, sucre_pot_g:80, gob_chaud_pers:1.6, serviettes_pers:1.5 },
   // Petit-déjeuner
-  pdj: { cupRatio:1.5, gob_froid_pers:1.3, jus_l_pers:0.15, vienno_pers:1.5, pain_pers:1.0, fruits_par_pax:10, serviettes_pers:1.5, plateaux_par_pax:15, corbeille_par_pax:20 },
+  pdj: { gob_froid_pers:1.3, jus_l_pers:0.15, vienno_pers:1.5, pain_pers:1.0, fruits_g_pers:80, serviettes_pers:1.5, plateaux_par_pax:15, corbeille_par_pax:20 },
   // Pause café
-  pc:  { cupRatio:1.3, gob_froid_pers:1.2, jus_l_pers:0.10, mignardises_pers:2, mini_vienno_pers:1, sale_pers:2, serviettes_pers:1.5, plateaux_par_pax:20, corbeille_par_pax:20 },
+  pc:  { gob_froid_pers:1.2, jus_l_pers:0.10, mignardises_pers:2, mini_vienno_pers:1, sale_pers:2, serviettes_pers:1.5, plateaux_par_pax:20, corbeille_par_pax:20 },
   // Eau des boissons froides PDJ/PC
   froidb: { eau_l_pers:0.15, eau_bottle:0.5 }
 };
@@ -573,15 +573,15 @@ function modelBBQ(){
 // ══════════════════════════════════════════════════════════════════════════
 //  MODÈLES : PETIT-DÉJEUNER / PAUSE CAFÉ  (recette générique, par pax)
 // ══════════════════════════════════════════════════════════════════════════
-function hotDrinks(cupRatio){
+function hotDrinks(){
   const nb=N(S.nb);
-  const cups=nb*cupRatio;
+  const cups=nb*PG('hd.tasses_pers');               // 1 tasse / pers par défaut
   return {
-    thermos: RU(cups/PG('hd.tasses_par_thermos')),      // airpot ~2,2 L ≈ 15 tasses
-    cafeG:   RU(cups*PG('hd.cafe_g_tasse')),       // 8 g de café moulu / tasse
-    the:     RU(nb*PG('hd.the_pct')),      // thé = 30% des convives
-    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),   // ~3 cl/pax, briques de 1 L
-    sucre:   RU(nb*PG('hd.sucre_pers'))        // sticks de sucre
+    cafeL:   RU(cups*PG('hd.cafe_l_tasse')),         // café préparé à l'avance, en litres
+    the:     RU(nb*PG('hd.the_pct')),                // thé = 30% des convives
+    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),         // ~3 cl/pax, briques de 1 L
+    sucre:   Math.max(1, RUd(nb*PG('hd.sucre_g_pers'), PG('hd.sucre_pot_g'))), // sucre vrac, pots 80 g, 2 g/tête, 1 mini
+    sucrePot:RU(PG('hd.sucre_pot_g'))
   };
 }
 function froidesRows(jusLabel,jusRatio){
@@ -599,16 +599,15 @@ function hygieneGroup(){
   ]};
 }
 function modelPDJ(){
-  const nb=N(S.nb), d=hotDrinks(PG('pdj.cupRatio')), froid=S.boissFroides;
+  const nb=N(S.nb), d=hotDrinks(), froid=S.boissFroides;
   const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pdj.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
-    line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
-    line("Boisson","Thermos / airpot",d.thermos,"Platerie"),
+    line("Boisson","Café préparé (L)",d.cafeL,"Économat","","préparé à l'avance"),
     line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
     line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
     line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
-    line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
+    line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
   if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus d'orange",PG('pdj.jus_l_pers'))});
@@ -619,7 +618,7 @@ function modelPDJ(){
     food.push(line("Food","Beurre (portions)",nb,"Chambre froide"));
     food.push(line("Food","Confiture / miel (portions)",nb,"Chambre froide"));
   }
-  if(S.pdjFruits) food.push(line("Food","Fruits / corbeille",RUd(nb,PG('pdj.fruits_par_pax')),"Chambre froide"));
+  if(S.pdjFruits) food.push(line("Food","Fruits (kg)",Math.ceil(nb*PG('pdj.fruits_g_pers')/100)/10,"Chambre froide","",(RU(PG('pdj.fruits_g_pers')))+" g/pers"));
   if(S.pdjYaourt) food.push(line("Food","Yaourts / fromage blanc",nb,"Chambre froide"));
   if(food.length) grp.push({title:"Solide", noLoc:true, rows:food});
   grp.push({title:"Vaisselle & matériel", colStore:"Fournisseur", colLoc:"Livraison", rows:[
@@ -638,16 +637,15 @@ function modelPDJ(){
   return grp;
 }
 function modelPC(){
-  const nb=N(S.nb), d=hotDrinks(PG('pc.cupRatio')), froid=S.boissFroides;
+  const nb=N(S.nb), d=hotDrinks(), froid=S.boissFroides;
   const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pc.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
-    line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
-    line("Boisson","Thermos / airpot",d.thermos,"Platerie"),
+    line("Boisson","Café préparé (L)",d.cafeL,"Économat","","préparé à l'avance"),
     line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
     line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
     line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
-    line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
+    line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
   if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus de fruits",PG('pc.jus_l_pers'))});
@@ -1041,27 +1039,26 @@ function renderParamsForm(){
     +pRow('Couteau planche fromage (cocktail)','logistique.couteau_fromage_par_pax',PG('logistique.couteau_fromage_par_pax'));
 
   h+='<div class="pm-sec">Boissons chaudes (café / thé — commun PDJ & Pause café)</div>';
-  h+=pRow('Café moulu (g / tasse)','hd.cafe_g_tasse',PG('hd.cafe_g_tasse'))
-    +pRow('Tasses par thermos/airpot','hd.tasses_par_thermos',PG('hd.tasses_par_thermos'))
+  h+=pRow('Tasses / pers','hd.tasses_pers',PG('hd.tasses_pers'))
+    +pRow('Café préparé (L / tasse)','hd.cafe_l_tasse',PG('hd.cafe_l_tasse'))
     +pRow('Thé (part des convives, ex. 0,30)','hd.the_pct',PG('hd.the_pct'))
     +pRow('Lait (L / pers)','hd.lait_l_pers',PG('hd.lait_l_pers'))
-    +pRow('Sucre (sticks / pers)','hd.sucre_pers',PG('hd.sucre_pers'))
+    +pRow('Sucre (g / pers)','hd.sucre_g_pers',PG('hd.sucre_g_pers'))
+    +pRow('Sucre — pot vrac (g)','hd.sucre_pot_g',PG('hd.sucre_pot_g'))
     +pRow('Gobelets chauds / pers','hd.gob_chaud_pers',PG('hd.gob_chaud_pers'))
     +pRow('Serviettes / pers (PDJ & PC)','hd.serviettes_pers',PG('hd.serviettes_pers'));
 
   h+='<div class="pm-sec">Petit-déjeuner</div>';
-  h+=pRow('Tasses chaudes / pers (cupRatio)','pdj.cupRatio',PG('pdj.cupRatio'))
-    +pRow('Gobelets froids / pers','pdj.gob_froid_pers',PG('pdj.gob_froid_pers'))
+  h+=pRow('Gobelets froids / pers','pdj.gob_froid_pers',PG('pdj.gob_froid_pers'))
     +pRow('Jus (L / pers)','pdj.jus_l_pers',PG('pdj.jus_l_pers'))
     +pRow('Viennoiseries / pers','pdj.vienno_pers',PG('pdj.vienno_pers'))
     +pRow('Pains / pers','pdj.pain_pers',PG('pdj.pain_pers'))
-    +pRow('Corbeille de fruits (1 pour X)','pdj.fruits_par_pax',PG('pdj.fruits_par_pax'))
+    +pRow('Fruits (g / pers)','pdj.fruits_g_pers',PG('pdj.fruits_g_pers'))
     +pRow('Plateaux présentation (1 pour X)','pdj.plateaux_par_pax',PG('pdj.plateaux_par_pax'))
     +pRow('Corbeilles vienno/pain (1 pour X)','pdj.corbeille_par_pax',PG('pdj.corbeille_par_pax'));
 
   h+='<div class="pm-sec">Pause café</div>';
-  h+=pRow('Tasses chaudes / pers (cupRatio)','pc.cupRatio',PG('pc.cupRatio'))
-    +pRow('Gobelets froids / pers','pc.gob_froid_pers',PG('pc.gob_froid_pers'))
+  h+=pRow('Gobelets froids / pers','pc.gob_froid_pers',PG('pc.gob_froid_pers'))
     +pRow('Jus (L / pers)','pc.jus_l_pers',PG('pc.jus_l_pers'))
     +pRow('Mignardises sucrées / pers','pc.mignardises_pers',PG('pc.mignardises_pers'))
     +pRow('Mini-viennoiseries / pers','pc.mini_vienno_pers',PG('pc.mini_vienno_pers'))
