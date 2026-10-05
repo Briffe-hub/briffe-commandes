@@ -149,7 +149,7 @@ tr.added td.cat .catin{font-style:italic}
 <div id="tab-bar">
   <button class="tab-btn active" data-type="chaud" onclick="setType('chaud')">Repas chaud</button>
   <button class="tab-btn" data-type="froid" onclick="setType('froid')">Repas froid</button>
-  <button class="tab-btn" data-type="cocktail" onclick="setType('cocktail')">Cocktail / planches</button>
+  <button class="tab-btn" data-type="cocktail" onclick="setType('cocktail')">Cocktail</button>
   <button class="tab-btn" data-type="bbq" onclick="setType('bbq')">BBQ / brasero</button>
   <button class="tab-btn" data-type="pdj" onclick="setType('pdj')">Petit-déjeuner</button>
   <button class="tab-btn" data-type="pc" onclick="setType('pc')">Pause café</button>
@@ -611,7 +611,7 @@ function modelPC(){
 }
 
 const MODELS = {chaud:modelChaud, froid:modelFroid, cocktail:modelCocktail, bbq:modelBBQ, pdj:modelPDJ, pc:modelPC};
-const TITLES = {chaud:"Repas chaud · chafing dish", froid:"Repas froid", cocktail:"Cocktail / planches", bbq:"BBQ / brasero", pdj:"Petit-déjeuner", pc:"Pause café"};
+const TITLES = {chaud:"Repas chaud · chafing dish", froid:"Repas froid", cocktail:"Cocktail", bbq:"BBQ / brasero", pdj:"Petit-déjeuner", pc:"Pause café"};
 
 // ══════════════════════════════════════════════════════════════════════════
 //  RENDU FORMULAIRE
@@ -941,6 +941,23 @@ async function saveDefaults(){
 }
 
 // ── Import Sextan ────────────────────────────────────────────────────────────
+// Détection de l'onglet (type de prestation) : 1) d'après le type de réception
+// Sextan (libellés réels du client), 2) repli sur la composition du menu.
+function detectModel(type, stypes){
+  const T=(type||'').toUpperCase().replace(/\s+/g,' ').trim();
+  const S=(stypes||[]).join(' | ');
+  // 1) Type de réception
+  if(/BRUNCH|PETIT.?D[EÉ]J/.test(T)) return 'pdj';
+  if(/PAUSE ?CAF[EÉ]/.test(T)) return 'pc';
+  if(/COCKTAIL|AP[EÉ]RITIF|DINATOIRE/.test(T)) return 'cocktail'; // incl. RECEPTION PRO COCKTAIL, LIVRE/EMPORTE APERITIF|COCKTAIL, MARIAGE DINATOIRE
+  if(/BARBECUE|\bBBQ\b|BRASERO|PLANCHA/.test(T)) return 'bbq';
+  if(/REPAS|BUFFET|MARIAGE ASSIS|LENDEMAIN|R[EÉ]UNION/.test(T)) return 'chaud'; // repas : chaud par défaut (bascule froid à la main)
+  // 2) Repli sur les étapes du menu
+  if(/ACCUEIL CAFE|PAUSE CAFE/.test(S) && !/PLAT|ENTREE|DESSERT|FROMAGE/.test(S)) return 'pc';
+  if(/APERITIF|VIN D.?HONNEUR|ATELIER|ANIMAT/.test(S) && !/PLAT|ENTREE/.test(S)) return 'cocktail';
+  if(/PLAT|ENTREE|FROMAGE|DESSERT|[1-5]ERE? PARTIE|[1-5]EME PARTIE/.test(S)) return 'chaud';
+  return 'chaud';
+}
 function mapSextanToForm(ev){
   const p=ev.project||{};
   const client=(p.client&&p.client.name||"").trim();
@@ -948,13 +965,10 @@ function mapSextanToForm(ev){
   const heure=pick(ev.organizer_arrival)||pick(ev.client_arrival)||pick(ev.start_time)||pick(ev.end_time)||"";
   const nb=+ev.nbr_pax||0;
   const type=(ev.type||"").toUpperCase();
-  let model="chaud";
-  if(/PETIT.?D[EÉ]J|\bPDJ\b|BRUNCH/.test(type)) model="pdj";
-  else if(/PAUSE|CAF[EÉ]|COLLATION|GO[UÛ]TER|VIENNOISERIE/.test(type)) model="pc";
-  else if(/COCKTAIL|APERITIF|DINATOIRE/.test(type)) model="cocktail";
   const items=[];
   const steps=(ev.menu&&ev.menu.steps)||[];
   const stypes=steps.map(s=>(s.step_type||"").toUpperCase());
+  const model=detectModel(type, stypes);
   steps.forEach(s=>(s.products||[]).forEach(pr=>{
     const q=(pr.real_quantity!=null)?pr.real_quantity:Math.round((+pr.quantity||0)*nb);
     items.push({name:(pr.name||"").toLowerCase(), qty:+q||0});
