@@ -35,14 +35,18 @@ async function blobSet(value) {
   if (!r.ok) throw new Error("Blob PUT " + r.status);
 }
 
-function emptyTab() { return { hid: {}, add: [], elO: {}, qtyO: {} }; }
+function emptyTab() { return { hid: {}, add: [], elO: {}, qtyO: {}, choice: {}, choiceOther: {}, comment: {} }; }
 function sanitizeTab(t) {
   t = t || {};
+  const obj = o => (o && typeof o === "object" && !Array.isArray(o)) ? o : {};
   return {
-    hid:  (t.hid  && typeof t.hid  === "object") ? t.hid  : {},
-    elO:  (t.elO  && typeof t.elO  === "object") ? t.elO  : {},
-    qtyO: (t.qtyO && typeof t.qtyO === "object") ? t.qtyO : {},
-    add:  Array.isArray(t.add) ? t.add.slice(0, 200) : []
+    hid:         obj(t.hid),
+    elO:         obj(t.elO),
+    qtyO:        obj(t.qtyO),
+    choice:      obj(t.choice),
+    choiceOther: obj(t.choiceOther),
+    comment:     obj(t.comment),
+    add:         Array.isArray(t.add) ? t.add.slice(0, 200) : []
   };
 }
 
