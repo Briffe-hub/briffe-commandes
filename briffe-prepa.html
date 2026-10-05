@@ -767,6 +767,18 @@ function delLine(k){ S.hid[k]=true; renderSheet(); }
 function addLine(grp){ (S.add[S.type]=S.add[S.type]||[]).push({grp:grp,cat:'',el:'',qty:'',store:'',loc:'',cmt:''}); renderSheet(); }
 function setAdd(type,idx,field,val){ if(S.add[type]&&S.add[type][idx]) S.add[type][idx][field]=val; }
 function delAdd(type,idx){ if(S.add[type]){ S.add[type].splice(idx,1); renderSheet(); } }
+// Listes déroulantes des ajouts manuels (catégorie / stockage / livraison)
+var STORE_OPTS=["Quai","Chambre froide","Camion","Labo","Économat","Platerie","Liaison froide","Liaison chaude","Briffe","Exel"];
+var LOC_OPTS=["Briffe","Direct client","Labo","Panifrais"];
+function addOptList(opts,val,free){
+  var h='<option value="">—</option>', inList=false;
+  opts.forEach(function(o){ if(o===val) inList=true; h+='<option'+(!free&&o===val?' selected':'')+'>'+esc(o)+'</option>'; });
+  if(!free && val && !inList) h+='<option selected>'+esc(val)+'</option>';
+  h+='<option value="__autre__"'+(free?' selected':'')+'>Autre…</option>';
+  return h;
+}
+function setAddCat(idx,v){ var a=(S.add[S.type]||[])[idx]; if(!a)return; if(v==='__autres__'){ a.grp='Ajouts manuels'; a.cat='Divers'; } else { a.grp=v; a.cat=v; } renderSheet(); }
+function setAddSel(idx,field,v){ var a=(S.add[S.type]||[])[idx]; if(!a)return; if(v==='__autre__'){ a['_f_'+field]=true; a[field]=''; } else { a['_f_'+field]=false; a[field]=v; } renderSheet(); }
 
 function rowEditable(g,r,showLoc){
   if(r.opts && r.opts.loc && !r.opts.store){
@@ -784,17 +796,27 @@ function rowEditable(g,r,showLoc){
     +cell(g,r,'store')+(showLoc?cell(g,r,'loc'):'')+cmtCell(g,r)
     +'<td class="act no-print"><button class="rowdel" title="Supprimer la ligne" onclick="delLine(\''+key+'\')">✕</button></td></tr>';
 }
-function addedRow(type,idx,a,showLoc){
-  const f=(field,cls,ph)=>'<input class="'+cls+'" value="'+esc(a[field]||'')+'" placeholder="'+ph+'" oninput="setAdd(\''+type+'\','+idx+',\''+field+'\',this.value)">';
-  return '<tr class="added"><td class="cat">'+f('cat','catin','cat.')+'</td>'
-    +'<td class="el">'+f('el','elin','élément')+'</td>'
-    +'<td class="qty">'+f('qty','qtyin','qté')+'</td>'
-    +'<td class="store">'+f('store','celltext','stockage')+'</td>'
-    +(showLoc?'<td class="loc">'+f('loc','celltext','livraison')+'</td>':'')
-    +'<td class="cmt">'+f('cmt','celltext','commentaire')+'</td>'
+function addedRow(type,idx,a,showLoc,groupTitles){
+  var curGrp=(a.grp && a.grp!=='Ajouts manuels')?a.grp:'__autres__';
+  var catSel='<select class="cellsel" onchange="setAddCat('+idx+',this.value)">'
+    +(groupTitles||[]).map(function(t){return '<option value="'+esc(t)+'"'+(t===curGrp?' selected':'')+'>'+esc(t)+'</option>';}).join('')
+    +'<option value="__autres__"'+(curGrp==='__autres__'?' selected':'')+'>Autres / divers</option></select>';
+  var txt=function(field,cls,ph){ return '<input class="'+cls+'" value="'+esc(a[field]||'')+'" placeholder="'+ph+'" oninput="setAdd(\''+type+'\','+idx+',\''+field+'\',this.value)">'; };
+  var sel=function(field,opts){
+    var free=(a['_f_'+field]===true);
+    var s='<select class="cellsel" onchange="setAddSel('+idx+',\''+field+'\',this.value)">'+addOptList(opts,a[field]||'',free)+'</select>';
+    if(free) s+='<input class="cellother" placeholder="préciser" value="'+esc(a[field]||'')+'" oninput="setAdd(\''+type+'\','+idx+',\''+field+'\',this.value)">';
+    return s;
+  };
+  return '<tr class="added"><td class="cat">'+catSel+'</td>'
+    +'<td class="el">'+txt('el','elin','élément')+'</td>'
+    +'<td class="qty">'+txt('qty','qtyin','qté')+'</td>'
+    +'<td class="store">'+sel('store',STORE_OPTS)+'</td>'
+    +(showLoc?'<td class="loc">'+sel('loc',LOC_OPTS)+'</td>':'')
+    +'<td class="cmt">'+txt('cmt','celltext','commentaire')+'</td>'
     +'<td class="act no-print"><button class="rowdel" title="Supprimer la ligne" onclick="delAdd(\''+type+'\','+idx+')">✕</button></td></tr>';
 }
-function grpBlock(g,addedForG){
+function grpBlock(g,addedForG,groupTitles){
   let rows=g.rows.filter(r=>!(r.qty===0 && r.el!==''));
   rows=rows.filter(r=>!S.hid[lkey(g.title,r.el)]);
   if(!rows.length && !addedForG.length && !g.always) return '';
@@ -808,7 +830,7 @@ function grpBlock(g,addedForG){
   if(showLoc) x+='<th>'+(g.colLoc||'Location')+(lo?bulkSel(g.title,'loc',lo):'')+'</th>';
   x+='<th>Commentaire</th><th class="no-print"></th></tr>';
   rows.forEach(r=>{ x+=rowEditable(g,r,showLoc); });
-  addedForG.forEach(a=>{ x+=addedRow(S.type,a._i,a,showLoc); });
+  addedForG.forEach(a=>{ x+=addedRow(S.type,a._i,a,showLoc,groupTitles); });
   x+='</table></div>';
   return x;
 }
@@ -817,9 +839,9 @@ function renderGroups(groups){
   const added=(S.add[type]||[]); added.forEach((a,i)=>a._i=i);
   const baseTitles=groups.map(g=>g.title);
   let h='';
-  groups.forEach(g=>{ h+=grpBlock(g, added.filter(a=>a.grp===g.title)); });
+  groups.forEach(g=>{ h+=grpBlock(g, added.filter(a=>a.grp===g.title), baseTitles); });
   const freeAdded=added.filter(a=>a.grp==='Ajouts manuels' || baseTitles.indexOf(a.grp)<0);
-  h+=grpBlock({title:'Ajouts manuels', always:true, rows:[]}, freeAdded);
+  h+=grpBlock({title:'Ajouts manuels', always:true, rows:[]}, freeAdded, baseTitles);
   return h;
 }
 
@@ -908,6 +930,9 @@ function seedDefaults(){
     if(d.hid)  Object.assign(S.hid,  d.hid);
     if(d.elO)  Object.assign(S.elO,  d.elO);
     if(d.qtyO) Object.assign(S.qtyO, d.qtyO);
+    if(d.choice)      Object.assign(S.choice,      d.choice);
+    if(d.choiceOther) Object.assign(S.choiceOther, d.choiceOther);
+    if(d.comment)     Object.assign(S.comment,     d.comment);
     S.add[t]=(Array.isArray(d.add)?d.add:[]).map(a=>({grp:a.grp||'Ajouts manuels',cat:a.cat||'',el:a.el||'',qty:a.qty||'',store:a.store||'',loc:a.loc||'',cmt:a.cmt||''}));
   }
 }
@@ -916,13 +941,34 @@ async function loadDefaults(){
   catch(e){ DEF={}; }
   seedDefaults();
 }
+// Clés fournisseur/livraison/commentaire valides pour le modèle d'un onglet
+function tabChoiceKeys(type){
+  const sset={}, cset={};
+  let groups=[]; try{ groups=MODELS[type](); }catch(e){}
+  groups.forEach(g=>{ (g.rows||[]).forEach(r=>{
+    if(!r || r.el==null || r.el==='') return;
+    const base=slug(g.title)+'_'+slug(r.el);
+    if(r.opts && r.opts.store) sset['s_'+base]=1;
+    if(r.opts && r.opts.loc)   sset['l_'+base]=1;
+    cset['c_'+base]=1;
+  }); });
+  return {sset,cset};
+}
 function collectTab(type){
   const pre=type+'|', hid={}, elO={}, qtyO={};
   for(const k in S.hid)  if(S.hid[k]  && k.indexOf(pre)===0) hid[k]=true;
   for(const k in S.elO)  if(k.indexOf(pre)===0 && S.elO[k]!=null && S.elO[k]!=='')  elO[k]=S.elO[k];
   for(const k in S.qtyO) if(k.indexOf(pre)===0 && S.qtyO[k]!=null && S.qtyO[k]!=='') qtyO[k]=S.qtyO[k];
+  // Fournisseur / livraison / commentaire (colonnes), scopés aux lignes du modèle
+  const {sset,cset}=tabChoiceKeys(type);
+  const choice={}, choiceOther={}, comment={};
+  for(const k in sset){
+    if(S.choice[k]!=null && S.choice[k]!=='') choice[k]=S.choice[k];
+    if(S.choiceOther[k]!=null && S.choiceOther[k]!=='') choiceOther[k]=S.choiceOther[k];
+  }
+  for(const k in cset){ if(S.comment[k]!=null && S.comment[k]!=='') comment[k]=S.comment[k]; }
   const add=(S.add[type]||[]).filter(a=>String(a.el||'').trim()||String(a.cat||'').trim());
-  return {hid,elO,qtyO,add};
+  return {hid,elO,qtyO,choice,choiceOther,comment,add};
 }
 async function saveDefaults(){
   const type=S.type;
