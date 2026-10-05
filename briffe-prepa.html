@@ -124,6 +124,19 @@ tr.added td.cat .catin{font-style:italic}
 .def-status{font-size:11px;color:#9a9a9a;margin-right:4px;max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .def-status.ok{color:#22c55e}
 .def-status.err{color:#f87171}
+.pm-wrap{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.pm-box{background:#141414;border:1px solid #2a2a2a;border-radius:8px;width:min(560px,100%);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.pm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #1e1e1e}
+.pm-x{cursor:pointer;color:#888}
+.pm-x:hover{color:#e8e8e0}
+#pm-body{padding:8px 18px 14px;max-height:62vh;overflow:auto}
+.pm-sec{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#f59e0b;margin:16px 0 4px}
+.pm-row{display:flex;align-items:center;gap:10px;padding:4px 0}
+.pm-row label{flex:1;font-size:12px;color:#b0b0a8}
+.pm-row input{width:90px;background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:6px 8px;font-size:12px}
+.pm-row input:focus{outline:none;border-color:#555}
+.pm-foot{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid #1e1e1e}
+.pm-hint{font-size:11px;color:#666;margin:2px 0 4px}
 </style>
 </head>
 <body>
@@ -132,6 +145,7 @@ tr.added td.cat .catin{font-style:italic}
   <div class="brand" style="margin-right:auto"><span class="lk"><span class="b">briffe</span><span class="t">tools</span></span><span class="sub">préparation prestation</span></div>
   <div class="header-right">
     <span id="def-status" class="def-status"></span>
+    <button class="btn" onclick="openParams()" title="Paramètres globaux (forfaits boissons, conversions, verres) — partagés">&#9881; Paramétrage</button>
     <button class="btn" onclick="saveDefaults()" title="Mémoriser l'état actuel de cet onglet comme modèle par défaut, partagé par tous les postes">&#9733; Défaut de l'onglet</button>
     <button class="btn" onclick="resetForm()">&#8635; Réinitialiser</button>
     <button class="btn primary" onclick="window.print()">Imprimer</button>
@@ -179,9 +193,8 @@ const S = {
   sale:false, sucre:false, fromage:false, mixte:false, vege:false,
   // petit-déjeuner / pause café
   boissFroides:true, pdjVienno:true, pdjPain:false, pdjFruits:true, pdjYaourt:false, pcSucre:true, pcSale:false,
-  // alcool : réglages + extras
-  verresPer:2, pBiere:0.7, pBlanc:0.2, pRouge:0.1,
-  rose:0, futs:0, cremant:0, champagne:0, alcoolAutre:0, softAutre:0,
+  // alcool : quantités SERVIES (coupes/verres/unités), reprises de Sextan ou saisie manuelle
+  rouge:0, blanc:0, rose:0, biere:0, futs:0, cremant:0, champagne:0, alcoolAutre:0, softAutre:0,
   // choix fournisseur / livraison + commentaires par ligne
   choice:{}, choiceOther:{}, comment:{},
   // sections repliées du panneau
@@ -189,6 +202,31 @@ const S = {
   // édition ligne par ligne (par prestation)
   elO:{}, qtyO:{}, hid:{}, add:{}
 };
+
+// ══════════════════════════════════════════════════════════════════════════
+//  PARAMÈTRES GLOBAUX (forfaits/ratios) — partagés, éditables (menu ⚙ Paramétrage)
+// ══════════════════════════════════════════════════════════════════════════
+const PARAMS_DEFAULT = {
+  // Softs : litres par personne + contenance bouteille (L). bouteilles = ⌈ nb × L/pers ÷ contenance ⌉
+  softs: {
+    jus: { lpp:0.0375, bottle_l:1.0 },   // par type de jus
+    eau: { lpp:0.20,   bottle_l:1.0 }    // par type d'eau
+  },
+  // Alcool : conversion des quantités SERVIES → bouteilles. bouteilles = ⌈ servies × verre(L) ÷ bouteille(L) ⌉
+  conv: {
+    champagne: { serve_l:0.18,  bottle_l:0.75 },   // coupe 18 cl
+    cremant:   { serve_l:0.12,  bottle_l:0.75 },
+    vin:       { serve_l:0.125, bottle_l:0.75 },    // rouge / blanc / rosé
+    biere_bt:  { serve_l:0.25,  bottle_l:0.33 }     // bière bouteille
+    // fûts : laissés en unités (pas de conversion)
+  },
+  // Verres : nombre par personne (si la boisson concernée est présente)
+  verres: { vin:1, champagne:1 }
+};
+let PARAMS = JSON.parse(JSON.stringify(PARAMS_DEFAULT));
+function P_soft(k){ return (PARAMS.softs&&PARAMS.softs[k])||PARAMS_DEFAULT.softs[k]; }
+function P_conv(k){ return (PARAMS.conv&&PARAMS.conv[k])||PARAMS_DEFAULT.conv[k]; }
+function P_verre(k){ var v=PARAMS.verres&&PARAMS.verres[k]; return (v==null)?PARAMS_DEFAULT.verres[k]:v; }
 
 // ══════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -207,20 +245,26 @@ function vline(el,qty,cmt,defStore,defLoc){
     {store:["Briffe","Exel","Autre"], loc:["Labo","Direct client"]});
 }
 
+// Alcool : à partir des quantités SERVIES (coupes/verres/unités) → bouteilles, via les paramètres.
+// Pas d'invention : une boisson à 0 (absente de Sextan) reste à 0.
+function serve2bottle(serve,c){ serve=N(serve); return (serve>0&&c&&c.serve_l>0&&c.bottle_l>0)? RU(serve*c.serve_l/c.bottle_l) : 0; }
 function alcoolQty(){
-  const nb=N(S.nb);
+  if(!S.alcool) return {rouge:0,blanc:0,biere:0,rose:0,futs:0,cremant:0,champagne:0,autre:0};
   return {
-    rouge: S.alcool ? RUd(nb*S.verresPer*S.pRouge,5) : 0,
-    blanc: S.alcool ? RUd(nb*S.verresPer*S.pBlanc,5) : 0,
-    biere: S.alcool ? RUd(nb*S.verresPer*S.pBiere,4) : 0,
-    rose: S.alcool?N(S.rose):0, futs:S.alcool?N(S.futs):0,
-    cremant:S.alcool?N(S.cremant):0, champagne:S.alcool?N(S.champagne):0,
-    autre:S.alcool?N(S.alcoolAutre):0
+    rouge:    serve2bottle(S.rouge,   P_conv('vin')),
+    blanc:    serve2bottle(S.blanc,   P_conv('vin')),
+    rose:     serve2bottle(S.rose,    P_conv('vin')),
+    biere:    serve2bottle(S.biere,   P_conv('biere_bt')),
+    cremant:  serve2bottle(S.cremant, P_conv('cremant')),
+    champagne:serve2bottle(S.champagne, P_conv('champagne')),
+    futs:     N(S.futs),            // unités (pas de conversion)
+    autre:    N(S.alcoolAutre)
   };
 }
 function softVals(){
-  const nb=N(S.nb);
-  return {jus:S.softs?RUd(nb*15/4,100):0, eau:S.softs?RUd(nb*0.2,1):0, autre:S.softs?N(S.softAutre):0};
+  const nb=N(S.nb); if(!S.softs) return {jus:0,eau:0,autre:0};
+  const pb=(p)=> (p&&p.lpp>0&&p.bottle_l>0)? RU(nb*p.lpp/p.bottle_l) : 0;
+  return { jus:pb(P_soft('jus')), eau:pb(P_soft('eau')), autre:N(S.softAutre) };
 }
 function chafingOf(){
   if(S.type==='chaud'){ const gn7=CEIL(S.gn12,2); return RU(N(S.gn11)+gn7/2); }
@@ -315,10 +359,10 @@ function modelChaud(){
     vline("Assiettes à dessert",S.dessert?nb:0),
     vline("Couverts à dessert",S.dessert?nb:0),
     vline("Couverts de service (POUR X PLATS)",gn11+gn12),
-    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?nb:0),
+    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?RU(nb*P_verre('vin')):0),
     vline("Verres à bière",(a.biere>0||a.futs>0)?nb:0),
     vline("Verres à softs",anySoft?nb:0),
-    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,nb):0)
+    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,RU(nb*P_verre('champagne'))):0)
   ]});
   grp.push({title:"Food", noLoc:true, rows:[
     line("Production","Plats préparés","x","Liaison chaude"),
@@ -371,10 +415,10 @@ function modelFroid(){
     vline("Assiettes à dessert",S.dessert?nb:0),
     vline("Couverts à dessert",S.dessert?nb:0),
     vline("Couverts de service (POUR X PLATS)",nbPlats>0?nbPlats:0),
-    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?nb:0),
+    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?RU(nb*P_verre('vin')):0),
     vline("Verres à bière",(a.biere>0||a.futs>0)?nb:0),
     vline("Verres à softs",anySoft?nb:0),
-    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,nb):0)
+    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,RU(nb*P_verre('champagne'))):0)
   ]});
   grp.push({title:"Food", noLoc:true, rows:[
     line("Production","Plats préparés","x","Liaison froide","Briffe"),
@@ -421,10 +465,10 @@ function modelCocktail(){
     vline("Couteau pour planche fromage",planche?RUd(nb,20):0),
     vline("Cuillère de service",gn11+gn12),
     vline("Couverts de service (POUR X PLATS)",gn11+gn12),
-    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?nb:0),
+    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?RU(nb*P_verre('vin')):0),
     vline("Verres à bière",(a.biere>0||a.futs>0)?nb:0),
     vline("Verres à softs",anySoft?nb:0),
-    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,nb):0)
+    vline("Verres à champagne",(a.cremant>0||a.champagne>0)?Math.min((a.cremant+a.champagne)*6,RU(nb*P_verre('champagne'))):0)
   ]});
   grp.push({title:"Food", noLoc:true, rows:[
     line("Production","Pièces cocktail préparées","x","Chambre froide","Briffe"),
@@ -474,7 +518,7 @@ function modelBBQ(){
     vline("Assiettes à dessert",S.dessert?nb:0),
     vline("Couverts à dessert",S.dessert?nb:0),
     vline("Verres à softs",anySoft?nb:0),
-    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?nb:0,"","Exel"),
+    vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?RU(nb*P_verre('vin')):0,"","Exel"),
     vline("Verres à bière",(a.biere>0||a.futs>0)?nb:0,"","Exel")
   ]});
   grp.push({title:"Food", noLoc:true, rows:[
@@ -674,16 +718,11 @@ function renderPanel(){
   } else {
   let bo=toggleRow('Softs','softs')+toggleRow('Alcool','alcool');
   if(S.alcool){
-    bo+='<div style="padding:8px 0 2px"><div class="f-label">Verres / pers · % Bière / Blanc / Rouge</div><div class="row4">'
-      +'<input type="number" step="1" min="0" title="verres/pers" value="'+S.verresPer+'" oninput="S.verresPer=+this.value;renderSheet()">'
-      +'<input type="number" step="0.05" title="bière" value="'+S.pBiere+'" oninput="S.pBiere=+this.value;renderSheet()">'
-      +'<input type="number" step="0.05" title="blanc" value="'+S.pBlanc+'" oninput="S.pBlanc=+this.value;renderSheet()">'
-      +'<input type="number" step="0.05" title="rouge" value="'+S.pRouge+'" oninput="S.pRouge=+this.value;renderSheet()"></div>';
-    bo+='<div class="f-label" style="margin-top:10px">Extras (bouteilles) : rosé / fûts / crémant / champagne</div><div class="row4">'
-      +'<input type="number" min="0" title="rosé" value="'+S.rose+'" oninput="S.rose=+this.value;renderSheet()">'
-      +'<input type="number" min="0" title="fûts" value="'+S.futs+'" oninput="S.futs=+this.value;renderSheet()">'
-      +'<input type="number" min="0" title="crémant" value="'+S.cremant+'" oninput="S.cremant=+this.value;renderSheet()">'
-      +'<input type="number" min="0" title="champagne" value="'+S.champagne+'" oninput="S.champagne=+this.value;renderSheet()"></div></div>';
+    const al=(field,label,unit)=>'<div class="mini"><span class="f-label" style="margin:0">'+label+' <span style="color:#555">('+unit+')</span></span><input type="number" min="0" class="m-num" value="'+N(S[field])+'" oninput="S.'+field+'=+this.value;renderSheet()"></div>';
+    bo+='<div class="f-label" style="margin-top:8px">Quantités servies — reprises de Sextan, modifiables (bouteilles calculées sur le bon)</div>';
+    bo+=al('champagne','Champagne','coupes')+al('cremant','Crémant','coupes')
+       +al('rouge','Vin rouge','verres')+al('blanc','Vin blanc','verres')+al('rose','Vin rosé','verres')
+       +al('biere','Bière bouteille','verres')+al('futs','Fûts','unités')+al('alcoolAutre','Alcool autre','bouteilles');
   }
   add('boissons','Boissons',bo);
   }
@@ -902,7 +941,7 @@ function resetForm(){
     tblNb:0,tblHousse:false,mdNb:0,mdHousse:false,nappesOn:false,nappesNb:null,
     sale:false,sucre:false,fromage:false,mixte:false,vege:false,
     boissFroides:true,pdjVienno:true,pdjPain:false,pdjFruits:true,pdjYaourt:false,pcSucre:true,pcSale:false,
-    verresPer:2,pBiere:0.7,pBlanc:0.2,pRouge:0.1,rose:0,futs:0,cremant:0,champagne:0,alcoolAutre:0,softAutre:0,
+    rouge:0,blanc:0,rose:0,biere:0,futs:0,cremant:0,champagne:0,alcoolAutre:0,softAutre:0,
     choice:{},choiceOther:{},comment:{},elO:{},qtyO:{},hid:{},add:{}});
   S.type=keep;
   seedDefaults();
@@ -936,10 +975,49 @@ function seedDefaults(){
     S.add[t]=(Array.isArray(d.add)?d.add:[]).map(a=>({grp:a.grp||'Ajouts manuels',cat:a.cat||'',el:a.el||'',qty:a.qty||'',store:a.store||'',loc:a.loc||'',cmt:a.cmt||''}));
   }
 }
+function mergeParams(def,ov){
+  const out=JSON.parse(JSON.stringify(def));
+  (function rec(o,s){ for(const k in s){ if(s[k]&&typeof s[k]==='object'&&!Array.isArray(s[k])){ o[k]=o[k]||{}; rec(o[k],s[k]); } else if(typeof s[k]==='number'||typeof s[k]==='string'){ o[k]=s[k]; } } })(out,ov||{});
+  return out;
+}
 async function loadDefaults(){
-  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; } }
+  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; if(j&&j.params&&typeof j.params==='object') PARAMS=mergeParams(PARAMS_DEFAULT, j.params); } }
   catch(e){ DEF={}; }
   seedDefaults();
+}
+// ── Menu de paramétrage global (⚙) ──────────────────────────────────────────
+function setParam(path,val){ var o=PARAMS, p=path.split('.'); for(var i=0;i<p.length-1;i++){ o=o[p[i]]=o[p[i]]||{}; } o[p[p.length-1]]=(val===''||isNaN(+val))?0:+val; renderSheet(); }
+function pRow(label,path,val){ return '<div class="pm-row"><label>'+label+'</label><input type="number" step="0.01" min="0" value="'+val+'" oninput="setParam(\''+path+'\',this.value)"></div>'; }
+function renderParamsForm(){
+  var h='';
+  h+='<div class="pm-sec">Softs — bouteilles = ⌈ convives × L/pers ÷ contenance ⌉</div>';
+  h+='<div class="pm-hint">valeurs par type de jus / d’eau</div>';
+  h+=pRow('Jus — L / personne','softs.jus.lpp',P_soft('jus').lpp)+pRow('Jus — contenance bouteille (L)','softs.jus.bottle_l',P_soft('jus').bottle_l);
+  h+=pRow('Eau — L / personne','softs.eau.lpp',P_soft('eau').lpp)+pRow('Eau — contenance bouteille (L)','softs.eau.bottle_l',P_soft('eau').bottle_l);
+  h+='<div class="pm-sec">Alcool — conversion servies → bouteilles = ⌈ servies × verre ÷ bouteille ⌉</div>';
+  h+=pRow('Champagne — coupe (L)','conv.champagne.serve_l',P_conv('champagne').serve_l)+pRow('Champagne — bouteille (L)','conv.champagne.bottle_l',P_conv('champagne').bottle_l);
+  h+=pRow('Crémant — verre (L)','conv.cremant.serve_l',P_conv('cremant').serve_l)+pRow('Crémant — bouteille (L)','conv.cremant.bottle_l',P_conv('cremant').bottle_l);
+  h+=pRow('Vin (rouge/blanc/rosé) — verre (L)','conv.vin.serve_l',P_conv('vin').serve_l)+pRow('Vin — bouteille (L)','conv.vin.bottle_l',P_conv('vin').bottle_l);
+  h+=pRow('Bière bouteille — verre (L)','conv.biere_bt.serve_l',P_conv('biere_bt').serve_l)+pRow('Bière — contenance bouteille (L)','conv.biere_bt.bottle_l',P_conv('biere_bt').bottle_l);
+  h+='<div class="pm-hint">Fûts : comptés en unités (pas de conversion).</div>';
+  h+='<div class="pm-sec">Verres — nombre par personne (si la boisson est présente)</div>';
+  h+=pRow('Verre à vin / pers','verres.vin',P_verre('vin'))+pRow('Flûte champagne / pers','verres.champagne',P_verre('champagne'));
+  document.getElementById('pm-body').innerHTML=h;
+}
+function openParams(){ renderParamsForm(); setPmStatus(''); document.getElementById('params-modal').style.display='flex'; }
+function closeParams(){ document.getElementById('params-modal').style.display='none'; }
+function resetParamsDefault(){ PARAMS=JSON.parse(JSON.stringify(PARAMS_DEFAULT)); renderParamsForm(); renderSheet(); setPmStatus('Valeurs par défaut rétablies (pense à Enregistrer).'); }
+function setPmStatus(m,k){ var e=document.getElementById('pm-status'); if(e){ e.textContent=m||''; e.className='def-status'+(k?' '+k:''); } }
+async function saveParams(){
+  let pass=getPass(); if(!pass){ pass=prompt('Mot de passe Briffe pour enregistrer les paramètres :','')||''; if(!pass) return; setPass(pass); }
+  setPmStatus('Enregistrement…');
+  try{
+    const r=await fetch('/api/prepa-defaults',{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':pass},body:JSON.stringify({params:PARAMS})});
+    if(r.status===401){ setPass(''); setPmStatus('Mot de passe refusé.','err'); return; }
+    const j=await r.json().catch(()=>null);
+    if(!r.ok||!j||!j.ok){ setPmStatus('Échec : '+((j&&j.error)||('erreur '+r.status)),'err'); return; }
+    setPmStatus('✓ Paramètres enregistrés pour toute l’équipe.','ok');
+  }catch(e){ setPmStatus('Échec : '+e.message,'err'); }
 }
 // Clés fournisseur/livraison/commentaire valides pour le modèle d'un onglet
 function tabChoiceKeys(type){
@@ -1032,19 +1110,30 @@ function mapSextanToForm(ev){
   const entree=has(/entr[eé]e/)||stypes.some(t=>/ENTREE/.test(t));
   const dessert=has(/dessert|fromage|merveilleux|tartelette|cookie|financier|brownie/)||stypes.some(t=>/DESSERT|FROMAGE/.test(t));
   const plat=model==='cocktail'?false:(has(/\bplat\b|repas|carbonnade|waterzoi|blanquette|curry|buffet|volaille|poisson/)||stypes.some(t=>/PLAT|REPAS/.test(t))||true);
-  const rose=alcool?qtyOf(/ros[eé]/):0, futs=alcool?qtyOf(/f[uû]t/):0;
-  const cremant=alcool?qtyOf(/cr[eé]mant/):0, champagne=alcool?qtyOf(/champagne/):0;
+  // Quantités servies des alcools, lues sur les lignes de FACTURATION (prioritaire) puis le menu.
+  // Pas d'invention : une boisson absente de la réception reste à 0.
+  const alcoLines=bill.filter(b=>/alcool|vin/.test((b.category||"").toLowerCase())
+    || /champagne|cr[eé]mant|prosecco|bi[eè]re|f[uû]t|\bvin\b|ros[eé]/.test((b.name||"").toLowerCase()));
+  const aqx=(inc,exc)=>{ const b=alcoLines.find(x=>{const n=(x.name||"").toLowerCase(); return inc.test(n)&&!(exc&&exc.test(n));}); return b?Math.round(+b.qt||0):0; };
+  const champagne=alcool?aqx(/champagne/):0;
+  const cremant  =alcool?aqx(/cr[eé]mant|prosecco/):0;
+  const rose     =alcool?aqx(/ros[eé]/):0;
+  const rouge    =alcool?aqx(/\brouge\b/):0;
+  const blanc    =alcool?aqx(/\bblanc\b/):0;
+  const futs     =alcool?aqx(/f[uû]t/):0;
+  const biere    =alcool?aqx(/bi[eè]re|blonde|lager|ipa/,/f[uû]t/):0;
   const tables=qtyOf(/\btable/);
   const nappe=has(/\bnappe|nappage|housse/);
   const etuve=has(/[ée]tuve/);
   return {model,client,date:ev.date||"",heure,nb,alcool,softs,service,entree,plat,dessert,
-    rose,futs,cremant,champagne,tables,nappe,etuve,sextan:String(ev.id||"")};
+    rouge,blanc,rose,biere,futs,cremant,champagne,tables,nappe,etuve,sextan:String(ev.id||"")};
 }
 function applySextan(ev){
   const m=mapSextanToForm(ev);
   S.type=m.model; S.client=m.client; S.date=m.date; S.heure=m.heure; S.nb=m.nb; S.sextan=m.sextan;
   S.alcool=m.alcool; S.softs=m.softs;
-  S.rose=m.rose; S.futs=m.futs; S.cremant=m.cremant; S.champagne=m.champagne;
+  S.rouge=m.rouge; S.blanc=m.blanc; S.rose=m.rose; S.biere=m.biere;
+  S.futs=m.futs; S.cremant=m.cremant; S.champagne=m.champagne;
   S.serveurNb = m.service ? RUd(m.nb,40) : 0;
   S.mhOn = S.serveurNb>=3;
   if(m.etuve) S.etuve = true;
@@ -1081,5 +1170,18 @@ function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g
 
 loadDefaults().then(render);
 </script>
+<div id="params-modal" class="pm-wrap" style="display:none">
+  <div class="pm-box">
+    <div class="pm-head"><b>&#9881; Paramétrage (partagé, tous les postes)</b><span class="pm-x" onclick="closeParams()">&#10005;</span></div>
+    <div id="pm-body"></div>
+    <div class="pm-foot">
+      <span id="pm-status" class="def-status"></span>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="resetParamsDefault()">Valeurs par défaut</button>
+      <button class="btn primary" onclick="saveParams()">Enregistrer</button>
+      <button class="btn" onclick="closeParams()">Fermer</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
