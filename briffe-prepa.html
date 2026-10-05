@@ -193,6 +193,7 @@ const S = {
   sale:false, sucre:false, fromage:false, mixte:false, vege:false,
   // petit-déjeuner / pause café
   boissFroides:true, pdjVienno:true, pdjPain:false, pdjFruits:true, pdjYaourt:false, pcSucre:true, pcSale:false,
+  thePct:null, // répartition café/thé : override presta (part thé en %), null = défaut global
   // alcool : quantités SERVIES (coupes/verres/unités), reprises de Sextan ou saisie manuelle
   rouge:0, blanc:0, rose:0, biere:0, futs:0, cremant:0, champagne:0, alcoolAutre:0, softAutre:0,
   // choix fournisseur / livraison + commentaires par ligne
@@ -231,7 +232,7 @@ const PARAMS_DEFAULT = {
   // Logistique / vaisselle (ratios "1 pour X couverts")
   logistique: { porte_serviettes_par_pax:50, caisse_sale_par_pax:50, corbeille_pain_par_pax:20, cartes_par_pax:3, couteau_fromage_par_pax:20 },
   // Boissons chaudes (commun PDJ & Pause café) — café préparé à l'avance, raisonné en litres
-  hd: { the_pct:0.30, tasses_pers:1, cafe_l_tasse:0.10, lait_l_pers:0.03, sucre_g_pers:2, sucre_pot_g:80, gob_chaud_pers:1.6, serviettes_pers:1.5 },
+  hd: { the_pct:30, tasses_pers:1, cafe_l_tasse:0.10, eau_chaude_l_tete:0.15, lait_l_pers:0.03, sucre_g_pers:2, sucre_pot_g:80, gob_chaud_pers:1.6, serviettes_pers:1.5 },
   // Petit-déjeuner
   pdj: { gob_froid_pers:1.3, jus_l_pers:0.15, vienno_pers:1.5, pain_pers:1.0, fruits_g_pers:80, serviettes_pers:1.5, plateaux_par_pax:15, corbeille_par_pax:20 },
   // Pause café
@@ -573,13 +574,18 @@ function modelBBQ(){
 // ══════════════════════════════════════════════════════════════════════════
 //  MODÈLES : PETIT-DÉJEUNER / PAUSE CAFÉ  (recette générique, par pax)
 // ══════════════════════════════════════════════════════════════════════════
+function curThePct(){ return S.thePct!=null ? N(S.thePct) : PG('hd.the_pct'); }  // part thé (%) : override presta sinon défaut global
 function hotDrinks(){
-  const nb=N(S.nb);
-  const cups=nb*PG('hd.tasses_pers');               // 1 tasse / pers par défaut
+  const nb=N(S.nb), tpers=PG('hd.tasses_pers');
+  const theFrac=Math.max(0,Math.min(100,curThePct()))/100;   // part thé
+  const cafeFrac=1-theFrac;                                   // café = complément à 100%
+  const theCups=nb*theFrac*tpers, cafeCups=nb*cafeFrac*tpers; // tasses, répartition café/thé
   return {
-    cafeL:   RU(cups*PG('hd.cafe_l_tasse')),         // café préparé à l'avance, en litres
-    the:     RU(nb*PG('hd.the_pct')),                // thé = 30% des convives
-    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),         // ~3 cl/pax, briques de 1 L
+    cafeL:   RU(cafeCups*PG('hd.cafe_l_tasse')),              // café préparé à l'avance, en litres
+    the:     RU(theCups),                                     // sachets de thé = tasses thé
+    eauChaudeL: RU(theCups*PG('hd.eau_chaude_l_tete')),       // eau chaude pour le thé, en litres (15 cl/tête)
+    cafePctL:Math.round(cafeFrac*100), thePctL:Math.round(theFrac*100),
+    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),                  // ~3 cl/pax, briques de 1 L
     sucre:   Math.max(1, RUd(nb*PG('hd.sucre_g_pers'), PG('hd.sucre_pot_g'))), // sucre vrac, pots 80 g, 2 g/tête, 1 mini
     sucrePot:RU(PG('hd.sucre_pot_g'))
   };
@@ -603,9 +609,9 @@ function modelPDJ(){
   const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pdj.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
-    line("Boisson","Café préparé (L)",d.cafeL,"Économat","","préparé à l'avance"),
-    line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
-    line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
+    line("Boisson","Café préparé (L)",d.cafeL,"Économat","",d.cafePctL+"% · préparé à l'avance"),
+    line("Boisson","Thé (sachets)",d.the,"Économat","",d.thePctL+"% des convives"),
+    line("Boisson","Eau chaude (L)",d.eauChaudeL,"Quai","","15 cl / tête thé"),
     line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
     line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
@@ -641,9 +647,9 @@ function modelPC(){
   const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pc.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
-    line("Boisson","Café préparé (L)",d.cafeL,"Économat","","préparé à l'avance"),
-    line("Boisson","Thé (sachets)",d.the,"Économat","","30% des convives"),
-    line("Boisson","Eau chaude / bouilloire",d.the>0?1:0,"Quai"),
+    line("Boisson","Café préparé (L)",d.cafeL,"Économat","",d.cafePctL+"% · préparé à l'avance"),
+    line("Boisson","Thé (sachets)",d.the,"Économat","",d.thePctL+"% des convives"),
+    line("Boisson","Eau chaude (L)",d.eauChaudeL,"Quai","","15 cl / tête thé"),
     line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
     line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
@@ -730,7 +736,13 @@ function renderPanel(){
 
   // Boissons
   if(t==='pdj'||t==='pc'){
-    add('boissons','Boissons',toggleRow('Boissons froides (jus, eau)','boissFroides'));
+    const the=curThePct(), caf=100-the;
+    const split='<div class="f-label" style="margin:2px 0 4px">Répartition café / thé (100% des convives)</div>'
+      +'<div class="row2">'
+      +'<div class="field"><label class="f-label">Café (%)</label><input id="split-cafe" type="number" min="0" max="100" value="'+caf+'" oninput="setSplit(\'cafe\',this.value)"></div>'
+      +'<div class="field"><label class="f-label">Thé (%)</label><input id="split-the" type="number" min="0" max="100" value="'+the+'" oninput="setSplit(\'the\',this.value)"></div>'
+      +'</div>';
+    add('boissons','Boissons',split+toggleRow('Boissons froides (jus, eau)','boissFroides'));
   } else {
   let bo=toggleRow('Softs','softs')+toggleRow('Alcool','alcool');
   if(S.alcool){
@@ -956,7 +968,7 @@ function resetForm(){
     mhOn:false,mhDuree:2,serveurNb:0,serveurDuree:2,
     tblNb:0,tblHousse:false,mdNb:0,mdHousse:false,nappesOn:false,nappesNb:null,
     sale:false,sucre:false,fromage:false,mixte:false,vege:false,
-    boissFroides:true,pdjVienno:true,pdjPain:false,pdjFruits:true,pdjYaourt:false,pcSucre:true,pcSale:false,
+    boissFroides:true,pdjVienno:true,pdjPain:false,pdjFruits:true,pdjYaourt:false,pcSucre:true,pcSale:false,thePct:null,
     rouge:0,blanc:0,rose:0,biere:0,futs:0,cremant:0,champagne:0,alcoolAutre:0,softAutre:0,
     choice:{},choiceOther:{},comment:{},elO:{},qtyO:{},hid:{},add:{}});
   S.type=keep;
@@ -997,12 +1009,32 @@ function mergeParams(def,ov){
   return out;
 }
 async function loadDefaults(){
-  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; if(j&&j.params&&typeof j.params==='object') PARAMS=mergeParams(PARAMS_DEFAULT, j.params); } }
+  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; if(j&&j.params&&typeof j.params==='object'){ PARAMS=mergeParams(PARAMS_DEFAULT, j.params); if(PARAMS.hd && PARAMS.hd.the_pct<=1) PARAMS.hd.the_pct=Math.round(PARAMS.hd.the_pct*100); /* migration ancien the_pct en fraction → % */ } } }
   catch(e){ DEF={}; }
   seedDefaults();
 }
 // ── Menu de paramétrage global (⚙) ──────────────────────────────────────────
 function setParam(path,val){ var o=PARAMS, p=path.split('.'); for(var i=0;i<p.length-1;i++){ o=o[p[i]]=o[p[i]]||{}; } o[p[p.length-1]]=(val===''||isNaN(+val))?0:+val; renderSheet(); }
+// Répartition café/thé — override PRESTATION (panneau) : complémentaires à 100%
+function setSplit(which,val){
+  var v=Math.max(0,Math.min(100,Math.round(+val||0)));
+  var the=(which==='the')?v:(100-v);
+  S.thePct=the;
+  var ec=document.getElementById('split-cafe'), et=document.getElementById('split-the');
+  if(ec&&which!=='cafe') ec.value=100-the;
+  if(et&&which!=='the') et.value=the;
+  renderSheet();
+}
+// Répartition café/thé — DÉFAUT GLOBAL (menu ⚙) : complémentaires à 100%
+function setSplitParam(which,val){
+  var v=Math.max(0,Math.min(100,Math.round(+val||0)));
+  var the=(which==='the')?v:(100-v);
+  if(!PARAMS.hd) PARAMS.hd={}; PARAMS.hd.the_pct=the;
+  var ec=document.getElementById('pm-cafe'), et=document.getElementById('pm-the');
+  if(ec&&which!=='cafe') ec.value=100-the;
+  if(et&&which!=='the') et.value=the;
+  renderSheet();
+}
 function pRow(label,path,val){ return '<div class="pm-row"><label>'+label+'</label><input type="number" step="0.01" min="0" value="'+val+'" oninput="setParam(\''+path+'\',this.value)"></div>'; }
 function renderParamsForm(){
   var h='';
@@ -1039,9 +1071,14 @@ function renderParamsForm(){
     +pRow('Couteau planche fromage (cocktail)','logistique.couteau_fromage_par_pax',PG('logistique.couteau_fromage_par_pax'));
 
   h+='<div class="pm-sec">Boissons chaudes (café / thé — commun PDJ & Pause café)</div>';
+  var _the=PG('hd.the_pct'), _caf=100-_the;
   h+=pRow('Tasses / pers','hd.tasses_pers',PG('hd.tasses_pers'))
+    +'<div class="pm-row"><label>Répartition café / thé (% des convives)</label>'
+      +'<span style="display:flex;gap:6px;align-items:center">'
+      +'café <input id="pm-cafe" type="number" min="0" max="100" style="width:56px" value="'+_caf+'" oninput="setSplitParam(\'cafe\',this.value)">'
+      +'thé <input id="pm-the" type="number" min="0" max="100" style="width:56px" value="'+_the+'" oninput="setSplitParam(\'the\',this.value)"></span></div>'
     +pRow('Café préparé (L / tasse)','hd.cafe_l_tasse',PG('hd.cafe_l_tasse'))
-    +pRow('Thé (part des convives, ex. 0,30)','hd.the_pct',PG('hd.the_pct'))
+    +pRow('Eau chaude thé (L / tête)','hd.eau_chaude_l_tete',PG('hd.eau_chaude_l_tete'))
     +pRow('Lait (L / pers)','hd.lait_l_pers',PG('hd.lait_l_pers'))
     +pRow('Sucre (g / pers)','hd.sucre_g_pers',PG('hd.sucre_g_pers'))
     +pRow('Sucre — pot vrac (g)','hd.sucre_pot_g',PG('hd.sucre_pot_g'))
