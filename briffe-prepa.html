@@ -221,12 +221,30 @@ const PARAMS_DEFAULT = {
     // fûts : laissés en unités (pas de conversion)
   },
   // Verres : nombre par personne (si la boisson concernée est présente)
-  verres: { vin:1, champagne:1 }
+  verres: { vin:1, champagne:1 },
+  // Mobilier
+  mobilier: { nappe_par_pax:40 },           // 1 nappe pour X couverts
+  // Service
+  service: { serveur_par_pax:40, limonadier_par_pax:50, mh_seuil:3 }, // 1 serveur/X, 1 limonadier/X, MH dès N serveurs
+  // Technique
+  technique: { chafing_par_prise:2, eau_l_par_chafing:3 },
+  // Logistique / vaisselle (ratios "1 pour X couverts")
+  logistique: { porte_serviettes_par_pax:50, caisse_sale_par_pax:50, corbeille_pain_par_pax:20, cartes_par_pax:3, couteau_fromage_par_pax:20 },
+  // Boissons chaudes (commun PDJ & Pause café)
+  hd: { the_pct:0.30, cafe_g_tasse:8, tasses_par_thermos:15, lait_l_pers:0.03, sucre_pers:1.2, gob_chaud_pers:1.6, serviettes_pers:1.5 },
+  // Petit-déjeuner
+  pdj: { cupRatio:1.5, gob_froid_pers:1.3, jus_l_pers:0.15, vienno_pers:1.5, pain_pers:1.0, fruits_par_pax:10, serviettes_pers:1.5, plateaux_par_pax:15, corbeille_par_pax:20 },
+  // Pause café
+  pc:  { cupRatio:1.3, gob_froid_pers:1.2, jus_l_pers:0.10, mignardises_pers:2, mini_vienno_pers:1, sale_pers:2, serviettes_pers:1.5, plateaux_par_pax:20, corbeille_par_pax:20 },
+  // Eau des boissons froides PDJ/PC
+  froidb: { eau_l_pers:0.15, eau_bottle:0.5 }
 };
 let PARAMS = JSON.parse(JSON.stringify(PARAMS_DEFAULT));
 function P_soft(k){ return (PARAMS.softs&&PARAMS.softs[k])||PARAMS_DEFAULT.softs[k]; }
 function P_conv(k){ return (PARAMS.conv&&PARAMS.conv[k])||PARAMS_DEFAULT.conv[k]; }
 function P_verre(k){ var v=PARAMS.verres&&PARAMS.verres[k]; return (v==null)?PARAMS_DEFAULT.verres[k]:v; }
+// Accès générique à un paramètre (chemin "section.clef"), repli sur le défaut
+function PG(path){ var p=path.split('.'), o=PARAMS, d=PARAMS_DEFAULT; for(var i=0;i<p.length;i++){ o=o&&o[p[i]]; d=d&&d[p[i]]; } var v=(o==null||o==='')?d:o; v=+v; return isNaN(v)?(+d||0):v; }
 
 // ══════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -274,8 +292,8 @@ function chafingOf(){
 function techNums(){
   const chaf=chafingOf();
   return {
-    multi: S.tMulti!=null?N(S.tMulti):RUd(chaf,2),
-    rall:  S.tRall!=null?N(S.tRall):RUd(chaf,2),
+    multi: S.tMulti!=null?N(S.tMulti):RUd(chaf,PG('technique.chafing_par_prise')),
+    rall:  S.tRall!=null?N(S.tRall):RUd(chaf,PG('technique.chafing_par_prise')),
     touret:S.tTouret!=null?N(S.tTouret):0
   };
 }
@@ -290,7 +308,7 @@ function techniqueGroup(){
 }
 function mobilierGroup(){
   const tbl=N(S.tblNb), md=N(S.mdNb);
-  const nappes=S.nappesOn?(S.nappesNb!=null?N(S.nappesNb):RUd(N(S.nb),40)):0;
+  const nappes=S.nappesOn?(S.nappesNb!=null?N(S.nappesNb):RUd(N(S.nb),PG('mobilier.nappe_par_pax'))):0;
   const rows=[
     line("Mobilier","Tables",tbl,"Quai","Briffe"),
     line("Mobilier","Housses de table",S.tblHousse?tbl:0,"Quai","Briffe"),
@@ -315,7 +333,7 @@ function serviceBlock(alc){
     line("service","Tenues de service",mh+serveur,"Quai","Briffe","T-shirt + casquette"),
     line("service","Tablier service",mh+serveur),
     line("service","Plateau de service",serveur>0?serveur:0,"Quai","Briffe"),
-    line("Logistique","Limonadier",(alc.rouge+alc.blanc+alc.biere+alc.futs)>0?RUd(nb,50):0,"Quai","Briffe")
+    line("Logistique","Limonadier",(alc.rouge+alc.blanc+alc.biere+alc.futs)>0?RUd(nb,PG('service.limonadier_par_pax')):0,"Quai","Briffe")
   ];
 }
 function softsGroup(){
@@ -380,17 +398,17 @@ function modelChaud(){
     line("Logistique","Caisse ustensiles de service",1,"Quai","Briffe"),
     line("Logistique","Cartels avec nom des pièces","x","Quai","Briffe"),
     line("Logistique","Serviettes",nb,"Quai","Briffe"),
-    line("Logistique","Porte-serviettes",RUd(nb,50),"Quai","Briffe"),
-    line("Logistique","Cartes de visite",CEIL(nb/3,10),"Quai","Briffe"),
+    line("Logistique","Porte-serviettes",RUd(nb,PG('logistique.porte_serviettes_par_pax')),"Quai","Briffe"),
+    line("Logistique","Cartes de visite",CEIL(nb/PG('logistique.cartes_par_pax'),10),"Quai","Briffe"),
     line("Logistique","Thermobox / maintien chaud",RUd(gn7*2,4),"Labo","Briffe"),
-    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,50),"Labo","Briffe"),
-    line("Logistique","Corbeille à pain",RUd(nb,20),"Platerie","Briffe")
+    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,PG('logistique.caisse_sale_par_pax')),"Labo","Briffe"),
+    line("Logistique","Corbeille à pain",RUd(nb,PG('logistique.corbeille_pain_par_pax')),"Platerie","Briffe")
   ]});
   grp.push({title:"Maintien chaud", rows:[
     line("Logistique","Chafing dish",chafing,"Quai","Briffe","à renseigner en haut"),
     line("Logistique","Couvercle chafing dish",chafing,"Quai","Briffe"),
     line("Logistique","Bac GN 1/2 vide (compléter chafing)",gn7-gn12,"Quai","Briffe","GN 1/2 impair"),
-    line("Logistique","Eau pour Chafing (litres)",chafing*3,"Quai","Briffe","3L par chafing")
+    line("Logistique","Eau pour Chafing (litres)",chafing*PG('technique.eau_l_par_chafing'),"Quai","Briffe","3L par chafing")
   ]});
   const tg=techniqueGroup(); if(tg) grp.push(tg);
   grp.push(optionsGroup());
@@ -436,10 +454,10 @@ function modelFroid(){
     line("Logistique","Caisse ustensiles de service",1,"Quai","Briffe"),
     line("Logistique","Cartels avec nom des pièces","x","Quai","Briffe"),
     line("Logistique","Serviettes",nb,"Quai","Briffe"),
-    line("Logistique","Porte-serviettes",RUd(nb,50),"Quai","Briffe"),
-    line("Logistique","Cartes de visite",CEIL(nb/3,10),"Quai","Briffe"),
-    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,50),"Labo","Briffe"),
-    line("Logistique","Corbeille à pain",RUd(nb,20),"Platerie","Briffe")
+    line("Logistique","Porte-serviettes",RUd(nb,PG('logistique.porte_serviettes_par_pax')),"Quai","Briffe"),
+    line("Logistique","Cartes de visite",CEIL(nb/PG('logistique.cartes_par_pax'),10),"Quai","Briffe"),
+    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,PG('logistique.caisse_sale_par_pax')),"Labo","Briffe"),
+    line("Logistique","Corbeille à pain",RUd(nb,PG('logistique.corbeille_pain_par_pax')),"Platerie","Briffe")
   ]});
   const tg=techniqueGroup(); if(tg) grp.push(tg);
   grp.push(optionsGroup());
@@ -462,7 +480,7 @@ function modelCocktail(){
   grp.push({title:"Vaisselle", colStore:"Fournisseur", colLoc:"Livraison", rows:[
     vline("Petite assiette blanche",nb),
     vline("Assiettes (option client)",N(S.cocktailAssiettes)),
-    vline("Couteau pour planche fromage",planche?RUd(nb,20):0),
+    vline("Couteau pour planche fromage",planche?RUd(nb,PG('logistique.couteau_fromage_par_pax')):0),
     vline("Cuillère de service",gn11+gn12),
     vline("Couverts de service (POUR X PLATS)",gn11+gn12),
     vline("Verres à vin",(a.rouge>0||a.blanc>0||a.rose>0)?RU(nb*P_verre('vin')):0),
@@ -486,16 +504,16 @@ function modelCocktail(){
   grp.push({title:"Prestation", rows:[
     line("Logistique","Cartels avec nom des pièces","x","Quai","Briffe"),
     line("Logistique","Serviettes",nb,"Quai","Briffe"),
-    line("Logistique","Porte-serviettes",RUd(nb,50),"Quai","Briffe"),
-    line("Logistique","Cartes de visite",CEIL(nb/3,10),"Quai","Briffe"),
+    line("Logistique","Porte-serviettes",RUd(nb,PG('logistique.porte_serviettes_par_pax')),"Quai","Briffe"),
+    line("Logistique","Cartes de visite",CEIL(nb/PG('logistique.cartes_par_pax'),10),"Quai","Briffe"),
     line("Logistique","Thermobox / maintien chaud",RUd(gn7,2),"Labo","Briffe"),
-    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,50),"Labo","Briffe"),
-    line("Logistique","Corbeille à pain",planche?RUd(nb,20):0,"Platerie","Briffe")
+    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,PG('logistique.caisse_sale_par_pax')),"Labo","Briffe"),
+    line("Logistique","Corbeille à pain",planche?RUd(nb,PG('logistique.corbeille_pain_par_pax')):0,"Platerie","Briffe")
   ]});
   grp.push({title:"Maintien chaud", rows:[
     line("Logistique","Chafing dish",chafing,"Quai","Briffe","à renseigner en haut"),
     line("Logistique","Couvercle chafing dish",chafing,"Quai","Briffe"),
-    line("Logistique","Eau pour Chafing (litres)",chafing>0?chafing*3:0,"Quai","Briffe","3L par chafing")
+    line("Logistique","Eau pour Chafing (litres)",chafing>0?chafing*PG('technique.eau_l_par_chafing'):0,"Quai","Briffe","3L par chafing")
   ]});
   const tg=techniqueGroup(); if(tg) grp.push(tg);
   grp.push(optionsGroup());
@@ -541,7 +559,7 @@ function modelBBQ(){
   grp.push({title:"Prestation", rows:[
     line("Logistique","Cartels avec nom des pièces","x","Labo","Briffe"),
     line("Logistique","Serviettes",nb,"Labo","Briffe"),
-    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,50),"Labo","Briffe")
+    line("Logistique","Caisse vaisselle sale (à laisser sur place)",RUd(nb,PG('logistique.caisse_sale_par_pax')),"Labo","Briffe")
   ]});
   const tg=techniqueGroup(); if(tg) grp.push(tg);
   grp.push(optionsGroup());
@@ -559,18 +577,18 @@ function hotDrinks(cupRatio){
   const nb=N(S.nb);
   const cups=nb*cupRatio;
   return {
-    thermos: RU(cups/15),      // airpot ~2,2 L ≈ 15 tasses
-    cafeG:   RU(cups*8),       // 8 g de café moulu / tasse
-    the:     RU(nb*0.30),      // thé = 30% des convives
-    laitL:   RUd(nb*0.03,1),   // ~3 cl/pax, briques de 1 L
-    sucre:   RU(nb*1.2)        // sticks de sucre
+    thermos: RU(cups/PG('hd.tasses_par_thermos')),      // airpot ~2,2 L ≈ 15 tasses
+    cafeG:   RU(cups*PG('hd.cafe_g_tasse')),       // 8 g de café moulu / tasse
+    the:     RU(nb*PG('hd.the_pct')),      // thé = 30% des convives
+    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),   // ~3 cl/pax, briques de 1 L
+    sucre:   RU(nb*PG('hd.sucre_pers'))        // sticks de sucre
   };
 }
 function froidesRows(jusLabel,jusRatio){
   const nb=N(S.nb), L={loc:["Briffe","Direct client"]};
   return [
     line("Boisson",jusLabel+" (L)",RUd(nb*jusRatio,1),"Chambre froide","Briffe","",L),
-    line("Boisson","Eau plate (bouteilles 50 cl)",RUd(nb*0.15,0.5),"Quai","Briffe","15 cl/pers · caisse de 12",L)
+    line("Boisson","Eau plate (bouteilles 50 cl)",RUd(nb*PG('froidb.eau_l_pers'),PG('froidb.eau_bottle')),"Quai","Briffe","15 cl/pers · caisse de 12",L)
   ];
 }
 function hygieneGroup(){
@@ -581,8 +599,8 @@ function hygieneGroup(){
   ]};
 }
 function modelPDJ(){
-  const nb=N(S.nb), d=hotDrinks(1.5), froid=S.boissFroides;
-  const gobChaud=RU(nb*1.6), gobFroid=froid?RU(nb*1.3):0;
+  const nb=N(S.nb), d=hotDrinks(PG('pdj.cupRatio')), froid=S.boissFroides;
+  const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pdj.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
     line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
@@ -593,15 +611,15 @@ function modelPDJ(){
     line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
-  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus d'orange",0.15)});
+  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus d'orange",PG('pdj.jus_l_pers'))});
   const food=[];
-  if(S.pdjVienno) food.push(line("Food","Viennoiseries (pièces)",RU(nb*1.5),"Chambre froide","","croissant + pain choc"));
-  if(S.pdjPain)   food.push(line("Food","Pains / mini-pains (pièces)",RU(nb*1),"Chambre froide"));
+  if(S.pdjVienno) food.push(line("Food","Viennoiseries (pièces)",RU(nb*PG('pdj.vienno_pers')),"Chambre froide","","croissant + pain choc"));
+  if(S.pdjPain)   food.push(line("Food","Pains / mini-pains (pièces)",RU(nb*PG('pdj.pain_pers')),"Chambre froide"));
   if(S.pdjVienno||S.pdjPain){
     food.push(line("Food","Beurre (portions)",nb,"Chambre froide"));
     food.push(line("Food","Confiture / miel (portions)",nb,"Chambre froide"));
   }
-  if(S.pdjFruits) food.push(line("Food","Fruits / corbeille",RUd(nb,10),"Chambre froide"));
+  if(S.pdjFruits) food.push(line("Food","Fruits / corbeille",RUd(nb,PG('pdj.fruits_par_pax')),"Chambre froide"));
   if(S.pdjYaourt) food.push(line("Food","Yaourts / fromage blanc",nb,"Chambre froide"));
   if(food.length) grp.push({title:"Solide", noLoc:true, rows:food});
   grp.push({title:"Vaisselle & matériel", colStore:"Fournisseur", colLoc:"Livraison", rows:[
@@ -610,9 +628,9 @@ function modelPDJ(){
     vline("Petites cuillères (yaourt)",S.pdjYaourt?nb:0),
     vline("Gobelets boissons chaudes",gobChaud),
     vline("Gobelets boissons froides",gobFroid),
-    vline("Serviettes",RU(nb*1.5)),
-    vline("Plateaux de présentation",RUd(nb,15)),
-    vline("Corbeilles (viennoiseries / pain)",RUd(nb,20))
+    vline("Serviettes",RU(nb*PG('hd.serviettes_pers'))),
+    vline("Plateaux de présentation",RUd(nb,PG('pdj.plateaux_par_pax'))),
+    vline("Corbeilles (viennoiseries / pain)",RUd(nb,PG('pdj.corbeille_par_pax')))
   ]});
   grp.push(hygieneGroup());
   grp.push(mobilierGroup());
@@ -620,8 +638,8 @@ function modelPDJ(){
   return grp;
 }
 function modelPC(){
-  const nb=N(S.nb), d=hotDrinks(1.3), froid=S.boissFroides;
-  const gobChaud=RU(nb*1.6), gobFroid=froid?RU(nb*1.2):0;
+  const nb=N(S.nb), d=hotDrinks(PG('pc.cupRatio')), froid=S.boissFroides;
+  const gobChaud=RU(nb*PG('hd.gob_chaud_pers')), gobFroid=froid?RU(nb*PG('pc.gob_froid_pers')):0;
   const grp=[];
   grp.push({title:"Boissons chaudes", noLoc:true, rows:[
     line("Boisson","Café moulu (g)",d.cafeG,"Économat"),
@@ -632,21 +650,21 @@ function modelPC(){
     line("Boisson","Sucre (sticks)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
-  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus de fruits",0.10)});
+  if(froid) grp.push({title:"Boissons froides", colLoc:"Livraison", rows:froidesRows("Jus de fruits",PG('pc.jus_l_pers'))});
   const gm=[];
   if(S.pcSucre){
-    gm.push(line("Gourmandise","Mignardises sucrées (pièces)",RU(nb*2),"Chambre froide"));
-    gm.push(line("Gourmandise","Mini-viennoiseries (pièces)",RU(nb*1),"Chambre froide"));
+    gm.push(line("Gourmandise","Mignardises sucrées (pièces)",RU(nb*PG('pc.mignardises_pers')),"Chambre froide"));
+    gm.push(line("Gourmandise","Mini-viennoiseries (pièces)",RU(nb*PG('pc.mini_vienno_pers')),"Chambre froide"));
   }
-  if(S.pcSale) gm.push(line("Gourmandise","Pièces salées (pièces)",RU(nb*2),"Chambre froide"));
+  if(S.pcSale) gm.push(line("Gourmandise","Pièces salées (pièces)",RU(nb*PG('pc.sale_pers')),"Chambre froide"));
   if(gm.length) grp.push({title:"Gourmandises", noLoc:true, rows:gm});
   grp.push({title:"Vaisselle & matériel", colStore:"Fournisseur", colLoc:"Livraison", rows:[
     vline("Gobelets boissons chaudes",gobChaud),
     vline("Gobelets boissons froides",gobFroid),
-    vline("Serviettes",RU(nb*1.5)),
+    vline("Serviettes",RU(nb*PG('hd.serviettes_pers'))),
     vline("Assiettes (gourmandises)",(S.pcSucre||S.pcSale)?nb:0),
-    vline("Plateaux de présentation",RUd(nb,20)),
-    vline("Corbeilles",RUd(nb,20))
+    vline("Plateaux de présentation",RUd(nb,PG('pc.plateaux_par_pax'))),
+    vline("Corbeilles",RUd(nb,PG('pc.corbeille_par_pax')))
   ]});
   grp.push(hygieneGroup());
   grp.push(mobilierGroup());
@@ -1002,6 +1020,59 @@ function renderParamsForm(){
   h+='<div class="pm-hint">Fûts : comptés en unités (pas de conversion).</div>';
   h+='<div class="pm-sec">Verres — nombre par personne (si la boisson est présente)</div>';
   h+=pRow('Verre à vin / pers','verres.vin',P_verre('vin'))+pRow('Flûte champagne / pers','verres.champagne',P_verre('champagne'));
+
+  h+='<div class="pm-sec">Mobilier</div>';
+  h+=pRow('Nappe pour X couverts','mobilier.nappe_par_pax',PG('mobilier.nappe_par_pax'));
+
+  h+='<div class="pm-sec">Service</div>';
+  h+=pRow('1 serveur pour X couverts','service.serveur_par_pax',PG('service.serveur_par_pax'))
+    +pRow('1 limonadier pour X couverts','service.limonadier_par_pax',PG('service.limonadier_par_pax'))
+    +pRow('Maître d’hôtel dès N serveurs','service.mh_seuil',PG('service.mh_seuil'));
+
+  h+='<div class="pm-sec">Technique</div>';
+  h+=pRow('1 prise (multi/rallonge) pour X chafings','technique.chafing_par_prise',PG('technique.chafing_par_prise'))
+    +pRow('Eau par chafing (L)','technique.eau_l_par_chafing',PG('technique.eau_l_par_chafing'));
+
+  h+='<div class="pm-sec">Logistique / vaisselle (1 pour X couverts)</div>';
+  h+=pRow('Porte-serviettes','logistique.porte_serviettes_par_pax',PG('logistique.porte_serviettes_par_pax'))
+    +pRow('Caisse vaisselle sale','logistique.caisse_sale_par_pax',PG('logistique.caisse_sale_par_pax'))
+    +pRow('Corbeille à pain','logistique.corbeille_pain_par_pax',PG('logistique.corbeille_pain_par_pax'))
+    +pRow('Cartes de visite (1 pour X)','logistique.cartes_par_pax',PG('logistique.cartes_par_pax'))
+    +pRow('Couteau planche fromage (cocktail)','logistique.couteau_fromage_par_pax',PG('logistique.couteau_fromage_par_pax'));
+
+  h+='<div class="pm-sec">Boissons chaudes (café / thé — commun PDJ & Pause café)</div>';
+  h+=pRow('Café moulu (g / tasse)','hd.cafe_g_tasse',PG('hd.cafe_g_tasse'))
+    +pRow('Tasses par thermos/airpot','hd.tasses_par_thermos',PG('hd.tasses_par_thermos'))
+    +pRow('Thé (part des convives, ex. 0,30)','hd.the_pct',PG('hd.the_pct'))
+    +pRow('Lait (L / pers)','hd.lait_l_pers',PG('hd.lait_l_pers'))
+    +pRow('Sucre (sticks / pers)','hd.sucre_pers',PG('hd.sucre_pers'))
+    +pRow('Gobelets chauds / pers','hd.gob_chaud_pers',PG('hd.gob_chaud_pers'))
+    +pRow('Serviettes / pers (PDJ & PC)','hd.serviettes_pers',PG('hd.serviettes_pers'));
+
+  h+='<div class="pm-sec">Petit-déjeuner</div>';
+  h+=pRow('Tasses chaudes / pers (cupRatio)','pdj.cupRatio',PG('pdj.cupRatio'))
+    +pRow('Gobelets froids / pers','pdj.gob_froid_pers',PG('pdj.gob_froid_pers'))
+    +pRow('Jus (L / pers)','pdj.jus_l_pers',PG('pdj.jus_l_pers'))
+    +pRow('Viennoiseries / pers','pdj.vienno_pers',PG('pdj.vienno_pers'))
+    +pRow('Pains / pers','pdj.pain_pers',PG('pdj.pain_pers'))
+    +pRow('Corbeille de fruits (1 pour X)','pdj.fruits_par_pax',PG('pdj.fruits_par_pax'))
+    +pRow('Plateaux présentation (1 pour X)','pdj.plateaux_par_pax',PG('pdj.plateaux_par_pax'))
+    +pRow('Corbeilles vienno/pain (1 pour X)','pdj.corbeille_par_pax',PG('pdj.corbeille_par_pax'));
+
+  h+='<div class="pm-sec">Pause café</div>';
+  h+=pRow('Tasses chaudes / pers (cupRatio)','pc.cupRatio',PG('pc.cupRatio'))
+    +pRow('Gobelets froids / pers','pc.gob_froid_pers',PG('pc.gob_froid_pers'))
+    +pRow('Jus (L / pers)','pc.jus_l_pers',PG('pc.jus_l_pers'))
+    +pRow('Mignardises sucrées / pers','pc.mignardises_pers',PG('pc.mignardises_pers'))
+    +pRow('Mini-viennoiseries / pers','pc.mini_vienno_pers',PG('pc.mini_vienno_pers'))
+    +pRow('Pièces salées / pers','pc.sale_pers',PG('pc.sale_pers'))
+    +pRow('Plateaux présentation (1 pour X)','pc.plateaux_par_pax',PG('pc.plateaux_par_pax'))
+    +pRow('Corbeilles (1 pour X)','pc.corbeille_par_pax',PG('pc.corbeille_par_pax'));
+
+  h+='<div class="pm-sec">Eau des boissons froides (PDJ & Pause café)</div>';
+  h+=pRow('Eau (L / pers)','froidb.eau_l_pers',PG('froidb.eau_l_pers'))
+    +pRow('Contenance bouteille eau (L)','froidb.eau_bottle',PG('froidb.eau_bottle'));
+
   document.getElementById('pm-body').innerHTML=h;
 }
 function openParams(){ renderParamsForm(); setPmStatus(''); document.getElementById('params-modal').style.display='flex'; }
@@ -1134,8 +1205,8 @@ function applySextan(ev){
   S.alcool=m.alcool; S.softs=m.softs;
   S.rouge=m.rouge; S.blanc=m.blanc; S.rose=m.rose; S.biere=m.biere;
   S.futs=m.futs; S.cremant=m.cremant; S.champagne=m.champagne;
-  S.serveurNb = m.service ? RUd(m.nb,40) : 0;
-  S.mhOn = S.serveurNb>=3;
+  S.serveurNb = m.service ? RUd(m.nb,PG('service.serveur_par_pax')) : 0;
+  S.mhOn = S.serveurNb>=PG('service.mh_seuil');
   if(m.etuve) S.etuve = true;
   if(m.tables>0){ S.tblNb=m.tables; S.tblHousse=m.nappe; S.nappesOn=false; }
   else { S.tblNb=0; S.tblHousse=false; S.nappesOn=m.nappe; }
