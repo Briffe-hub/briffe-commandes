@@ -1,13 +1,15 @@
 // Netlify Function: /api/prepa-defaults
-// Défauts partagés (tous les postes) par onglet de la tuile "Préparation prestation".
-// GET                 → { defaults: { <type>: { hid:{}, add:[], elO:{}, qtyO:{} }, ... } } (public)
-// POST { defaults }   → sauvegarde l'intégralité (protégé par x-briffe-pass)
-// POST { type, tab }  → met à jour les défauts d'UN seul onglet (merge), le reste inchangé.
+// Défauts partagés par onglet + PARAMÈTRES globaux partagés de la tuile "Préparation prestation".
+// GET                  → { defaults:{...}, params:{...} } (public)
+// POST { type, tab }   → met à jour les défauts d'UN onglet (merge)        (protégé x-briffe-pass)
+// POST { defaults }    → remplace tous les défauts                          (protégé)
+// POST { params }      → remplace les paramètres globaux                    (protégé)
 
 const SITE_ID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
 const TOKEN   = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
 const STORE   = "briffe-prepa-defaults";
-const KEY     = "defaults";
+const KEY_DEF = "defaults";
+const KEY_PAR = "params";
 
 function cors() {
   return {
@@ -18,16 +20,16 @@ function cors() {
     "Cache-Control": "no-store"
   };
 }
-function blobUrl() { return `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${STORE}/${encodeURIComponent(KEY)}`; }
+function blobUrl(key) { return `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${STORE}/${encodeURIComponent(key)}`; }
 
-async function blobGet() {
-  const r = await fetch(blobUrl(), { headers: { "Authorization": "Bearer " + TOKEN } });
+async function blobGet(key) {
+  const r = await fetch(blobUrl(key), { headers: { "Authorization": "Bearer " + TOKEN } });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error("Blob GET " + r.status);
   return r.json();
 }
-async function blobSet(value) {
-  const r = await fetch(blobUrl(), {
+async function blobSet(key, value) {
+  const r = await fetch(blobUrl(key), {
     method: "PUT",
     headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" },
     body: JSON.stringify(value)
@@ -35,7 +37,6 @@ async function blobSet(value) {
   if (!r.ok) throw new Error("Blob PUT " + r.status);
 }
 
-function emptyTab() { return { hid: {}, add: [], elO: {}, qtyO: {}, choice: {}, choiceOther: {}, comment: {} }; }
 function sanitizeTab(t) {
   t = t || {};
   const obj = o => (o && typeof o === "object" && !Array.isArray(o)) ? o : {};
@@ -64,31 +65,38 @@ exports.handler = async function (event) {
 
   try {
     if (event.httpMethod === "GET") {
-      let d = null;
-      try { d = await blobGet(); } catch (e) { console.warn("blobGet:", e.message); }
-      return { statusCode: 200, headers: cors(), body: JSON.stringify({ defaults: d || {} }) };
+      let d = null, p = null;
+      try { d = await blobGet(KEY_DEF); } catch (e) { console.warn("blobGet defaults:", e.message); }
+      try { p = await blobGet(KEY_PAR); } catch (e) { console.warn("blobGet params:", e.message); }
+      return { statusCode: 200, headers: cors(), body: JSON.stringify({ defaults: d || {}, params: p || null }) };
     }
 
     if (event.httpMethod === "POST") {
       if (!checkPass(event)) return { statusCode: 401, headers: cors(), body: JSON.stringify({ error: "Mot de passe invalide." }) };
       const body = JSON.parse(event.body || "{}");
 
-      // Remplacement d'un seul onglet (merge) : { type, tab }
+      // Paramètres globaux : { params }
+      if (body.params && typeof body.params === "object") {
+        await blobSet(KEY_PAR, body.params);
+        return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, params: body.params }) };
+      }
+
+      // Défauts d'un seul onglet (merge) : { type, tab }
       if (body.type) {
         let cur = null;
-        try { cur = await blobGet(); } catch (e) { console.warn("blobGet:", e.message); }
+        try { cur = await blobGet(KEY_DEF); } catch (e) { console.warn("blobGet:", e.message); }
         cur = (cur && typeof cur === "object") ? cur : {};
         cur[String(body.type)] = sanitizeTab(body.tab);
-        await blobSet(cur);
+        await blobSet(KEY_DEF, cur);
         return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, defaults: cur }) };
       }
 
-      // Remplacement global : { defaults }
+      // Remplacement global des défauts : { defaults }
       const defs = body.defaults;
-      if (!defs || typeof defs !== "object") return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "defaults ou (type,tab) requis" }) };
+      if (!defs || typeof defs !== "object") return { statusCode: 400, headers: cors(), body: JSON.stringify({ error: "defaults, (type,tab) ou params requis" }) };
       const clean = {};
       for (const k in defs) clean[k] = sanitizeTab(defs[k]);
-      await blobSet(clean);
+      await blobSet(KEY_DEF, clean);
       return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, defaults: clean }) };
     }
 
