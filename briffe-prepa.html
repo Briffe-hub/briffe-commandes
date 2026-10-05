@@ -575,6 +575,21 @@ function modelBBQ(){
 //  MODÈLES : PETIT-DÉJEUNER / PAUSE CAFÉ  (recette générique, par pax)
 // ══════════════════════════════════════════════════════════════════════════
 function curThePct(){ return S.thePct!=null ? N(S.thePct) : PG('hd.the_pct'); }  // part thé (%) : override presta sinon défaut global
+// Lait conditionné en bouteilles (0,15 / 0,25 / 0,5 / 1 L) : volume total arrondi au contenant le plus proche
+function fmtL(x){ return (Math.round(x*1000)/1000+"").replace('.',',')+" L"; }
+function laitContenants(L){
+  const PETITS=[0.15,0.25,0.5]; // contenants < 1 L
+  L=Math.round(L*1000)/1000;
+  if(L<=0) return {txt:"0", total:0};
+  let whole=Math.floor(L+1e-9);                 // bouteilles de 1 L
+  let rem=Math.round((L-whole)*1000)/1000;
+  let petit=null;
+  if(rem>1e-9){ petit=PETITS.find(x=>x>=rem-1e-9); if(petit==null){ whole+=1; } } // reste > 0,5 L → une 1 L de plus
+  const parts=[];
+  if(whole>0) parts.push(whole+" × 1 L");
+  if(petit!=null) parts.push("1 × "+fmtL(petit));
+  return { txt:parts.join(" + ")||"0", total:L };
+}
 function hotDrinks(){
   const nb=N(S.nb), tpers=PG('hd.tasses_pers');
   const theFrac=Math.max(0,Math.min(100,curThePct()))/100;   // part thé
@@ -585,7 +600,7 @@ function hotDrinks(){
     the:     RU(theCups),                                     // sachets de thé = tasses thé
     eauChaudeL: RU(theCups*PG('hd.eau_chaude_l_tete')),       // eau chaude pour le thé, en litres (15 cl/tête)
     cafePctL:Math.round(cafeFrac*100), thePctL:Math.round(theFrac*100),
-    laitL:   RUd(nb*PG('hd.lait_l_pers'),1),                  // ~3 cl/pax, briques de 1 L
+    lait:    laitContenants(nb*PG('hd.lait_l_pers')),         // volume/pers → bouteilles 0,15/0,25/0,5/1 L
     sucre:   Math.max(1, RUd(nb*PG('hd.sucre_g_pers'), PG('hd.sucre_pot_g'))), // sucre vrac, pots 80 g, 2 g/tête, 1 mini
     sucrePot:RU(PG('hd.sucre_pot_g'))
   };
@@ -612,7 +627,7 @@ function modelPDJ(){
     line("Boisson","Café préparé (L)",d.cafeL,"Économat","",d.cafePctL+"% · préparé à l'avance"),
     line("Boisson","Thé (sachets)",d.the,"Économat","",d.thePctL+"% des convives"),
     line("Boisson","Eau chaude (L)",d.eauChaudeL,"Quai","","15 cl / tête thé"),
-    line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
+    line("Boisson","Lait (bouteilles)",d.lait.txt,"Chambre froide","",fmtL(d.lait.total)+" au total"),
     line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
@@ -650,7 +665,7 @@ function modelPC(){
     line("Boisson","Café préparé (L)",d.cafeL,"Économat","",d.cafePctL+"% · préparé à l'avance"),
     line("Boisson","Thé (sachets)",d.the,"Économat","",d.thePctL+"% des convives"),
     line("Boisson","Eau chaude (L)",d.eauChaudeL,"Quai","","15 cl / tête thé"),
-    line("Boisson","Lait (briques 1 L)",d.laitL,"Chambre froide"),
+    line("Boisson","Lait (bouteilles)",d.lait.txt,"Chambre froide","",fmtL(d.lait.total)+" au total"),
     line("Boisson","Sucre vrac (pots "+d.sucrePot+" g)",d.sucre,"Économat"),
     line("Boisson","Touillettes",gobChaud,"Économat")
   ]});
