@@ -10,6 +10,7 @@ const TOKEN   = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
 const STORE   = "briffe-prepa-defaults";
 const KEY_DEF = "defaults";
 const KEY_PAR = "params";
+const KEY_CAT = "catalog";
 
 function cors() {
   return {
@@ -65,15 +66,26 @@ exports.handler = async function (event) {
 
   try {
     if (event.httpMethod === "GET") {
-      let d = null, p = null;
+      let d = null, p = null, c = null;
       try { d = await blobGet(KEY_DEF); } catch (e) { console.warn("blobGet defaults:", e.message); }
       try { p = await blobGet(KEY_PAR); } catch (e) { console.warn("blobGet params:", e.message); }
-      return { statusCode: 200, headers: cors(), body: JSON.stringify({ defaults: d || {}, params: p || null }) };
+      try { c = await blobGet(KEY_CAT); } catch (e) { console.warn("blobGet catalog:", e.message); }
+      return { statusCode: 200, headers: cors(), body: JSON.stringify({ defaults: d || {}, params: p || null, catalog: c || null }) };
     }
 
     if (event.httpMethod === "POST") {
       if (!checkPass(event)) return { statusCode: 401, headers: cors(), body: JSON.stringify({ error: "Mot de passe invalide." }) };
       const body = JSON.parse(event.body || "{}");
+
+      // Catalogue partagé (IDs des éléments + éléments personnalisés) : { catalog }
+      if (body.catalog && typeof body.catalog === "object") {
+        const cat = {
+          ids:    (body.catalog.ids && typeof body.catalog.ids === "object" && !Array.isArray(body.catalog.ids)) ? body.catalog.ids : {},
+          custom: Array.isArray(body.catalog.custom) ? body.catalog.custom.slice(0, 500) : []
+        };
+        await blobSet(KEY_CAT, cat);
+        return { statusCode: 200, headers: cors(), body: JSON.stringify({ ok: true, catalog: cat }) };
+      }
 
       // Paramètres globaux : { params }
       if (body.params && typeof body.params === "object") {
