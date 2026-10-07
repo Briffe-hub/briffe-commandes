@@ -73,6 +73,7 @@ th{font-size:9px;color:#3a3a3a;letter-spacing:.1em;text-transform:uppercase;font
 .qty.chk{color:#22c55e}
 .el{color:#b0b0a8}
 .cat{color:#4a4a4a;font-size:10px;text-transform:uppercase;letter-spacing:.05em;width:74px}
+.eid{color:#f59e0b;font-size:10px;font-weight:700;letter-spacing:.03em;width:48px;white-space:nowrap;font-family:'DM Mono',monospace}
 .store,.loc{color:#666;font-size:11px}
 .cmt{color:#3a3a3a;font-size:10px;font-style:italic}
 .cellsel{width:auto;max-width:130px;background:#0f0f0f;color:#b7b7ae;border:1px solid #242424;border-radius:3px;padding:2px 4px;font-size:11px}
@@ -89,7 +90,7 @@ th{font-size:9px;color:#3a3a3a;letter-spacing:.1em;text-transform:uppercase;font
   .sheet{max-width:100%;padding:0}
   .grp-title{color:#000;border-color:#999}
   td,th{border-color:#ddd}
-  .qty,.el{color:#000}.qty.chk{color:#000}.cat,.store,.loc,.cmt{color:#444}
+  .qty,.el{color:#000}.qty.chk{color:#000}.cat,.store,.loc,.cmt{color:#444}.eid{color:#000}
   .sheet-title,.sheet-meta b{color:#000}
   .cellsel,.cellother,.cellcmt{border:none;background:transparent;color:#000;padding:0;-webkit-appearance:none;appearance:none}
   .cellcmt::placeholder{color:transparent;opacity:0}
@@ -137,6 +138,20 @@ tr.added td.cat .catin{font-style:italic}
 .pm-row input:focus{outline:none;border-color:#555}
 .pm-foot{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid #1e1e1e}
 .pm-hint{font-size:11px;color:#666;margin:2px 0 4px}
+.cat-std{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;color:#c8c8c0;cursor:pointer}
+.cat-std input{accent-color:#f59e0b}
+.cat-std .eid{width:46px;flex:none}
+.cat-std .cat-lbl{flex:1}
+.cat-std .cat-grp{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.06em}
+.cat-cust{border:1px solid #242424;border-radius:6px;padding:8px 10px;margin:8px 0;background:#0f0f0f}
+.cat-cust-top{display:flex;align-items:center;gap:8px}
+.cat-cust-top .eid{width:46px;flex:none}
+.cat-cust-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr .7fr .7fr 1.4fr;gap:6px;margin-top:6px}
+.cc-in{background:#0a0a0a;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:5px 7px;font-size:11px;min-width:0}
+.cc-in:focus{outline:none;border-color:#555}
+.cat-cust-mod{margin-top:6px;font-size:10px;color:#888;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.cc-mod{display:inline-flex;align-items:center;gap:3px;color:#b0b0a8}
+.cc-mod input{accent-color:#f59e0b}
 </style>
 </head>
 <body>
@@ -146,6 +161,7 @@ tr.added td.cat .catin{font-style:italic}
   <div class="header-right">
     <span id="def-status" class="def-status"></span>
     <button class="btn" onclick="openParams()" title="Paramètres globaux (forfaits boissons, conversions, verres) — partagés">&#9881; Paramétrage</button>
+    <button class="btn" onclick="openCatalog()" title="Catalogue partagé des éléments (ID, activer/désactiver par modèle, éléments personnalisés)">&#128210; Catalogue</button>
     <button class="btn" onclick="saveDefaults()" title="Mémoriser l'état actuel de cet onglet comme modèle par défaut, partagé par tous les postes">&#9733; Défaut de l'onglet</button>
     <button class="btn" onclick="resetForm()">&#8635; Réinitialiser</button>
     <button class="btn primary" onclick="window.print()">Imprimer</button>
@@ -255,6 +271,59 @@ const RUd  = (x,d) => Math.ceil((Number(x)||0)/d);
 const CEIL = (x,s) => Math.ceil((Number(x)||0)/s)*s;
 const N    = x => Number(x)||0;
 function slug(s){return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');}
+
+// \u2500\u2500 Catalogue : ID court et stable par \u00e9l\u00e9ment (m\u00e9moris\u00e9, partag\u00e9) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+function catUsedCodes(){ var u={}; for(var k in CATALOG.ids) u[CATALOG.ids[k]]=1; (CATALOG.custom||[]).forEach(function(c){ if(c&&c.id) u[c.id]=1; }); return u; }
+function makeCode(label){
+  var s=slug(label).replace(/_/g,'');
+  var base=(s.replace(/[0-9]/g,'').toUpperCase()+'XXX').slice(0,3);
+  var used=catUsedCodes();
+  if(!used[base]) return base;
+  for(var i=2;i<9999;i++){ var c=base+i; if(!used[c]) return c; }
+  return base+String(Date.now()).slice(-4);
+}
+function codeFor(label){ var key=slug(label); if(!key) return ''; if(CATALOG.ids[key]) return CATALOG.ids[key]; var c=makeCode(label); CATALOG.ids[key]=c; return c; }
+function rowCode(r){ return r && r._cid ? r._cid : (r&&r.el ? codeFor(r.el) : ''); }
+// Pré-attribue les codes de façon déterministe (ordre trié par slug, tous modèles) → identiques sur tous les postes
+function catPreseed(){
+  try{
+    var set={};
+    ['chaud','froid','cocktail','bbq','pdj','pc'].forEach(function(t){ enumModel(t).forEach(function(it){ if(it.el) set[slug(it.el)]=it.el; }); });
+    Object.keys(set).sort().forEach(function(k){ codeFor(set[k]); });
+  }catch(e){}
+}
+// Injecte les \u00e9l\u00e9ments personnalis\u00e9s actifs du catalogue dans les groupes du mod\u00e8le courant
+function injectCatalog(groups){
+  const nb=N(S.nb);
+  (CATALOG.custom||[]).forEach(function(c){
+    if(!c || !c.models || !c.models[S.type]) return;
+    var q=(c.per==='pax') ? (nb>0?RU(nb*N(c.qty)):0) : ((c.qty!==''&&c.qty!=null)?c.qty:'');
+    var r=line(c.cat||'Catalogue', c.label||'(sans nom)', q, c.store||'', c.loc||'', c.cmt||'');
+    r._cid=c.id;
+    var title=c.grp||c.cat||'Catalogue';
+    var g=groups.find(function(x){return x.title===title;});
+    if(!g){ g=groups.find(function(x){return x.title==='Catalogue';}); if(!g){ g={title:'Catalogue',rows:[],always:true}; groups.push(g); } }
+    g.rows.push(r);
+  });
+  return groups;
+}
+// \u00c9num\u00e8re tous les \u00e9l\u00e9ments d'un mod\u00e8le (\u00e9tat \u00e9chantillon : tout activ\u00e9) pour le catalogue
+var CAT_SAMPLE_ON=['entree','plat','dessert','softs','alcool','etuve','technique','mhOn','nappesOn','tblHousse','mdHousse','boissFroides','pdjVienno','pdjPain','pdjFruits','pdjYaourt','pcSucre','pcSale','sale','sucre','fromage','mixte','vege'];
+var CAT_SAMPLE_NUM=['rouge','blanc','rose','biere','futs','cremant','champagne','alcoolAutre','gn11','gn12','nbPlats','chafingManual','serveurNb','tblNb','mdNb'];
+function enumModel(type){
+  var keys=['type','nb','thePct'].concat(CAT_SAMPLE_ON,CAT_SAMPLE_NUM);
+  var save={}; keys.forEach(function(k){ save[k]=S[k]; });
+  var out=[], seen={};
+  try{
+    S.type=type; S.nb=N(S.nb)||50; S.thePct=null;
+    CAT_SAMPLE_ON.forEach(function(k){ S[k]=true; });
+    CAT_SAMPLE_NUM.forEach(function(k){ S[k]=N(S[k])||1; });
+    var groups=MODELS[type]()||[];
+    groups.forEach(function(g){ (g.rows||[]).forEach(function(r){ if(r&&r.el){ var kk=slug(g.title)+'|'+slug(r.el); if(!seen[kk]){ seen[kk]=1; out.push({grp:g.title, el:r.el}); } } }); });
+  }catch(e){}
+  finally{ keys.forEach(function(k){ S[k]=save[k]; }); }
+  return out;
+}
 
 // Ligne : opts = { store:[...], loc:[...] } rend la cellule éditable (menu déroulant)
 function line(cat,el,qty,store,loc,cmt,opts){return {cat,el,qty,store:store||"",loc:loc||"",cmt:cmt||"",opts:opts||null};}
@@ -872,7 +941,7 @@ function rowEditable(g,r,showLoc){
   const el=(S.elO[key]!=null)?S.elO[key]:r.el;
   const qd=(S.qtyO[key]!=null&&S.qtyO[key]!=='')?S.qtyO[key]:(r.qty==='x'?'✓':(r.qty||0));
   const qph=(r.qty==='x'?'✓':(r.qty||0));
-  return '<tr><td class="cat">'+esc(r.cat)+'</td>'
+  return '<tr><td class="eid">'+esc(rowCode(r))+'</td><td class="cat">'+esc(r.cat)+'</td>'
     +'<td class="el"><input class="elin" value="'+esc(el)+'" oninput="setEl(\''+key+'\',this.value)"></td>'
     +'<td class="qty"><input class="qtyin" value="'+esc(qd)+'" placeholder="'+esc(qph)+'" oninput="setQtyO(\''+key+'\',this.value)"></td>'
     +cell(g,r,'store')+(showLoc?cell(g,r,'loc'):'')+cmtCell(g,r)
@@ -890,7 +959,7 @@ function addedRow(type,idx,a,showLoc,groupTitles){
     if(free) s+='<input class="cellother" placeholder="préciser" value="'+esc(a[field]||'')+'" oninput="setAdd(\''+type+'\','+idx+',\''+field+'\',this.value)">';
     return s;
   };
-  return '<tr class="added"><td class="cat">'+catSel+'</td>'
+  return '<tr class="added"><td class="eid">'+esc(a.el?codeFor(a.el):'')+'</td><td class="cat">'+catSel+'</td>'
     +'<td class="el">'+txt('el','elin','élément')+'</td>'
     +'<td class="qty">'+txt('qty','qtyin','qté')+'</td>'
     +'<td class="store">'+sel('store',STORE_OPTS)+'</td>'
@@ -907,7 +976,7 @@ function grpBlock(g,addedForG,groupTitles){
   const loRow=rows.find(r=>r.opts&&r.opts.loc);   const lo=loRow&&loRow.opts.loc;
   let x='<div class="grp"><div class="grp-title">'+esc(g.title)
     +'<button class="addline no-print" onclick="addLine(\''+esc(g.title)+'\')">+ ligne</button></div><table>';
-  x+='<tr><th>Catégorie</th><th>Élément</th><th style="text-align:right">Qté</th>';
+  x+='<tr><th class="eid">ID</th><th>Catégorie</th><th>Élément</th><th style="text-align:right">Qté</th>';
   x+='<th>'+(g.colStore||'Stockage')+(so?bulkSel(g.title,'store',so):'')+'</th>';
   if(showLoc) x+='<th>'+(g.colLoc||'Location')+(lo?bulkSel(g.title,'loc',lo):'')+'</th>';
   x+='<th>Commentaire</th><th class="no-print"></th></tr>';
@@ -928,7 +997,7 @@ function renderGroups(groups){
 }
 
 function renderSheet(){
-  const groups=MODELS[S.type]();
+  const groups=injectCatalog(MODELS[S.type]());
   let h='<div class="sheet-head"><div>'
     +'<div class="sheet-title">'+TITLES[S.type]+'</div>'
     +'<div class="sheet-meta">'
@@ -999,6 +1068,9 @@ function resetForm(){
 //  pré-appliqué à chaque nouvelle prestation de cet onglet.
 // ══════════════════════════════════════════════════════════════════════════
 let DEF = {};  // { <type>: {hid:{}, elO:{}, qtyO:{}, add:[]} }
+// Catalogue partagé : ids = { slug(intitulé) -> CODE court } ; custom = éléments personnalisés
+let CATALOG = { ids:{}, custom:[] };
+var CAT_DIRTY = {}; // types de modèle dont les défauts ont été modifiés via le catalogue
 function getPass(){ try{return sessionStorage.getItem('bt_liens_pass')||'';}catch(e){return '';} }
 function setPass(p){ try{sessionStorage.setItem('bt_liens_pass',p);}catch(e){} }
 function setDefStatus(msg,kind){
@@ -1024,9 +1096,11 @@ function mergeParams(def,ov){
   return out;
 }
 async function loadDefaults(){
-  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; if(j&&j.params&&typeof j.params==='object'){ PARAMS=mergeParams(PARAMS_DEFAULT, j.params); if(PARAMS.hd && PARAMS.hd.the_pct<=1) PARAMS.hd.the_pct=Math.round(PARAMS.hd.the_pct*100); /* migration ancien the_pct en fraction → % */ } } }
+  try{ const r=await fetch('/api/prepa-defaults'); if(r.ok){ const j=await r.json(); DEF=(j&&j.defaults)||{}; if(j&&j.params&&typeof j.params==='object'){ PARAMS=mergeParams(PARAMS_DEFAULT, j.params); if(PARAMS.hd && PARAMS.hd.the_pct<=1) PARAMS.hd.the_pct=Math.round(PARAMS.hd.the_pct*100); /* migration ancien the_pct en fraction → % */ }
+      if(j&&j.catalog&&typeof j.catalog==='object'){ CATALOG={ ids:(j.catalog.ids&&typeof j.catalog.ids==='object'&&!Array.isArray(j.catalog.ids))?j.catalog.ids:{}, custom:Array.isArray(j.catalog.custom)?j.catalog.custom:[] }; } } }
   catch(e){ DEF={}; }
   seedDefaults();
+  catPreseed();
 }
 // ── Menu de paramétrage global (⚙) ──────────────────────────────────────────
 function setParam(path,val){ var o=PARAMS, p=path.split('.'); for(var i=0;i<p.length-1;i++){ o=o[p[i]]=o[p[i]]||{}; } o[p[p.length-1]]=(val===''||isNaN(+val))?0:+val; renderSheet(); }
@@ -1139,6 +1213,78 @@ async function saveParams(){
     setPmStatus('✓ Paramètres enregistrés pour toute l’équipe.','ok');
   }catch(e){ setPmStatus('Échec : '+e.message,'err'); }
 }
+// ── Catalogue (modale) ───────────────────────────────────────────────────────
+function openCatalog(){ renderCatalogForm(); setCatStatus(''); document.getElementById('catalog-modal').style.display='flex'; }
+function closeCatalog(){ document.getElementById('catalog-modal').style.display='none'; }
+function setCatStatus(m,k){ var e=document.getElementById('cat-status'); if(e){ e.textContent=m||''; e.className='def-status'+(k?' '+k:''); } }
+function ensureDef(type){ DEF[type]=DEF[type]||{hid:{},elO:{},qtyO:{},choice:{},choiceOther:{},comment:{},add:[]}; DEF[type].hid=DEF[type].hid||{}; return DEF[type]; }
+function stdActive(type,grp,el){ var d=DEF[type]; var k=type+'|'+slug(grp)+'|'+slug(el); return !(d&&d.hid&&d.hid[k]); }
+function toggleStd(type,grp,el,on){
+  var k=type+'|'+slug(grp)+'|'+slug(el); var d=ensureDef(type);
+  if(on){ delete d.hid[k]; if(S.type===type) delete S.hid[k]; }
+  else  { d.hid[k]=true;   if(S.type===type) S.hid[k]=true; }
+  CAT_DIRTY[type]=true; if(S.type===type) renderSheet();
+}
+var CAT_TYPES=['chaud','froid','cocktail','bbq','pdj','pc'];
+function renderCatalogForm(){
+  var h='<div class="pm-hint" style="margin-top:10px">Chaque élément a un <b>ID court</b> stable, visible sur le bon (écran + impression). Décoche un élément pour le retirer <b>par défaut</b> d’un modèle (tu peux toujours le remettre ponctuellement sur un bon). Les <b>éléments personnalisés</b> ci-dessous s’ajoutent aux modèles cochés.</div>';
+  CAT_TYPES.forEach(function(type){
+    var items=enumModel(type);
+    h+='<div class="pm-sec">'+esc(TITLES[type])+'</div>';
+    if(!items.length){ h+='<div class="pm-hint">—</div>'; return; }
+    items.forEach(function(it){
+      var on=stdActive(type,it.grp,it.el);
+      h+='<label class="cat-std"><input type="checkbox" '+(on?'checked':'')+' onchange="toggleStd(\''+type+'\',\''+esc(it.grp).replace(/'/g,"\\'")+'\',\''+esc(it.el).replace(/'/g,"\\'")+'\',this.checked)">'
+        +'<span class="eid">'+esc(codeFor(it.el))+'</span>'
+        +'<span class="cat-lbl">'+esc(it.el)+'</span>'
+        +'<span class="cat-grp">'+esc(it.grp)+'</span></label>';
+    });
+  });
+  // Éléments personnalisés
+  h+='<div class="pm-sec">Éléments personnalisés</div>';
+  h+='<div class="pm-hint">Qté « fixe » (valeur telle quelle) ou « ×pax » (× nombre de convives, arrondi au supérieur). Coche les modèles où l’élément doit apparaître.</div>';
+  (CATALOG.custom||[]).forEach(function(c,idx){
+    h+='<div class="cat-cust">'
+      +'<div class="cat-cust-top"><span class="eid">'+esc(c.id||'')+'</span>'
+      +'<input class="cc-in cc-lbl" placeholder="intitulé" value="'+esc(c.label||'')+'" oninput="setCustomField('+idx+',\'label\',this.value)">'
+      +'<button class="rowdel" title="Supprimer" onclick="delCustom('+idx+')">✕</button></div>'
+      +'<div class="cat-cust-grid">'
+      +'<input class="cc-in" placeholder="catégorie (groupe)" value="'+esc(c.cat||'')+'" oninput="setCustomField('+idx+',\'cat\',this.value)">'
+      +'<input class="cc-in" placeholder="stockage" value="'+esc(c.store||'')+'" oninput="setCustomField('+idx+',\'store\',this.value)">'
+      +'<input class="cc-in" placeholder="livraison" value="'+esc(c.loc||'')+'" oninput="setCustomField('+idx+',\'loc\',this.value)">'
+      +'<input class="cc-in" placeholder="qté" value="'+esc(c.qty!=null?c.qty:'')+'" oninput="setCustomField('+idx+',\'qty\',this.value)">'
+      +'<select class="cc-in" onchange="setCustomField('+idx+',\'per\',this.value,true)"><option value="fixe"'+(c.per!=='pax'?' selected':'')+'>fixe</option><option value="pax"'+(c.per==='pax'?' selected':'')+'>×pax</option></select>'
+      +'<input class="cc-in" placeholder="commentaire" value="'+esc(c.cmt||'')+'" oninput="setCustomField('+idx+',\'cmt\',this.value)">'
+      +'</div>'
+      +'<div class="cat-cust-mod">modèles : '+CAT_TYPES.map(function(t){ var on=c.models&&c.models[t]; return '<label class="cc-mod"><input type="checkbox" '+(on?'checked':'')+' onchange="toggleCustomModel('+idx+',\''+t+'\',this.checked)">'+esc(TITLES[t].split(' ')[0])+'</label>'; }).join('')+'</div>'
+      +'</div>';
+  });
+  h+='<div style="margin:10px 0 4px"><button class="btn" onclick="addCustom()">＋ Nouvel élément</button></div>';
+  document.getElementById('cat-body').innerHTML=h;
+}
+function addCustom(){ CATALOG.custom=CATALOG.custom||[]; CATALOG.custom.push({ id:makeCode('Element'), label:'', cat:'', grp:'', store:'', loc:'', qty:'', per:'fixe', cmt:'', models:{} }); renderCatalogForm(); }
+function delCustom(idx){ if(CATALOG.custom){ CATALOG.custom.splice(idx,1); renderCatalogForm(); renderSheet(); } }
+function setCustomField(idx,field,val,rerender){ var c=(CATALOG.custom||[])[idx]; if(!c)return; c[field]=val; if(field==='cat') c.grp=val; renderSheet(); if(rerender) renderCatalogForm(); }
+function toggleCustomModel(idx,type,on){ var c=(CATALOG.custom||[])[idx]; if(!c)return; c.models=c.models||{}; if(on) c.models[type]=true; else delete c.models[type]; renderSheet(); }
+async function saveCatalog(){
+  var pass=getPass(); if(!pass){ pass=prompt('Mot de passe Briffe pour enregistrer le catalogue :','')||''; if(!pass) return; setPass(pass); }
+  setCatStatus('Enregistrement…');
+  try{
+    var r=await fetch('/api/prepa-defaults',{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':pass},body:JSON.stringify({catalog:CATALOG})});
+    if(r.status===401){ setPass(''); setCatStatus('Mot de passe refusé.','err'); return; }
+    var j=await r.json().catch(function(){return null;});
+    if(!r.ok||!j||!j.ok){ setCatStatus('Échec : '+((j&&j.error)||('erreur '+r.status)),'err'); return; }
+    // Enregistre aussi les défauts par modèle modifiés via le catalogue
+    for(var t in CAT_DIRTY){ if(!CAT_DIRTY[t]) continue;
+      var rr=await fetch('/api/prepa-defaults',{method:'POST',headers:{'Content-Type':'application/json','x-briffe-pass':pass},body:JSON.stringify({type:t,tab:ensureDef(t)})});
+      var jj=await rr.json().catch(function(){return null;});
+      if(jj&&jj.defaults) DEF=jj.defaults;
+    }
+    CAT_DIRTY={};
+    setCatStatus('✓ Catalogue enregistré pour toute l’équipe.','ok');
+  }catch(e){ setCatStatus('Échec : '+e.message,'err'); }
+}
+
 // Clés fournisseur/livraison/commentaire valides pour le modèle d'un onglet
 function tabChoiceKeys(type){
   const sset={}, cset={};
@@ -1290,6 +1436,18 @@ function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g
 
 loadDefaults().then(render);
 </script>
+<div id="catalog-modal" class="pm-wrap" style="display:none">
+  <div class="pm-box" style="width:min(720px,100%)">
+    <div class="pm-head"><b>&#128210; Catalogue des éléments (partagé)</b><span class="pm-x" onclick="closeCatalog()">&#10005;</span></div>
+    <div id="cat-body" style="padding:0 18px 6px"></div>
+    <div class="pm-foot">
+      <span id="cat-status" class="def-status"></span>
+      <span style="flex:1"></span>
+      <button class="btn primary" onclick="saveCatalog()">Enregistrer le catalogue</button>
+      <button class="btn" onclick="closeCatalog()">Fermer</button>
+    </div>
+  </div>
+</div>
 <div id="params-modal" class="pm-wrap" style="display:none">
   <div class="pm-box">
     <div class="pm-head"><b>&#9881; Paramétrage (partagé, tous les postes)</b><span class="pm-x" onclick="closeParams()">&#10005;</span></div>
