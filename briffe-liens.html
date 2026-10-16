@@ -37,39 +37,52 @@ header{text-align:center; margin:14px 0 26px}
 .logo-img{max-width:230px; max-height:130px; width:auto; height:auto; margin:0 auto 4px; display:block}
 .subtitle{font-family:var(--f-body); font-size:12.5px; color:var(--mut); margin-top:12px; line-height:1.5}
 .rule{width:46px; height:3px; background:var(--red); border-radius:3px; margin:16px auto 0; opacity:.9}
-/* Cartes de liens */
-.cards{display:flex; flex-direction:column; gap:12px; margin-top:4px}
+/* Grille bento de cartes — chaque carte choisit sa taille (importance) */
+.cards{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:4px; align-items:start}
+.cards > .sec, .cards > .note, .cards > .empty{grid-column:1 / -1}
 a.card{
-  display:flex; align-items:center; gap:14px; text-decoration:none; color:inherit;
-  background:var(--card); border:1px solid var(--line); border-radius:16px;
-  padding:15px 16px; position:relative; overflow:hidden;
-  box-shadow:0 1px 0 rgba(0,0,0,.02), 0 10px 22px -18px rgba(146,27,33,.5);
+  grid-column:1 / -1; position:relative; display:flex; flex-direction:column; justify-content:space-between; gap:16px;
+  text-decoration:none; color:inherit; min-height:118px;
+  background:var(--card); border:1px solid var(--line); border-radius:18px; padding:17px 17px 16px; overflow:hidden;
+  box-shadow:0 1px 0 rgba(0,0,0,.02), 0 12px 24px -20px rgba(146,27,33,.55);
   transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease, background .14s ease;
 }
-a.card:before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--red); opacity:.85; transform:scaleY(.0); transform-origin:center; transition:transform .16s ease}
-a.card:hover,a.card:active{transform:translateY(-2px); border-color:var(--red); background:#fffdf1; box-shadow:0 1px 0 rgba(0,0,0,.02), 0 16px 30px -18px rgba(146,27,33,.65)}
-a.card:hover:before,a.card:active:before{transform:scaleY(1)}
-.ic{
-  flex:0 0 46px; width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center;
-  font-size:23px; background:rgba(146,27,33,.08); border:1px solid rgba(146,27,33,.18); overflow:hidden;
-}
-.ic img{width:100%; height:100%; object-fit:cover; border-radius:11px}
-.txt{flex:1; min-width:0}
-.txt .t{display:block; font-family:var(--f-caps); font-weight:600; font-size:15.5px; color:var(--ink); line-height:1.25; letter-spacing:.2px}
-.txt .s{display:block; font-size:11.5px; color:var(--mut); margin-top:4px; line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.go{flex:0 0 auto; color:var(--red); font-size:20px; opacity:.5; transition:opacity .14s ease, transform .14s ease}
-a.card:hover .go,a.card:active .go{opacity:1; transform:translateX(2px)}
+a.card:hover,a.card:active{transform:translateY(-2px); border-color:var(--red); box-shadow:0 1px 0 rgba(0,0,0,.02), 0 18px 32px -20px rgba(146,27,33,.7)}
+/* Tailles : petite = demi-largeur · moyenne = pleine largeur · grande = mise en avant (rouge) */
+.card.sz-petite{grid-column:span 1; min-height:110px; padding:15px}
+.card.sz-moyenne{grid-column:1 / -1}
+.card.sz-grande{grid-column:1 / -1; min-height:150px; padding:22px; background:var(--red); border-color:var(--red); color:#fff;
+  box-shadow:0 18px 36px -20px rgba(146,27,33,.75)}
+.card.sz-grande:hover,.card.sz-grande:active{background:var(--red-h); border-color:var(--red-h)}
+/* Puce icône (en haut à gauche) */
+.ic{flex:0 0 auto; width:46px; height:46px; border-radius:13px; display:flex; align-items:center; justify-content:center;
+  font-size:23px; background:rgba(146,27,33,.08); border:1px solid rgba(146,27,33,.18); overflow:hidden}
+.ic img{width:100%; height:100%; object-fit:cover; border-radius:12px}
+.card.sz-petite .ic{width:42px; height:42px; font-size:21px}
+.card.sz-grande .ic{width:52px; height:52px; font-size:26px; background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.32)}
+/* Texte (en bas) */
+.txt{min-width:0}
+.txt .t{display:block; font-family:var(--f-title); font-weight:700; font-size:20px; line-height:1.14; color:var(--ink); letter-spacing:.1px}
+.card.sz-grande .txt .t{font-size:29px; color:#fff}
+.card.sz-petite .txt .t{font-size:16.5px; line-height:1.18}
+.txt .s{font-family:var(--f-body); font-size:12px; color:var(--mut); margin-top:7px; line-height:1.4;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.card.sz-grande .txt .s{color:rgba(255,255,255,.85); font-size:12.5px}
+.card.sz-petite .txt .s{-webkit-line-clamp:1; font-size:11px; margin-top:5px}
+/* Flèche d'angle (haut droite) */
+.go{position:absolute; top:15px; right:16px; color:var(--red); font-size:17px; opacity:.5; transition:opacity .14s ease, transform .14s ease}
+.card.sz-grande .go{color:#fff; opacity:.85}
+a.card:hover .go,a.card:active .go{opacity:1; transform:translate(2px,-2px)}
 /* États */
 .empty{text-align:center; color:var(--mut); font-size:13px; padding:30px 10px}
 footer{text-align:center; margin-top:30px; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.18em; font-size:9.5px; color:var(--mut)}
 footer b{color:var(--red); font-weight:700}
 /* Blocs typés : titre de section, texte */
-.sec{margin:20px 2px 2px; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.18em; font-size:11px; color:var(--red); font-weight:700; line-height:1.3}
+.sec{margin:18px 2px 2px; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.18em; font-size:11px; color:var(--red); font-weight:700; line-height:1.3}
 .cards > .sec:first-child{margin-top:0}
-.note{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 15px; font-family:var(--f-body); font-size:12.5px; color:var(--mut); line-height:1.55}
+.note{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px; font-family:var(--f-body); font-size:12.5px; color:var(--mut); line-height:1.55}
 .note .nt{display:block; font-family:var(--f-caps); text-transform:uppercase; letter-spacing:.14em; font-size:10.5px; color:var(--red); margin-bottom:5px; font-weight:700}
-.card.dl .go,.card.ct .go{font-size:18px}
-@media (max-width:360px){ .logo-img{max-width:200px} .ic{flex-basis:42px;width:42px;height:42px;font-size:21px} }
+@media (max-width:360px){ .logo-img{max-width:200px} }
 </style>
 </head>
 <body>
@@ -106,8 +119,9 @@ function vcardStr(c){
   L.push('END:VCARD');
   return L.join('\r\n');
 }
+function szClass(c){ var s=String(c&&c.size||'moyenne').toLowerCase(); return 'sz-'+(['petite','moyenne','grande'].indexOf(s)>=0?s:'moyenne'); }
 function renderBlock(c){
-  var t=blkType(c);
+  var t=blkType(c), sz=szClass(c);
   if(t==='heading') return '<div class="sec">'+esc(c.title||'')+'</div>';
   if(t==='text') return '<div class="note">'+(c.title?'<span class="nt">'+esc(c.title)+'</span>':'')+esc(c.text||c.subtitle||'').replace(/\n/g,'<br>')+'</div>';
   if(t==='contact'){
@@ -117,7 +131,7 @@ function renderBlock(c){
     if(mode==='email'){ href='mailto:'+String(c.email||'').trim(); if(c.subject) href+='?subject='+encodeURIComponent(c.subject); go='\u2709'; dic='✉️'; }
     else if(mode==='tel'){ href='tel:'+String(c.tel||'').replace(/[^+0-9]/g,''); go='\u260E'; dic='📞'; }
     else { href='data:text/vcard;charset=utf-8,'+encodeURIComponent(vcardStr(c)); dl=' download="'+esc((c.title||'contact').replace(/[^A-Za-z0-9]+/g,'-'))+'.vcf"'; go='+'; dic='👤'; }
-    return '<a class="card ct" href="'+href+'"'+dl+'>'
+    return '<a class="card ct '+sz+'" href="'+href+'"'+dl+'>'
       +'<span class="ic">'+iconFor(c,dic)+'</span>'
       +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(sub?'<span class="s">'+esc(sub)+'</span>':'')+'</span>'
       +'<span class="go">'+go+'</span></a>';
@@ -126,15 +140,15 @@ function renderBlock(c){
     var internal=/^\/api\/liens-files/i.test(String(c.url||''));
     var dlAttr=' download'+(c.filename?'="'+esc(c.filename)+'"':'');
     var ext=internal?'':' target="_blank" rel="noopener"';
-    return '<a class="card dl" href="'+esc(fileHref(c.url))+'"'+dlAttr+ext+'>'
+    return '<a class="card dl '+sz+'" href="'+esc(fileHref(c.url))+'"'+dlAttr+ext+'>'
       +'<span class="ic">'+iconFor(c,'📄')+'</span>'
       +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
       +'<span class="go">&#8595;</span></a>';
   }
-  return '<a class="card" href="'+esc(safeUrl(c.url))+'" target="_blank" rel="noopener">'
+  return '<a class="card '+sz+'" href="'+esc(safeUrl(c.url))+'" target="_blank" rel="noopener">'
     +'<span class="ic">'+iconFor(c,'🔗')+'</span>'
     +'<span class="txt"><span class="t">'+esc(c.title||'')+'</span>'+(c.subtitle?'<span class="s">'+esc(c.subtitle)+'</span>':'')+'</span>'
-    +'<span class="go">&rsaquo;</span></a>';
+    +'<span class="go">&#8599;</span></a>';
 }
 function render(cfg){
   var b=(cfg&&cfg.brand)||{};
@@ -150,8 +164,13 @@ function render(cfg){
   host.innerHTML = live.map(renderBlock).join('');
 }
 
+// Aperçu back-office : rend la config reçue par message (sans appel API)
+window.addEventListener('message',function(e){ var d=e&&e.data; if(d&&d.__briffePreview){ render(d.config||{}); } });
 (function(){
-  var urls=['/api/liens','/.netlify/functions/liens'];
+  if(window.__CFG__){ render(window.__CFG__); return; }
+  if(/[?&]preview=1/.test(location.search)){ render({}); return; } // attend les messages de l'aperçu
+  // Repli API : route jolie, fonction brute, puis domaine briffetools (pour la vitrine autonome carte.briffe.me)
+  var urls=['/api/liens','/.netlify/functions/liens','https://briffetools.netlify.app/api/liens'];
   function tryGet(i){
     if(i>=urls.length){ render({}); return; }
     fetch(urls[i],{cache:'no-store'}).then(function(r){
