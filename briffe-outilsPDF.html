@@ -199,12 +199,7 @@ input,select{font-family:'DM Mono',monospace}
 
     <div class="signer" style="margin-top:10px">
       <div class="palette">
-        <h3>Signatures</h3>
-        <div class="thumbs" id="pal-signature"></div>
-        <h3 style="margin-top:16px">Cachets</h3>
-        <div class="thumbs" id="pal-cachet"></div>
-        <h3 style="margin-top:16px">Bon pour accord</h3>
-        <div class="thumbs" id="pal-accord"></div>
+        <div id="pal-sections"></div>
         <div class="hint" style="margin-top:14px">Clique une vignette pour l'ajouter sur la page. Glisse pour déplacer, coin vert pour redimensionner.</div>
       </div>
 
@@ -252,18 +247,14 @@ input,select{font-family:'DM Mono',monospace}
         <option value="signature">Signature</option>
         <option value="cachet">Cachet</option>
         <option value="accord">Bon pour accord</option>
+        <option value="reglement">Bon pour règlement</option>
       </select>
     </div>
     <button class="btn primary" id="imp-add" onclick="importImage()" disabled>Ajouter</button>
     <img id="imp-preview" style="max-height:44px;max-width:120px;object-fit:contain;display:none;background:repeating-conic-gradient(#161616 0 25%,#0c0c0c 0 50%) 50%/12px 12px;border-radius:3px">
   </div>
 
-  <div class="grp-title">Signatures</div>
-  <div class="lib-grid" id="lib-signature"></div>
-  <div class="grp-title">Cachets</div>
-  <div class="lib-grid" id="lib-cachet"></div>
-  <div class="grp-title">Bon pour accord</div>
-  <div class="lib-grid" id="lib-accord"></div>
+  <div id="lib-sections"></div>
 </div>
 
 <!-- ============ ASSEMBLER ============ -->
@@ -293,12 +284,28 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
 const { PDFDocument, degrees } = PDFLib;
 
 /* ---------------- Bibliothèque (état + API) ---------------- */
-const TYPES = ["signature", "cachet", "accord"];
+const TYPES = ["signature", "cachet", "accord", "reglement"];
+const TYPE_LABEL = {
+  signature: "Signatures",
+  cachet: "Cachets",
+  accord: "Bon pour accord",
+  reglement: "Bon pour règlement"
+};
 const EMPTY_MSG = {
   signature: "Aucune signature enregistrée.",
   cachet: "Aucun cachet enregistré.",
-  accord: "Aucun « bon pour accord » enregistré."
+  accord: "Aucun « bon pour accord » enregistré.",
+  reglement: "Aucun « bon pour règlement » enregistré."
 };
+// Ordre d'affichage : types connus d'abord, puis tout autre type présent en bibliothèque
+function orderedTypes() {
+  const seen = {}, out = [];
+  TYPES.forEach(t => { seen[t] = 1; out.push(t); });
+  Object.values(LIB).forEach(v => { if (v && v.type && !seen[v.type]) { seen[v.type] = 1; out.push(v.type); } });
+  return out;
+}
+function labelFor(t) { return TYPE_LABEL[t] || (String(t).charAt(0).toUpperCase() + String(t).slice(1)); }
+function emptyFor(t) { return EMPTY_MSG[t] || ('Aucun élément « ' + labelFor(t) + ' » enregistré.'); }
 let LIB = {};            // id -> { name, type, dataUrl, savedAt }
 let apiAvailable = true; // bascule en mode mémoire si /api/signatures indisponible
 
@@ -345,18 +352,21 @@ async function deleteImage(id) {
 function setLibStatus(t, c) { const e = document.getElementById("lib-status"); e.textContent = t || ""; e.className = "status" + (c ? " " + c : ""); }
 
 function renderLibrary() {
-  for (const type of TYPES) {
-    const box = document.getElementById("lib-" + type);
+  const host = document.getElementById("lib-sections");
+  if (!host) return;
+  host.innerHTML = orderedTypes().map(type => {
     const items = Object.entries(LIB).filter(([, v]) => v.type === type);
-    if (!items.length) { box.innerHTML = '<div class="lib-empty">' + EMPTY_MSG[type] + '</div>'; continue; }
-    box.innerHTML = items.map(([id, v]) =>
-      '<div class="lib-card">' +
-        '<img src="' + v.dataUrl + '" alt="">' +
-        '<div class="nm" title="' + esc(v.name) + '">' + esc(v.name) + '</div>' +
-        '<button class="btn small danger" onclick="onDelete(\'' + id + '\')">Supprimer</button>' +
-      '</div>'
-    ).join("");
-  }
+    const body = items.length
+      ? items.map(([id, v]) =>
+          '<div class="lib-card">' +
+            '<img src="' + v.dataUrl + '" alt="">' +
+            '<div class="nm" title="' + esc(v.name) + '">' + esc(v.name) + '</div>' +
+            '<button class="btn small danger" onclick="onDelete(\'' + id + '\')">Supprimer</button>' +
+          '</div>'
+        ).join("")
+      : '<div class="lib-empty">' + emptyFor(type) + '</div>';
+    return '<div class="grp-title">' + esc(labelFor(type)) + '</div><div class="lib-grid">' + body + '</div>';
+  }).join("");
 }
 
 async function onDelete(id) {
@@ -403,17 +413,20 @@ async function importImage() {
 
 /* ---------------- Palette (onglet Signer) ---------------- */
 function renderPalette() {
-  for (const type of TYPES) {
-    const box = document.getElementById("pal-" + type);
+  const host = document.getElementById("pal-sections");
+  if (!host) return;
+  host.innerHTML = orderedTypes().map((type, i) => {
     const items = Object.entries(LIB).filter(([, v]) => v.type === type);
-    if (!items.length) { box.innerHTML = '<div class="empty-lib">Vide — ajoute-en dans l\'onglet Bibliothèque.</div>'; continue; }
-    box.innerHTML = items.map(([id, v]) =>
-      '<div class="thumb" onclick="addPlacement(\'' + id + '\')" title="' + esc(v.name) + '">' +
-        '<img src="' + v.dataUrl + '" alt="">' +
-        '<div class="nm">' + esc(v.name) + '</div>' +
-      '</div>'
-    ).join("");
-  }
+    const body = items.length
+      ? items.map(([id, v]) =>
+          '<div class="thumb" onclick="addPlacement(\'' + id + '\')" title="' + esc(v.name) + '">' +
+            '<img src="' + v.dataUrl + '" alt="">' +
+            '<div class="nm">' + esc(v.name) + '</div>' +
+          '</div>'
+        ).join("")
+      : '<div class="empty-lib">Vide — ajoute-en dans l\'onglet Bibliothèque.</div>';
+    return '<h3' + (i ? ' style="margin-top:16px"' : '') + '>' + esc(labelFor(type)) + '</h3><div class="thumbs">' + body + '</div>';
+  }).join("");
 }
 
 /* ---------------- PDF : chargement & rendu ---------------- */
