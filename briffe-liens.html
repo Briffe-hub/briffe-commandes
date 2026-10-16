@@ -169,8 +169,12 @@ window.addEventListener('message',function(e){ var d=e&&e.data; if(d&&d.__briffe
 (function(){
   if(window.__CFG__){ render(window.__CFG__); return; }
   if(/[?&]preview=1/.test(location.search)){ render({}); return; } // attend les messages de l'aperçu
+  // Menu demandé via l'URL (?m=<id>), défaut = 'default'
+  var MENU_ID=''; try{ MENU_ID=(new URLSearchParams(location.search)).get('m')||''; }catch(e){}
+  if(!MENU_ID) MENU_ID='default';
+  var q='?m='+encodeURIComponent(MENU_ID);
   // Repli API : route jolie, fonction brute, puis domaine briffetools (pour la vitrine autonome carte.briffe.me)
-  var urls=['/api/liens','/.netlify/functions/liens','https://briffetools.netlify.app/api/liens'];
+  var urls=['/api/liens'+q,'/.netlify/functions/liens'+q,'https://briffetools.netlify.app/api/liens'+q];
   function tryGet(i){
     if(i>=urls.length){ render({}); return; }
     fetch(urls[i],{cache:'no-store'}).then(function(r){
