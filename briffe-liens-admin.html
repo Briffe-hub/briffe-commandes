@@ -260,9 +260,17 @@ function renderCards(){
           +'<option value="email"'+(mode==='email'?' selected':'')+'>Envoyer un email (mailto)</option>'
           +'<option value="tel"'+(mode==='tel'?' selected':'')+'>Appeler (tel)</option>'
         +'</select></label>'
-        +'<div class="row"><label class="fld">Téléphone<input type="text" value="'+esc(c.tel||'')+'" placeholder="+33…" oninput="upd('+i+',\'tel\',this.value)"></label>'
-        +'<label class="fld">Email<input type="text" value="'+esc(c.email||'')+'" placeholder="contact@briffe.me" oninput="upd('+i+',\'email\',this.value)"></label></div>'
-        +'<label class="fld">Site (optionnel, vCard)<input type="text" value="'+esc(c.website||'')+'" placeholder="https://briffe.me" oninput="upd('+i+',\'website\',this.value)"></label>';
+        +'<div class="row"><label class="fld">Prénom<input type="text" value="'+esc(c.firstName||'')+'" oninput="upd('+i+',\'firstName\',this.value)"></label>'
+        +'<label class="fld">Nom<input type="text" value="'+esc(c.lastName||'')+'" oninput="upd('+i+',\'lastName\',this.value)"></label></div>'
+        +'<div class="row"><label class="fld">Fonction<input type="text" value="'+esc(c.role||'')+'" placeholder="ex. Développement commercial" oninput="upd('+i+',\'role\',this.value)"></label>'
+        +'<label class="fld">Société<input type="text" value="'+esc(c.org||'')+'" placeholder="BRIFFE" oninput="upd('+i+',\'org\',this.value)"></label></div>'
+        +'<div class="row"><label class="fld">Téléphone mobile<input type="text" value="'+esc(c.tel||'')+'" placeholder="+33…" oninput="upd('+i+',\'tel\',this.value)"></label>'
+        +'<label class="fld">Téléphone fixe<input type="text" value="'+esc(c.telWork||'')+'" placeholder="+33…" oninput="upd('+i+',\'telWork\',this.value)"></label></div>'
+        +'<label class="fld">Email<input type="text" value="'+esc(c.email||'')+'" placeholder="contact@briffe.me" oninput="upd('+i+',\'email\',this.value)"></label>'
+        +'<label class="fld">Site web<input type="text" value="'+esc(c.website||'')+'" placeholder="https://briffe.me" oninput="upd('+i+',\'website\',this.value)"></label>'
+        +'<label class="fld">Adresse<input type="text" value="'+esc(c.address||'')+'" placeholder="Cellule 13, Bât. B2, rue du MIN, 59160 Lomme" oninput="upd('+i+',\'address\',this.value)"></label>'
+        +'<label class="fld">Note (vCard)<textarea rows="2" oninput="upd('+i+',\'note\',this.value)">'+esc(c.note||'')+'</textarea></label>'
+        +'<div class="hint" style="margin:0">Ces champs remplissent la fiche contact (vCard) téléchargée. Le clic mailto/tel utilise l email / le mobile.</div>';
     } else if(t==='download'){
       var fileState = c.filename ? ('<span class="fileok">📎 '+esc(c.filename)+'</span>') : (c.url? '<span class="fileok">🔗 lien défini</span>' : '<span class="hint" style="margin:0">aucun fichier</span>');
       body=titleRow(i,c)
