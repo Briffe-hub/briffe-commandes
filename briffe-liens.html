@@ -108,14 +108,21 @@ function blkLive(c){
   return !!String(c.url||'').trim();
 }
 function iconFor(c,def){ return isImg(c.icon) ? '<img src="'+esc(c.icon)+'" alt="">' : esc(c.icon||def); }
+function vcEsc(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); }
 function vcardStr(c){
+  var first=String(c.firstName||'').trim(), last=String(c.lastName||'').trim();
+  var fn=String(c.title||'').trim() || (first+' '+last).trim() || (c.org||'BRIFFE');
   var L=['BEGIN:VCARD','VERSION:3.0'];
-  L.push('FN:'+(c.title||'BRIFFE'));
-  L.push('ORG:'+(c.org||'BRIFFE'));
-  if(c.tel)     L.push('TEL;TYPE=CELL:'+c.tel);
-  if(c.email)   L.push('EMAIL;TYPE=INTERNET:'+c.email);
-  if(c.website) L.push('URL:'+c.website);
-  if(c.address) L.push('ADR;TYPE=WORK:;;'+c.address);
+  L.push('N:'+vcEsc(last)+';'+vcEsc(first)+';;;');
+  L.push('FN:'+vcEsc(fn));
+  L.push('ORG:'+vcEsc(c.org||'BRIFFE'));
+  if(c.role)    L.push('TITLE:'+vcEsc(c.role));
+  if(c.tel)     L.push('TEL;TYPE=CELL:'+vcEsc(c.tel));
+  if(c.telWork) L.push('TEL;TYPE=WORK,VOICE:'+vcEsc(c.telWork));
+  if(c.email)   L.push('EMAIL;TYPE=INTERNET:'+vcEsc(c.email));
+  if(c.website) L.push('URL:'+vcEsc(c.website));
+  if(c.address) L.push('ADR;TYPE=WORK:;;'+vcEsc(c.address)+';;;;');
+  if(c.note)    L.push('NOTE:'+vcEsc(c.note));
   L.push('END:VCARD');
   return L.join('\r\n');
 }
