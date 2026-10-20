@@ -67,6 +67,8 @@ input,select{font-family:'DM Mono',monospace}
 .placement .rh{position:absolute;right:-6px;bottom:-6px;width:12px;height:12px;background:#22c55e;border:1px solid #0f0f0f;border-radius:2px;cursor:nwse-resize}
 .placement .del{position:absolute;right:-9px;top:-9px;width:16px;height:16px;line-height:14px;text-align:center;background:#0f0f0f;border:1px solid #ef4444;color:#ef4444;border-radius:50%;font-size:11px;cursor:pointer}
 .placement:not(.sel):not(:hover) .rh,.placement:not(.sel):not(:hover) .del{display:none}
+.placement.ptext{width:auto;height:auto;white-space:pre;line-height:1.15;padding:1px 3px;font-family:Arial,Helvetica,sans-serif}
+.placement.ptext .ptxt{display:inline-block;pointer-events:none;user-select:none}
 
 /* --- Bibliothèque --- */
 .lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
@@ -200,7 +202,19 @@ input,select{font-family:'DM Mono',monospace}
     <div class="signer" style="margin-top:10px">
       <div class="palette">
         <div id="pal-sections"></div>
-        <div class="hint" style="margin-top:14px">Clique une vignette pour l'ajouter sur la page. Glisse pour déplacer, coin vert pour redimensionner.</div>
+        <div class="txt-tools" style="margin-top:16px;border-top:1px solid #1a1a1a;padding-top:12px">
+          <h3>Texte &amp; date</h3>
+          <input id="txt-input" type="text" placeholder="Texte à insérer…" style="width:100%;background:#0c0c0c;border:1px solid #2a2a2a;border-radius:4px;color:#e8e8e0;padding:7px 9px;font-size:12px;font-family:inherit">
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888">Couleur <input id="txt-color" type="color" value="#111111" style="width:28px;height:24px;padding:0;border:1px solid #2a2a2a;background:#0c0c0c;border-radius:3px"></label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888"><input id="txt-bold" type="checkbox"> Gras</label>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn small" onclick="addText()">+ Texte</button>
+            <button class="btn small" onclick="addDate()">+ Date du jour</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:14px">Clique une vignette (ou + Texte / + Date) pour l'ajouter. Glisse pour déplacer, coin vert pour redimensionner, double-clic sur un texte pour le modifier.</div>
       </div>
 
       <div class="stage-wrap">
@@ -281,7 +295,7 @@ input,select{font-family:'DM Mono',monospace}
 
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-const { PDFDocument, degrees } = PDFLib;
+const { PDFDocument, degrees, StandardFonts, rgb } = PDFLib;
 
 /* ---------------- Bibliothèque (état + API) ---------------- */
 const TYPES = ["signature", "cachet", "accord", "reglement"];
@@ -508,20 +522,36 @@ function addPlacement(imgId) {
   img.src = rec.dataUrl;
 }
 
+function addTextPlacement(text, color, bold) {
+  placements.push({ uid: "t" + Date.now() + Math.floor(performance.now() % 1000), kind: "text", text: text || "", page: cur, fx: 0.30, fy: 0.45, fsize: 0.03, color: color || "#111111", bold: !!bold });
+  drawPlacements(); showTab("signer");
+}
+function txtOpts() { var c = document.getElementById("txt-color"), b = document.getElementById("txt-bold"); return { color: (c && c.value) || "#111111", bold: !!(b && b.checked) }; }
+function addText() { if (!pdfBytes) { setSignStatus("Ouvre d'abord un PDF.", "err"); return; } var inp = document.getElementById("txt-input"); var t = ((inp && inp.value) || "").trim(); if (!t) { setSignStatus("Saisis un texte à insérer.", "warn"); return; } var o = txtOpts(); addTextPlacement(t, o.color, o.bold); if (inp) inp.value = ""; }
+function addDate() { if (!pdfBytes) { setSignStatus("Ouvre d'abord un PDF.", "err"); return; } var o = txtOpts(); addTextPlacement(todayStr(), o.color, o.bold); }
+function todayStr() { var d = new Date(), p2 = function(n){ return n < 10 ? "0"+n : ""+n; }; return p2(d.getDate()) + "/" + p2(d.getMonth()+1) + "/" + d.getFullYear(); }
+function hexToRgb(hex) { hex = String(hex || "#111111").replace("#", ""); if (hex.length === 3) hex = hex.split("").map(function(c){return c+c;}).join(""); var n = parseInt(hex, 16); return { r: ((n>>16)&255)/255, g: ((n>>8)&255)/255, b: (n&255)/255 }; }
 function drawPlacements() {
   const wrap = document.getElementById("page-wrap");
   wrap.querySelectorAll(".placement").forEach(e => e.remove());
   placements.filter(p => p.page === cur).forEach(p => {
-    const rec = LIB[p.imgId]; if (!rec) return;
-    const wpx = p.fw * dispW;
-    const hpx = wpx * p.aspect;
     const el = document.createElement("div");
-    el.className = "placement" + (selected === p.uid ? " sel" : "");
+    el.className = "placement" + (p.kind === "text" ? " ptext" : "") + (selected === p.uid ? " sel" : "");
     el.style.left = (p.fx * dispW) + "px";
     el.style.top = (p.fy * dispH) + "px";
-    el.style.width = wpx + "px";
-    el.style.height = hpx + "px";
-    el.innerHTML = '<img src="' + rec.dataUrl + '" alt=""><div class="del">×</div><div class="rh"></div>';
+    if (p.kind === "text") {
+      el.style.fontSize = ((p.fsize || 0.03) * dispW) + "px";
+      el.style.color = p.color || "#111111";
+      el.style.fontWeight = p.bold ? "700" : "400";
+      el.innerHTML = '<span class="ptxt"></span><div class="del">×</div><div class="rh"></div>';
+      el.querySelector(".ptxt").textContent = p.text || "";
+      el.addEventListener("dblclick", ev => { ev.preventDefault(); const t = prompt("Modifier le texte :", p.text || ""); if (t != null) { p.text = t; drawPlacements(); } });
+    } else {
+      const rec = LIB[p.imgId]; if (!rec) return;
+      el.style.width = (p.fw * dispW) + "px";
+      el.style.height = (p.fw * dispW * p.aspect) + "px";
+      el.innerHTML = '<img src="' + rec.dataUrl + '" alt=""><div class="del">×</div><div class="rh"></div>';
+    }
     wrap.appendChild(el);
     el.addEventListener("pointerdown", ev => startDrag(ev, p, el, "move"));
     el.querySelector(".rh").addEventListener("pointerdown", ev => { ev.stopPropagation(); startDrag(ev, p, el, "resize"); });
@@ -540,21 +570,25 @@ function startDrag(ev, p, el, mode) {
   drawPlacements();
   el = document.querySelector('.placement.sel'); // ré-obtenu après redraw
   const startX = ev.clientX, startY = ev.clientY;
-  const x0 = p.fx, y0 = p.fy, w0 = p.fw;
+  const x0 = p.fx, y0 = p.fy, w0 = p.fw || 0, fs0 = p.fsize || 0;
+  const isText = (p.kind === "text");
   function onMove(e) {
     const dxf = (e.clientX - startX) / dispW;
     const dyf = (e.clientY - startY) / dispH;
     if (mode === "move") {
-      p.fx = clamp(x0 + dxf, 0, 1 - p.fw);
-      p.fy = clamp(y0 + dyf, 0, 1 - (p.fw * p.aspect * dispW / dispH));
+      if (isText) { p.fx = clamp(x0 + dxf, 0, 0.999); p.fy = clamp(y0 + dyf, 0, 0.999); }
+      else {
+        p.fx = clamp(x0 + dxf, 0, 1 - p.fw);
+        p.fy = clamp(y0 + dyf, 0, 1 - (p.fw * p.aspect * dispW / dispH));
+      }
     } else {
-      p.fw = clamp(w0 + dxf, 0.03, 1);
-      if (p.fx + p.fw > 1) p.fw = 1 - p.fx;
+      if (isText) { p.fsize = clamp(fs0 + dxf * 0.5, 0.008, 0.2); }
+      else { p.fw = clamp(w0 + dxf, 0.03, 1); if (p.fx + p.fw > 1) p.fw = 1 - p.fx; }
     }
     if (el) {
-      const wpx = p.fw * dispW, hpx = wpx * p.aspect;
       el.style.left = (p.fx * dispW) + "px"; el.style.top = (p.fy * dispH) + "px";
-      el.style.width = wpx + "px"; el.style.height = hpx + "px";
+      if (isText) { el.style.fontSize = (p.fsize * dispW) + "px"; }
+      else { const wpx = p.fw * dispW; el.style.width = wpx + "px"; el.style.height = (wpx * p.aspect) + "px"; }
     }
   }
   function onUp() {
@@ -574,6 +608,8 @@ async function buildSignedPdf() {
   const jsDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
   const outPages = outDoc.getPages();
   const embedCache = {};
+  let _fReg = null, _fBold = null;
+  async function fontFor(bold) { if (bold) { if (!_fBold) _fBold = await outDoc.embedFont(StandardFonts.HelveticaBold); return _fBold; } if (!_fReg) _fReg = await outDoc.embedFont(StandardFonts.Helvetica); return _fReg; }
 
   async function embed(rec, key) {
     if (embedCache[key]) return embedCache[key];
@@ -593,6 +629,24 @@ async function buildSignedPdf() {
     const vp = page.getViewport({ scale: 1 });   // 1 pt = 1 unité
     const outPage = outPages[pi];
     for (const p of byPage[pi]) {
+      if (p.kind === "text") {
+        if (!String(p.text || "").length) continue;
+        const font = await fontFor(p.bold);
+        const fontPt = (p.fsize || 0.03) * vp.width;
+        const tx = p.fx * vp.width, ty = p.fy * vp.height;
+        const a = vp.convertToPdfPoint(tx, ty);
+        const right = vp.convertToPdfPoint(tx + 1, ty);
+        const down = vp.convertToPdfPoint(tx, ty + 1);
+        const rx = right[0] - a[0], ry = right[1] - a[1];
+        const dxu = down[0] - a[0], dyu = down[1] - a[1];
+        const dlen = Math.hypot(dxu, dyu) || 1;
+        const bx = a[0] + (dxu / dlen) * fontPt * 0.8;
+        const by = a[1] + (dyu / dlen) * fontPt * 0.8;
+        const angle = Math.atan2(ry, rx) * 180 / Math.PI;
+        const col = hexToRgb(p.color);
+        outPage.drawText(String(p.text), { x: bx, y: by, size: fontPt, font: font, color: rgb(col.r, col.g, col.b), rotate: degrees(angle), lineHeight: fontPt * 1.15 });
+        continue;
+      }
       const rec = LIB[p.imgId]; if (!rec) continue;
       const img = await embed(rec, p.imgId);
       const dx = p.fx * vp.width, dy = p.fy * vp.height;
@@ -613,7 +667,7 @@ async function buildSignedPdf() {
 
 async function generate() {
   if (!pdfBytes) return;
-  if (!placements.length) { setSignStatus("Ajoute au moins une signature ou un cachet.", "err"); return; }
+  if (!placements.length) { setSignStatus("Ajoute au moins une signature, un cachet ou un texte.", "err"); return; }
   const btn = document.getElementById("gen-btn");
   btn.disabled = true; setSignStatus("Génération du PDF…");
   try {
