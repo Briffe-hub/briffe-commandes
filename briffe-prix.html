@@ -483,6 +483,7 @@ async function match(providerId){
     }
     RES = j;
     RES.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; initForms(r); });
+    await applyHistChecks(RES, DOC);
     APPLIED = false; document.getElementById('applyPanel').innerHTML = '';
     if(RES.lignes.some(function(r){ return r.action === 'creer'; })) Promise.all([ensureReference(), ensureCatalogue()]).then(function(){ renderLines(); }).catch(function(){});
     prog.innerHTML = prog.innerHTML.replace('Rapprochement avec Sextan…', 'Rapprochement terminé.');
@@ -900,7 +901,7 @@ function histLines(results){
       article_name: isNew ? r.nouvel.name : (r.article ? r.article.name : null),
       unite_article: isNew ? r.nouvel.unit : (r.article ? r.article.unit : ''),
       prix_unitaire: isNew ? r.prix_nouvel : r.prix_saisi,
-      prix_facture: r.ligne.prix, unite_prix: r.ligne.unite_prix, quantite: r.ligne.quantite,
+      prix_facture: r.ligne.prix, unite_prix: r.ligne.unite_prix, quantite: r.ligne.quantite, base_prix: r.ligne.base_prix || null, manuel: !!r.manuel,
       negocie_avant: r.ligne_fournisseur ? r.ligne_fournisseur.price : null, dernier_avant: r.article ? r.article.price : null,
       action: HIST_ONLY ? 'historique' : (r.stale ? 'anterieur' : r.action), statut: r.statut, applique: !!(res && res.ok && !res.dry_run), message: res ? res.message : (r.stale || null)
     };
@@ -975,6 +976,32 @@ async function startApply(){
 }
 document.getElementById('btnApply').onclick = startApply;
 
+
+/* ---------- Cohérence avec l'historique ---------- */
+function normDes(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60); }
+function histGroupKey(r, pid){ return r.article && r.action !== 'creer' ? String(r.article.id) : 'x:' + (pid || '?') + ':' + (normDes(r.ligne.designation) || 'ref-' + (r.ligne.ref || '?')); }
+// Écart d'un facteur 10, 100 ou 1000 avec le dernier relevé du même produit = conversion probablement fausse
+function powerOf10(ratio){ if(!(ratio > 0)) return 0; var l = Math.log10(ratio), k = Math.round(l); return k !== 0 && Math.abs(l - k) < 0.08 ? k : 0; }
+async function applyHistChecks(res, doc){
+  try{ await loadHist(); }catch(e){ return; }
+  if(!HIST || !HIST.articles) return;
+  var pid = res.fournisseur ? res.fournisseur.id : null;
+  res.lignes.forEach(function(r){
+    var isNew = r.action === 'creer' || !r.article;
+    var h = HIST.articles[histGroupKey(r, pid)];
+    if(!h || !h.points || !h.points.length) return;
+    var last = h.points[h.points.length - 1];
+    if(isNew && h.unit && r.nouvel && h.unit !== r.nouvel.unit) return; // unités différentes : pas comparable
+    var v = isNew ? r.prix_nouvel : r.prix_saisi;
+    var k = powerOf10(v / last.p);
+    if(k){
+      var fixed = Math.round(v / Math.pow(10, k) * 1e6) / 1e6;
+      if(isNew) r.prix_nouvel = fixed; else r.prix_saisi = fixed;
+      r.alertes.push('Conversion corrigée d\'après l\'historique (÷ ' + Math.pow(10, k) + ', dernier relevé ' + fmtP(last.p) + ' le ' + last.d + ') : à vérifier.');
+      if(r.statut === 'ok') r.statut = 'conversion';
+    }
+  });
+}
 /* ---------- Historique ---------- */
 async function loadHist(force){
   if(HIST && !force) return HIST;
@@ -995,20 +1022,83 @@ function histRows(){
   rows.sort(function(x, y){ return String(y.last.d).localeCompare(String(x.last.d)) || x.a.name.localeCompare(y.a.name); });
   return rows;
 }
+function suspect(p, older){
+  if(!older || !(older.p > 0)) return '';
+  var ratio = p.p / older.p;
+  if(powerOf10(ratio)) return ' <span class="badge b-err" title="Écart d\'un facteur ' + Math.round(ratio >= 1 ? ratio : 1 / ratio) + ' : conversion d\'unité probablement fausse">conversion ?</span>';
+  if(ratio > 1.5 || ratio < 0.667) return ' <span class="badge b-ecart" title="Écart important : vérifier qu\'il s\'agit bien du même produit">à vérifier</span>';
+  return '';
+}
 function renderHist(){
   var rows = histRows(), box = document.getElementById('histList');
   document.getElementById('histInfo').textContent = (HIST.docs || []).length + ' document(s) · ' + Object.keys(HIST.articles || {}).length + ' article(s) suivis' + (rows.length !== Object.keys(HIST.articles || {}).length ? ' · ' + rows.length + ' affiché(s)' : '');
   document.getElementById('btnHistCsv').disabled = !rows.length;
   box.innerHTML = rows.slice(0, 200).map(function(x){
-    var pts = x.a.points.slice().reverse();
-    return '<details class="hrow"><summary><span>' + esc(x.a.name) + (x.k.indexOf('x:') === 0 ? ' <span class="muted">(hors Sextan)</span>' : '') + '</span>' +
+    var pts = x.a.points.slice().reverse(), hors = x.k.indexOf('x:') === 0;
+    var lastSus = suspect(x.last, x.prev);
+    return '<details class="hrow" data-k="' + esc(x.k) + '"' + (OPEN_HK === x.k ? ' open' : '') + '><summary><span>' + esc(x.a.name) + (hors ? ' <span class="muted">(hors Sextan)</span>' : '') + '</span>' +
       '<span>' + fmtP(x.last.p) + ' € / ' + esc(x.a.unit || 'u.') + '</span>' +
-      '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var)) + '</span>' +
-      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(x.last.d || '') + '</span></summary>' +
-      '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th></tr>' +
-      pts.map(function(p, i){ var older = pts[i + 1]; return '<tr><td>' + esc(p.d) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) : '') + '</td></tr>'; }).join('') +
+      '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var) + lastSus) + '</span>' +
+      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(x.last.d || '') + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
+      (hors ? '<div class="row" style="padding:8px 12px"><button class="ghost" data-att="1">Rattacher à une fiche Sextan…</button><span class="small muted">Les prochains documents avec cette désignation iront sur la fiche choisie.</span></div><div class="att" hidden style="padding:0 12px 10px"></div>' : '') +
+      '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
+      pts.map(function(p, i){ var older = pts[i + 1];
+        return '<tr><td>' + esc(p.d) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
+          '<td>' + (p.li !== undefined ? '<button class="ghost" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
       '</table></div></details>';
   }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
+  box.querySelectorAll('.hrow').forEach(function(el){
+    el.addEventListener('toggle', function(){ if(el.open) OPEN_HK = el.dataset.k; });
+    el.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = async function(){
+      if(!confirm('Écarter ce relevé de l\'historique ? (le document reste archivé)')) return;
+      var parts = this.dataset.del.split('|');
+      try{ var j = await post('prix-historique', { action:'supprimer_point', doc: parts[0], li: parseInt(parts[1], 10) }); if(!j.ok) throw new Error(j.error); HIST = j; renderHist(); }
+      catch(e){ alert(e.message); }
+    }; });
+    var att = el.querySelector('[data-att]'); if(att) att.onclick = function(){ openAttach(el); };
+  });
+}
+var OPEN_HK = null;
+// Prix d'un relevé recalculé pour l'unité de la fiche cible
+function repriceForUnit(p, unit){
+  var au = articleUnit(unit), up = String(p.up || '').toUpperCase();
+  if(au.dim === 'piece') return /^(PCE|PC|PIECE|PIÈCE|UN|U|UNITE|BARQ|BARQUETTE|SACHET|BOTTE|COLIS|CAR)$/.test(up) && p.pf > 0 ? p.pf : null;
+  if((up === 'KG' || up === 'L') && p.pf > 0) return p.pf / 1000 * au.q;
+  return p.p; // même dimension (g/ml) : on garde le prix déjà converti
+}
+function openAttach(el){
+  var k = el.dataset.k, a = HIST.articles[k], box = el.querySelector('.att');
+  box.hidden = false;
+  box.innerHTML = '<input placeholder="Rechercher la fiche Sextan (ex. fraises)" style="width:100%"><div class="search-res"></div><div class="prev"></div>';
+  var q = box.querySelector('input'), res = box.querySelector('.search-res'), prev = box.querySelector('.prev');
+  q.focus();
+  q.oninput = async function(){
+    var words = String(this.value).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).filter(Boolean);
+    if(!words.length){ res.innerHTML = ''; return; }
+    try{
+      var cat = await ensureCatalogue();
+      var hits = cat.articles.filter(function(x){ var hay = x.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); return words.every(function(w){ return hay.indexOf(w) >= 0; }); }).slice(0, 20);
+      res.innerHTML = hits.map(function(x){ return '<div data-id="' + x.id + '">' + esc(x.name) + ' <span class="muted">· ' + esc(x.unit) + '</span></div>'; }).join('') || '<div class="muted">Aucun résultat</div>';
+      res.querySelectorAll('[data-id]').forEach(function(d){ d.onclick = function(){
+        var art = cat.articles.find(function(x){ return String(x.id) === d.dataset.id; });
+        var pts = a.points.map(function(p){ return { doc: p.doc, li: p.li, d: p.d, avant: p.p, apres: repriceForUnit(p, art.unit), up: p.up, pf: p.pf }; });
+        var bad = pts.filter(function(p){ return p.apres === null; }).length;
+        prev.innerHTML = '<div class="panel"><h3>Rattacher « ' + esc(a.name) + ' » à « ' + esc(art.name) + ' » (' + esc(art.unit) + ')</h3>' +
+          '<div class="tablewrap"><table class="btable"><tr><th>Date</th><th>Facturé</th><th>Prix actuel / ' + esc(a.unit || 'u.') + '</th><th>Nouveau prix / ' + esc(art.unit) + '</th></tr>' +
+          pts.map(function(p){ return '<tr><td>' + esc(p.d) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + fmtP(p.avant) + '</td><td>' + (p.apres === null ? '<span style="color:var(--err)">non convertible</span>' : fmtP(p.apres)) + '</td></tr>'; }).join('') + '</table></div>' +
+          (bad ? '<p class="small" style="color:var(--err)">' + bad + ' relevé(s) ne peuvent pas être convertis dans l\'unité de la fiche : choisis une fiche dans une unité compatible.</p>' : '') +
+          '<div class="row" style="margin-top:10px"><button class="primary" data-go="1"' + (bad ? ' disabled' : '') + '>Confirmer le rattachement</button><button data-no="1">Annuler</button></div></div>';
+        prev.querySelector('[data-no]').onclick = function(){ box.hidden = true; };
+        prev.querySelector('[data-go]').onclick = async function(){
+          this.disabled = true;
+          try{
+            var j = await post('prix-historique', { action:'rattacher', groupe: k, article: { id: art.id, name: art.name, unit: art.unit }, points: pts.map(function(p){ return { doc: p.doc, li: p.li, p: p.apres }; }) });
+            if(!j.ok) throw new Error(j.error); HIST = j; OPEN_HK = String(art.id); document.getElementById('histQ').value = art.name; renderHist();
+          }catch(e){ alert(e.message); this.disabled = false; }
+        };
+      }; });
+    }catch(e){ res.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+  };
 }
 document.getElementById('btnHist').onclick = async function(){
   this.disabled = true;
@@ -1115,6 +1205,7 @@ async function runBatch(){
         if(g > 0) BATCH.splice(BATCH.indexOf(it) + g, 0, x);
         x.status = 'rapprochement'; renderBatch();
         x.res = await matchQuiet(x.doc);
+        await applyHistChecks(x.res, x.doc);
         x.key = itemKey(x);
         x.dupe = !!(HIST && (HIST.docs || []).some(function(d){ return d.key === x.key; }));
         x.status = 'prêt'; x.pages = null; // libère la mémoire des images

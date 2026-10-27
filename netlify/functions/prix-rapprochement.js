@@ -197,7 +197,10 @@ function matchProvider(doc, cat, forcedId) {
 function pct(a, b) { return a !== null && b > 0 ? (a / b - 1) * 100 : null; }
 const round = (v, d) => (v === null || v === undefined ? null : Math.round(v * Math.pow(10, d)) / Math.pow(10, d));
 
-function matchLines(doc, cat, providerId, seuil) {
+const normDes = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+
+function matchLines(doc, cat, providerId, seuil, aliases) {
+  const myAliases = (aliases && providerId && aliases[providerId]) || {};
   const out = [];
   (doc.lignes || []).forEach((l, idx) => {
     const r = { idx, ligne: l, statut: null, alertes: [], candidats: [], article: null, ligne_fournisseur: null, conversion: null, prix_converti: null, ecart_negocie: null, ecart_dernier: null, action: "aucune" };
@@ -219,8 +222,18 @@ function matchLines(doc, cat, providerId, seuil) {
       r.candidats = scored.map(h => ({ id: h.a.id, name: h.a.name, unit: h.a.unit, via: "référence", score: round(h.score, 2) }));
       if (scored.length > 1) { r.statut = "ambigu"; r.alertes.push("La référence " + l.ref + " est rattachée à " + scored.length + " articles : " + scored.map(h => "« " + h.a.name + " »").join(", ") + "."); }
       r.conversion = best.conv;
+    } else if (myAliases[normDes(l.designation)] && cat.articles.find(a => a.id === myAliases[normDes(l.designation)].id)) {
+      // 2) correspondance apprise (même fournisseur, même désignation) : les références changent, la désignation reste
+      const a = cat.articles.find(x => x.id === myAliases[normDes(l.designation)].id);
+      const s = a.suppliers.find(x => x.provider_id === providerId) || null;
+      r.article = { id: a.id, name: a.name, unit: a.unit, price: a.price };
+      r.ligne_fournisseur = s;
+      r.conversion = convertPrice(l, a, s);
+      r.via = "correspondance";
+      r.candidats = [{ id: a.id, name: a.name, unit: a.unit, via: "correspondance", score: 1 }];
+      r.alertes.push("Rattaché à « " + a.name + " » par une correspondance déjà validée pour cette désignation.");
     } else {
-      // 2) par nom
+      // 3) par nom
       const sims = cat.articles.map(a => ({ a, score: similarity(l.designation, a.name) })).filter(x => x.score >= 0.34).sort((x, y) => y.score - x.score).slice(0, 5);
       r.candidats = sims.map(x => ({ id: x.a.id, name: x.a.name, unit: x.a.unit, via: "nom", score: round(x.score, 2) }));
       if (sims.length) {
@@ -291,7 +304,8 @@ exports.handler = async function (event) {
     if (!doc || !Array.isArray(doc.lignes)) return json(400, { error: "Document manquant." });
     const seuil = num(body.seuil) !== null ? num(body.seuil) : 1;
     const prov = matchProvider(doc, cat, body.provider_id ? Number(body.provider_id) : null);
-    const lignes = matchLines(doc, cat, prov.provider && prov.provider.id, seuil);
+    const aliases = await blobGet("alias").catch(() => null);
+    const lignes = matchLines(doc, cat, prov.provider && prov.provider.id, seuil, aliases);
     return json(200, {
       ok: true, fournisseur: prov.provider, fournisseur_via: prov.how, seuil,
       lignes, providers: cat.providers, catalogue_at: cat.at, ms: Date.now() - started
