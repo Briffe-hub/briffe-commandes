@@ -797,6 +797,7 @@ function payloadLine(r){
 function validate(){
   var errs = [];
   if(!providerId()) errs.push('Choisis le fournisseur.');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(document.getElementById('docDate').value)) errs.push('Renseigne la date du document (date de facture ou de BL) : elle date les prix dans l\'historique.');
   RES.lignes.forEach(function(r){
     var name = '« ' + r.ligne.designation + ' »';
     if(r.action === 'choisir') errs.push(name + ' : référence en double, choisis l\'article et l\'action.');

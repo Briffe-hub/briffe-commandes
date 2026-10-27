@@ -64,7 +64,7 @@ function merge(hist, entry) {
     if (!a.points.length) delete hist.articles[id];
   }
   const f = entry.fournisseur || {};
-  const date = entry.document && entry.document.date || (entry.saisi_le || "").slice(0, 10);
+  const date = entry.document && entry.document.date;
   let n = 0;
   for (const l of entry.lignes || []) {
     const p = num(l.prix_unitaire);
@@ -101,6 +101,7 @@ exports.handler = async function (event) {
     if (body.action === "ajouter") {
       const e = body.entry;
       if (!e || !e.key || !Array.isArray(e.lignes)) return json(400, { error: "Entrée invalide." });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test((e.document && e.document.date) || "")) return json(400, { error: "Date du document obligatoire : elle date les prix dans l'historique." });
       e.saisi_le = new Date().toISOString();
       await blobSet("doc/" + e.key, e);
       const hist = merge(await blobGet("historique"), e);
