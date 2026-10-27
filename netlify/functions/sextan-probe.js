@@ -70,6 +70,22 @@ exports.handler = async function (event) {
 
   const report = { base: BASE, keyLen: API_KEY.length, at: new Date().toISOString() };
 
+  // Mode ?mode=scopes : une lecture par ressource, pour cartographier ce que la clé obtient réellement.
+  const q = event.queryStringParameters || {};
+  if (q.mode === "scopes") {
+    const RES = ["articles", "products", "events", "packs", "menus", "formules", "places", "staff",
+                 "clients", "invoices", "quotes", "providers", "purchase-orders", "payments"];
+    const results = await Promise.all(RES.map(r => call("/api/" + r + "/search", { limit: 1 }, 6000)));
+    report.scopes = {};
+    results.forEach((r, i) => {
+      const err = r.json && (r.json.error || r.json.message);
+      report.scopes[RES[i]] = r.status === 200 && r.json && r.json.success !== false
+        ? "OK"
+        : (r.status + (err ? " " + err : "") + (r.error ? " " + r.error : ""));
+    });
+    return { statusCode: 200, headers: headers(), body: JSON.stringify(report, null, 2) };
+  }
+
   // 1) Lectures (en parallèle)
   const [art, prov, ref] = await Promise.all([
     firstOk([
