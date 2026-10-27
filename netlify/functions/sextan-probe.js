@@ -63,6 +63,86 @@ function summarize(r) {
   };
 }
 
+// ---------- MCP ----------
+// Lit une réponse JSON ou SSE (lignes « data: {...} ») et renvoie le message JSON-RPC.
+function parseMcp(txt) {
+  try { return JSON.parse(txt); } catch (e) {}
+  const lines = String(txt).split(/\r?\n/).filter(l => l.startsWith("data:"));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try { return JSON.parse(lines[i].slice(5).trim()); } catch (e) {}
+  }
+  return null;
+}
+
+async function mcpPost(authHeaders, sessionId, payload, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || 6000);
+  try {
+    const h = Object.assign({ "Content-Type": "application/json", "Accept": "application/json, text/event-stream" }, authHeaders);
+    if (sessionId) h["Mcp-Session-Id"] = sessionId;
+    const r = await fetch(BASE + "/mcp", { method: "POST", headers: h, body: JSON.stringify(payload), signal: ctrl.signal });
+    const txt = await r.text();
+    return { status: r.status, session: r.headers.get("mcp-session-id"), msg: parseMcp(txt), snippet: txt.slice(0, 400) };
+  } catch (e) {
+    return { status: 0, error: e.name + ": " + e.message };
+  } finally { clearTimeout(t); }
+}
+
+// Extrait le JSON renvoyé par un outil MCP (content[0].text en général).
+function toolPayload(msg) {
+  if (!msg) return null;
+  if (msg.error) return { rpc_error: msg.error };
+  const res = msg.result || {};
+  if (res.structuredContent) return res.structuredContent;
+  const c = Array.isArray(res.content) && res.content.find(x => x.type === "text");
+  if (c) { try { return JSON.parse(c.text); } catch (e) { return { text: String(c.text).slice(0, 400), isError: res.isError }; } }
+  return res;
+}
+
+async function probeMcp() {
+  const variants = [
+    { name: "X-API-Key", h: { "X-API-Key": API_KEY } },
+    { name: "Bearer", h: { "Authorization": "Bearer " + API_KEY } }
+  ];
+  const out = { variants: {} };
+  for (const v of variants) {
+    const rep = {};
+    const init = await mcpPost(v.h, null, {
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "briffetools-probe", version: "1.0" } }
+    });
+    rep.initialize = { status: init.status, ok: !!(init.msg && init.msg.result), server: init.msg && init.msg.result && init.msg.result.serverInfo, error: init.error || (init.msg && init.msg.error), snippet: init.msg && init.msg.result ? undefined : init.snippet };
+    if (!(init.msg && init.msg.result)) { out.variants[v.name] = rep; continue; }
+    const sid = init.session;
+    rep.session = !!sid;
+    await mcpPost(v.h, sid, { jsonrpc: "2.0", method: "notifications/initialized" }, 4000);
+
+    const list = await mcpPost(v.h, sid, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const tools = (list.msg && list.msg.result && list.msg.result.tools || []).map(t => t.name);
+    rep.tools_count = tools.length;
+    rep.has = {};
+    ["search_articles", "article_reference", "update_article", "create_article", "search_providers", "update_provider", "category_tree"].forEach(n => { rep.has[n] = tools.includes(n); });
+
+    const s = await mcpPost(v.h, sid, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_articles", arguments: { search: "beurre", limit: 1 } } });
+    const sp = toolPayload(s.msg);
+    rep.search_articles = { status: s.status, success: sp && sp.success, count: sp && sp.count, first: sp && Array.isArray(sp.data) && sp.data[0] ? sp.data[0].name : undefined, detail: sp && sp.success ? undefined : (sp || s.snippet) };
+
+    const u = await mcpPost(v.h, sid, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "update_article", arguments: { id: TEST_ARTICLE_ID, comment: "", dry_run: true } } });
+    const up = toolPayload(u.msg);
+    rep.update_article_dry_run = { status: u.status, success: up && up.success, dry_run: up && up.dry_run, detail: up && up.success ? undefined : (up || u.snippet) };
+
+    out.variants[v.name] = rep;
+    if (rep.search_articles.success) break; // une variante qui marche suffit
+  }
+  const ok = Object.entries(out.variants).find(([, r]) => r.search_articles && r.search_articles.success);
+  out.verdict = {
+    auth_qui_marche: ok ? ok[0] : "aucune",
+    lecture_articles: ok ? "OUI" : "NON",
+    update_simule: ok && ok[1].update_article_dry_run && ok[1].update_article_dry_run.success && ok[1].update_article_dry_run.dry_run === true ? "OUI" : "NON"
+  };
+  return out;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (!authorized(event)) return { statusCode: 401, headers: headers(), body: JSON.stringify({ error: "Mot de passe manquant ou incorrect (?pass=...)" }) };
@@ -86,6 +166,13 @@ exports.handler = async function (event) {
         ? "OK"
         : (r.status + (err ? " " + err : "") + (r.error ? " " + r.error : ""));
     });
+    return { statusCode: 200, headers: headers(), body: JSON.stringify(report, null, 2) };
+  }
+
+  // Mode ?mode=mcp : passe par le serveur MCP Sextan (/mcp, JSON-RPC « streamable HTTP ») avec la clé API.
+  // Lecture des articles + update simulé (dry_run, commentaire déjà vide) via les outils MCP.
+  if (q.mode === "mcp") {
+    report.mcp = await probeMcp();
     return { statusCode: 200, headers: headers(), body: JSON.stringify(report, null, 2) };
   }
 
