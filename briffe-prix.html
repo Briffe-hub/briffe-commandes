@@ -91,8 +91,35 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 .search-res div:hover{background:var(--panel-h)}
 .sumbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .err-box{border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.07);color:#fca5a5;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:12px}
+.form{grid-column:1/-1;border-top:1px dashed var(--line-3);padding-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.form .wide{grid-column:1/-1}
+.form .hint{font-size:11.5px;color:var(--mut);line-height:1.5}
+.allg{display:flex;flex-wrap:wrap;gap:6px}
+.allg label{display:inline-flex;align-items:center;gap:5px;font-size:11px;border:1px solid var(--line-2);border-radius:999px;padding:5px 9px;cursor:pointer;text-transform:none;letter-spacing:0;color:var(--ink)}
+.allg label.on{border-color:var(--ok);color:var(--ok)}
+.allg input{display:none}
+.allg.missing label{border-color:rgba(239,68,68,.5)}
+.res{grid-column:1/-1;font-size:12px;border-radius:7px;padding:8px 10px;line-height:1.5}
+.res.ok{background:rgba(34,197,94,.08);color:#86efac}
+.res.ko{background:rgba(239,68,68,.08);color:#fca5a5}
+.res.sim{background:rgba(96,165,250,.08);color:#93c5fd}
+.ln.done{border-left:3px solid var(--ok);opacity:.8}
+.panel{border:1px solid var(--line-3);border-radius:9px;padding:14px;margin-top:14px;background:#111}
+.panel h3{margin:0 0 10px;font-size:13px;font-weight:500}
+.panel ul{margin:0 0 12px;padding-left:18px;font-size:12px;line-height:1.7}
+.hist-list{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.hrow{border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2)}
+.hrow summary{list-style:none;cursor:pointer;padding:10px 12px;display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr;gap:10px;font-size:12.5px;align-items:center}
+.hrow summary::-webkit-details-marker{display:none}
+.hrow table{width:100%;border-collapse:collapse;font-size:12px}
+.hrow th,.hrow td{text-align:left;padding:6px 12px;border-top:1px solid var(--line)}
+.hrow th{color:var(--mut-2);font-weight:400;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
+.tablewrap{overflow-x:auto}
 @media (max-width:820px){
   .ln{grid-template-columns:1fr 1fr}
+}
+@media (max-width:620px){
+  .hrow summary{grid-template-columns:1fr 1fr}
 }
 @media (max-width:520px){
   .ln{grid-template-columns:1fr}
@@ -159,10 +186,22 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
       <div class="small muted" id="summary"></div>
       <div class="row">
         <button id="btnCsv">Exporter CSV</button>
-        <button class="primary" id="btnApply" disabled title="Étape 3 : écriture dans Sextan">Enregistrer dans Sextan</button>
+        <button class="primary" id="btnApply" disabled>Enregistrer dans Sextan</button>
       </div>
     </div>
-    <p class="small muted" style="margin:10px 0 0">Enregistrement dans Sextan et historique des prix : prochaine étape. Pour l'instant, le module lit, rapproche et contrôle, sans rien modifier.</p>
+    <div id="applyPanel"></div>
+    <p class="small muted" style="margin:10px 0 0;line-height:1.6">L'enregistrement commence toujours par une simulation : rien n'est écrit dans Sextan avant ta confirmation. Toutes les lignes lues (même sans modification) alimentent l'historique des prix.</p>
+  </section>
+  <!-- Historique -->
+  <section class="card" id="histCard">
+    <h2>3 · Historique des prix</h2>
+    <div class="row">
+      <input id="histQ" placeholder="Rechercher un article, une référence, un fournisseur" style="flex:1;min-width:200px">
+      <button id="btnHist">Charger</button>
+      <button id="btnHistCsv" disabled>Exporter CSV</button>
+    </div>
+    <div class="small muted" id="histInfo" style="margin-top:10px"></div>
+    <div class="hist-list" id="histList"></div>
   </section>
 </main>
 
@@ -394,7 +433,9 @@ async function match(providerId){
       throw new Error(j.error || 'Rapprochement impossible.');
     }
     RES = j;
-    RES.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; });
+    RES.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; initForms(r); });
+    APPLIED = false; document.getElementById('applyPanel').innerHTML = '';
+    if(RES.lignes.some(function(r){ return r.action === 'creer'; })) Promise.all([ensureReference(), ensureCatalogue()]).then(function(){ renderLines(); }).catch(function(){});
     prog.innerHTML = prog.innerHTML.replace('Rapprochement avec Sextan…', 'Rapprochement terminé.');
     renderResult();
   }catch(e){ prog.innerHTML += '<div class="err-box">' + esc(e.message) + '</div>'; }
@@ -468,6 +509,7 @@ var ST = {
   conversion:{ t:'Unité à vérifier', b:'b-info' }, inconnu:{ t:'Inconnu dans Sextan', b:'b-err' }
 };
 var ACTIONS = [
+  ['choisir', 'À départager : choisir l\'action'],
   ['aucune', 'Aucune modification'],
   ['maj_prix', 'MAJ négocié + dernier prix'],
   ['maj_dernier', 'MAJ dernier prix seul'],
@@ -493,6 +535,7 @@ function renderResult(){
     'Lu : « ' + esc(DOC.fournisseur.nom || '?') + ' »' + (RES.fournisseur ? ' → ' + esc(RES.fournisseur.name) + ' (' + esc(RES.fournisseur_via) + ')' : ' → fournisseur non reconnu') +
     (d.bl && d.bl.length ? ' · BL ' + esc(d.bl.join(', ')) : '') +
     (DOC.remarques.length ? '<br>Remarques de lecture : ' + esc(DOC.remarques.join(' · ')) : '');
+  document.getElementById('btnApply').disabled = false;
   renderChips(); renderLines();
 }
 function counts(){
@@ -522,7 +565,7 @@ function lineHtml(r){
   var alerts = (r.alertes || []).slice();
   if(r.manuel) alerts = alerts.filter(function(a){ return !/^La référence|^Aucune fiche/.test(a); });
   if(r.conversion && r.conversion.value !== null) alerts.push('Conversion : ' + r.conversion.how + '.');
-  return '<div class="ln st-' + r.statut + (r.action === 'ignorer' ? ' ignored' : '') + '" data-i="' + r.idx + '">' +
+  return '<div class="ln st-' + r.statut + (r.action === 'ignorer' ? ' ignored' : '') + (r.result && r.result.ok && !r.result.dry_run ? ' done' : '') + '" data-i="' + r.idx + '">' +
     '<div><div class="lbl">Document</div><div class="des">' + esc(l.designation) + '</div>' +
       '<div class="ref">' + (l.ref ? 'Réf. ' + esc(l.ref) : 'Sans référence') + (l.quantite !== null ? ' · ' + fmt(l.quantite, 3).replace(/,?0+$/, '') + ' ' + esc(l.unite_quantite || '') : '') + '</div>' +
       '<span class="badge ' + st.b + '">' + st.t + '</span></div>' +
@@ -537,6 +580,7 @@ function lineHtml(r){
       '<div style="margin-top:8px">' + actSel + '</div>' +
     '</div>' +
     '<ul class="alerts">' + alerts.map(function(a){ return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' +
+    formHtml(r) + resultHtml(r) +
   '</div>';
 }
 function renderLines(){
@@ -582,7 +626,12 @@ function bindLine(el){
     var v = parseFloat(String(this.value).replace(/\s/g, '').replace(',', '.'));
     r.prix_saisi = isFinite(v) ? v : null; r.manuel = true; renderLines();
   };
-  el.querySelector('[data-k="act"]').onchange = function(){ r.action = this.value; renderLines(); };
+  el.querySelector('[data-k="act"]').onchange = function(){
+    r.action = this.value; r.result = null;
+    if(r.action === 'creer') Promise.all([ensureReference(), ensureCatalogue()]).then(function(){ renderLines(); }).catch(function(e){ alert(e.message); });
+    renderLines();
+  };
+  bindForm(el, r);
 }
 function renderSummary(){
   var tally = {};
@@ -616,6 +665,308 @@ document.getElementById('btnCsv').onclick = function(){
   a.download = 'controle-prix-' + (RES.fournisseur ? RES.fournisseur.name.replace(/\W+/g, '-').toLowerCase() : 'fournisseur') + '-' + (document.getElementById('docNum').value || 'document') + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
 };
+
+/* =========================================================
+   Étape 3 : formulaires (rattacher / créer), enregistrement, historique
+   ========================================================= */
+var REF = null, APPLIED = false, HIST = null;
+async function ensureReference(){
+  if(REF) return REF;
+  var j = await post('prix-appliquer', { action:'reference' });
+  if(!j.ok) throw new Error(j.error || 'Classification Sextan indisponible.');
+  REF = j; return REF;
+}
+function compatDim(a, b){ return a === b || (a !== 'piece' && b !== 'piece'); }
+function defaultLot(line, unit){
+  var au = articleUnit(unit), bp = line.base_prix, up = String(line.unite_prix || '').toUpperCase();
+  if(bp && bp.quantite > 0){
+    var bd = bp.unite === 'g' ? 'masse' : bp.unite === 'ml' ? 'volume' : 'piece';
+    if(compatDim(bd, au.dim)) return Math.round(bp.quantite / au.q * 1000) / 1000;
+  }
+  if(au.dim !== 'piece' && (up === 'KG' || up === 'L')) return 1000 / au.q;
+  return 1;
+}
+function defaultCond(line){
+  var up = String(line.unite_prix || '').toUpperCase().replace(/[^A-Z]/g, '');
+  return !up || up === 'UN' || up === 'U' ? 'COLIS' : up;
+}
+function cleanName(d){
+  var t = String(d || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+function initForms(r){
+  var l = r.ligne;
+  var unitGuess = l.base_prix ? (l.base_prix.unite === 'piece' ? 'pièce' : 'g') : (/^(KG|L)$/.test(String(l.unite_prix || '').toUpperCase()) ? 'g' : 'pièce');
+  var artUnit = r.article ? r.article.unit : unitGuess;
+  r.lot = defaultLot(l, artUnit);
+  r.unite_cond = defaultCond(l);
+  r.nouvel = { name: cleanName(l.designation), unit: unitGuess, rayon:'', category:'', family:'', allergens:[], sans:false };
+  r.nouvel_lot = defaultLot(l, unitGuess);
+  r.prix_nouvel = convertPrice(l, { unit: unitGuess, price: null }, null).value;
+  r.result = null;
+}
+function refHint(r){
+  if(!r.article || !CAT) return '';
+  var a = CAT.articles.find(function(x){ return x.id === r.article.id; });
+  if(!a || !a.allergen) return '';
+  var names = String(a.allergen).split(',').map(function(id){ var al = REF && REF.allergens.find(function(x){ return String(x.id) === id.trim(); }); return al ? al.name.toLowerCase() : id; });
+  return '<div class="hint wide">Pour mémoire, la fiche « ' + esc(a.name) + ' » déclare : ' + esc(names.join(', ')) + '. Vérifie l\'étiquette du produit livré avant de cocher.</div>';
+}
+function optList(arr, cur, empty){ return (empty ? '<option value="">' + empty + '</option>' : '') + arr.map(function(v){ return '<option' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join(''); }
+function formHtml(r){
+  if(r.action === 'rattacher'){
+    if(!r.article) return '<div class="form"><div class="hint wide">Choisis d\'abord la fiche Sextan à laquelle rattacher cette référence.</div></div>';
+    return '<div class="form">' +
+      '<div class="hint wide">La référence ' + esc(r.ligne.ref || '(sans réf.)') + ' de ' + esc(RES.fournisseur ? RES.fournisseur.name : 'ce fournisseur') + ' sera ajoutée à « ' + esc(r.article.name) + ' », sans toucher aux autres fournisseurs de la fiche.</div>' +
+      '<label class="fld">Quantité par conditionnement (' + esc(r.article.unit) + ')<input data-f="lot" inputmode="decimal" value="' + esc(String(r.lot).replace('.', ',')) + '"></label>' +
+      '<label class="fld">Nom du conditionnement<input data-f="cond" value="' + esc(r.unite_cond) + '"></label>' +
+    '</div>';
+  }
+  if(r.action === 'creer'){
+    if(!REF) return '<div class="form"><div class="hint wide">Chargement de la classification Sextan…</div></div>';
+    var n = r.nouvel, tree = REF.tree || [];
+    var t1 = tree.find(function(x){ return x.name === n.rayon; }), c2 = t1 && t1.children.find(function(x){ return x.name === n.category; });
+    var allg = (REF.allergens || []).filter(function(a){ return a.id !== 0; }).map(function(a){
+      var on = n.allergens.indexOf(String(a.id)) >= 0;
+      return '<label class="' + (on ? 'on' : '') + '"><input type="checkbox" data-al="' + a.id + '"' + (on ? ' checked' : '') + '>' + esc(a.name.toLowerCase()) + '</label>';
+    }).join('');
+    var missing = !n.sans && !n.allergens.length;
+    return '<div class="form">' +
+      '<label class="fld wide">Nom du nouvel article<input data-f="name" value="' + esc(n.name) + '"></label>' +
+      '<label class="fld">Unité d\'usage<select data-f="unit">' + optList(REF.units || [], n.unit) + '</select></label>' +
+      '<label class="fld">Prix (€ / ' + esc(n.unit) + ')<input data-f="pnew" inputmode="decimal" value="' + (r.prix_nouvel === null || r.prix_nouvel === undefined ? '' : String(Math.round(r.prix_nouvel * 1e6) / 1e6).replace('.', ',')) + '"></label>' +
+      '<label class="fld">Qté par conditionnement<input data-f="nlot" inputmode="decimal" value="' + esc(String(r.nouvel_lot).replace('.', ',')) + '"></label>' +
+      '<label class="fld">Conditionnement<input data-f="cond" value="' + esc(r.unite_cond) + '"></label>' +
+      '<label class="fld">Type<select data-f="rayon">' + optList(tree.map(function(x){ return x.name; }), n.rayon, '—') + '</select></label>' +
+      '<label class="fld">Catégorie<select data-f="category">' + optList(t1 ? t1.children.map(function(x){ return x.name; }) : [], n.category, '—') + '</select></label>' +
+      '<label class="fld">Famille<select data-f="family">' + optList(c2 ? c2.children.map(function(x){ return x.name; }) : [], n.family, '—') + '</select></label>' +
+      '<div class="wide"><div class="lbl" style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut-2);margin-bottom:6px">Allergènes (obligatoire)</div>' +
+        '<div class="allg' + (missing ? ' missing' : '') + '"><label class="' + (n.sans ? 'on' : '') + '"><input type="checkbox" data-al="0"' + (n.sans ? ' checked' : '') + '>sans allergène</label>' + allg + '</div></div>' +
+      refHint(r) +
+    '</div>';
+  }
+  return '';
+}
+function resultHtml(r){
+  if(!r.result) return '';
+  var cls = !r.result.ok ? 'ko' : (r.result.dry_run ? 'sim' : 'ok');
+  var w = (r.result.warnings || []).filter(function(x){ return x.code !== 'SUPPLIERS_REPLACED'; }).map(function(x){ return x.message; });
+  return '<div class="res ' + cls + '">' + (r.result.ok ? (r.result.dry_run ? 'Simulation : ' : '✓ ') : '✗ ') + esc(r.result.message) +
+    (w.length ? '<br>' + esc(w.join(' · ')) : '') + '</div>';
+}
+function parseNum(v){ var n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : null; }
+function bindForm(el, r){
+  var f = function(k){ return el.querySelector('[data-f="' + k + '"]'); };
+  if(f('lot')) f('lot').onchange = function(){ r.lot = parseNum(this.value); r.result = null; };
+  if(f('cond')) f('cond').onchange = function(){ r.unite_cond = String(this.value).trim().toUpperCase(); r.result = null; };
+  if(r.action !== 'creer' || !REF) return;
+  f('name').onchange = function(){ r.nouvel.name = this.value.trim(); r.result = null; };
+  f('unit').onchange = function(){
+    r.nouvel.unit = this.value; r.nouvel_lot = defaultLot(r.ligne, this.value);
+    r.prix_nouvel = convertPrice(r.ligne, { unit:this.value, price:null }, null).value; r.result = null; renderLines();
+  };
+  f('pnew').onchange = function(){ r.prix_nouvel = parseNum(this.value); r.result = null; };
+  f('nlot').onchange = function(){ r.nouvel_lot = parseNum(this.value); r.result = null; };
+  f('rayon').onchange = function(){ r.nouvel.rayon = this.value; r.nouvel.category = ''; r.nouvel.family = ''; renderLines(); };
+  f('category').onchange = function(){ r.nouvel.category = this.value; r.nouvel.family = ''; renderLines(); };
+  f('family').onchange = function(){ r.nouvel.family = this.value; };
+  el.querySelectorAll('[data-al]').forEach(function(cb){ cb.onchange = function(){
+    var id = this.dataset.al;
+    if(id === '0'){ r.nouvel.sans = this.checked; if(this.checked) r.nouvel.allergens = []; }
+    else { r.nouvel.sans = false; var i = r.nouvel.allergens.indexOf(id); if(this.checked && i < 0) r.nouvel.allergens.push(id); if(!this.checked && i >= 0) r.nouvel.allergens.splice(i, 1); }
+    r.result = null; renderLines();
+  }; });
+}
+
+/* ---------- Enregistrement ---------- */
+var WRITE_ACTIONS = ['maj_prix', 'maj_dernier', 'rattacher', 'creer'];
+function providerId(){ return parseInt(document.getElementById('selProvider').value, 10) || null; }
+function docKey(){
+  var n = (document.getElementById('docNum').value || document.getElementById('docDate').value || 'sans-numero').replace(/[^A-Za-z0-9-]+/g, '-');
+  return (providerId() || 'x') + '_' + n;
+}
+function payloadLine(r){
+  var o = { key: String(r.idx), action: r.action, article_id: r.article ? r.article.id : null, ref: r.ligne.ref, designation: r.ligne.designation };
+  if(r.action === 'creer'){
+    o.prix = r.prix_nouvel; o.lot = r.nouvel_lot; o.unite_cond = r.unite_cond;
+    o.nouvel = { name: r.nouvel.name, unit: r.nouvel.unit, rayon: r.nouvel.rayon, category: r.nouvel.category, family: r.nouvel.family,
+      allergen: r.nouvel.sans ? '0' : (r.nouvel.allergens.length ? r.nouvel.allergens.join(',') : '') };
+  } else { o.prix = r.prix_saisi; o.lot = r.lot; o.unite_cond = r.unite_cond; }
+  return o;
+}
+function validate(){
+  var errs = [];
+  if(!providerId()) errs.push('Choisis le fournisseur.');
+  RES.lignes.forEach(function(r){
+    var name = '« ' + r.ligne.designation + ' »';
+    if(r.action === 'choisir') errs.push(name + ' : référence en double, choisis l\'article et l\'action.');
+    if(['maj_prix','maj_dernier','rattacher'].indexOf(r.action) >= 0){
+      if(!r.article) errs.push(name + ' : aucun article choisi.');
+      if(!(r.prix_saisi > 0)) errs.push(name + ' : prix manquant.');
+    }
+    if(r.action === 'rattacher' && !(r.lot > 0)) errs.push(name + ' : quantité par conditionnement manquante.');
+    if(r.action === 'creer'){
+      if(!r.nouvel.name) errs.push(name + ' : nom du nouvel article manquant.');
+      if(!r.nouvel.sans && !r.nouvel.allergens.length) errs.push(name + ' : allergènes à renseigner (ou « sans allergène »).');
+      if(!(r.prix_nouvel > 0)) errs.push(name + ' : prix manquant.');
+      if(!(r.nouvel_lot > 0)) errs.push(name + ' : quantité par conditionnement manquante.');
+    }
+  });
+  return errs;
+}
+// Lots de 6 lignes au plus, en gardant ensemble les lignes d'un même article
+function batches(lines){
+  var groups = {}, order = [];
+  lines.forEach(function(l){ var k = l.action === 'creer' ? 'c' + l.key : 'a' + l.article_id; if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(l); });
+  var out = [], cur = [];
+  order.forEach(function(k){ var g = groups[k]; if(cur.length && cur.length + g.length > 6){ out.push(cur); cur = []; } cur = cur.concat(g); });
+  if(cur.length) out.push(cur);
+  return out;
+}
+async function runApply(dry){
+  var lines = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0; }).map(payloadLine);
+  var all = [];
+  var bs = batches(lines);
+  for(var i = 0; i < bs.length; i++){
+    setPanel('<h3>' + (dry ? 'Simulation' : 'Enregistrement') + ' en cours… (' + (i + 1) + ' / ' + bs.length + ')</h3>');
+    var j = await post('prix-appliquer', { action:'appliquer', dry_run: dry, provider_id: providerId(), doc_key: docKey(), lignes: bs[i] });
+    if(!j.ok){
+      if(j.reconnect){ document.getElementById('connCard').open = true; setState('err', 'Sextan : reconnexion nécessaire'); }
+      bs[i].forEach(function(l){ all.push({ key:l.key, ok:false, message: j.error || 'Erreur serveur.' }); });
+    } else all = all.concat(j.results);
+  }
+  all.forEach(function(res){ var r = RES.lignes[+res.key]; if(r) r.result = res; });
+  return all;
+}
+function setPanel(html){ document.getElementById('applyPanel').innerHTML = html ? '<div class="panel">' + html + '</div>' : ''; }
+function histLines(results){
+  var byKey = {}; (results || []).forEach(function(x){ byKey[x.key] = x; });
+  return RES.lignes.map(function(r){
+    var res = byKey[String(r.idx)], isNew = r.action === 'creer';
+    return {
+      ref: r.ligne.ref, designation: r.ligne.designation,
+      article_id: isNew ? (res && res.ok && res.article_id) || null : (r.article ? r.article.id : null),
+      article_name: isNew ? r.nouvel.name : (r.article ? r.article.name : null),
+      unite_article: isNew ? r.nouvel.unit : (r.article ? r.article.unit : ''),
+      prix_unitaire: isNew ? r.prix_nouvel : r.prix_saisi,
+      prix_facture: r.ligne.prix, unite_prix: r.ligne.unite_prix, quantite: r.ligne.quantite,
+      negocie_avant: r.ligne_fournisseur ? r.ligne_fournisseur.price : null, dernier_avant: r.article ? r.article.price : null,
+      action: r.action, statut: r.statut, applique: !!(res && res.ok && !res.dry_run), message: res ? res.message : null
+    };
+  });
+}
+async function saveHistory(results){
+  var entry = {
+    key: docKey(),
+    fournisseur: RES.fournisseur ? { id: RES.fournisseur.id, name: RES.fournisseur.name } : { id: null, name: DOC.fournisseur.nom },
+    document: { type: DOC.document.type, numero: document.getElementById('docNum').value, date: document.getElementById('docDate').value, bl: DOC.document.bl },
+    lecture: { fournisseur_lu: DOC.fournisseur, remarques: DOC.remarques },
+    lignes: histLines(results)
+  };
+  var j = await post('prix-historique', { action:'ajouter', entry: entry });
+  if(!j.ok) throw new Error(j.error || 'Historique non enregistré.');
+  HIST = null;
+  return j;
+}
+async function startApply(){
+  var errs = validate();
+  if(errs.length){ setPanel('<h3>À compléter avant l\'enregistrement</h3><ul>' + errs.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>'); return; }
+  var writes = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0; });
+  // document déjà traité ?
+  try{ await loadHist(); }catch(e){}
+  var prev = HIST && (HIST.docs || []).find(function(d){ return d.key === docKey(); });
+  var warnDup = prev ? '<p class="small" style="color:var(--warn)">Ce document a déjà été enregistré le ' + esc(new Date(prev.saisi_le).toLocaleString('fr-FR')) + '. L\'historique sera remplacé ; les modifications Sextan seront rejouées (sans doublon pour les créations).</p>' : '';
+  var btn = document.getElementById('btnApply'); btn.disabled = true;
+  if(!writes.length){
+    setPanel('<h3>Aucune modification Sextan à faire</h3>' + warnDup + '<p class="small muted">Le document sera seulement ajouté à l\'historique des prix.</p><div class="row"><button class="primary" id="btnHistOnly">Ajouter à l\'historique</button><button id="btnCancel">Annuler</button></div>');
+    document.getElementById('btnHistOnly').onclick = async function(){ this.disabled = true; try{ await saveHistory([]); setPanel('<h3>✓ Ajouté à l\'historique</h3>'); APPLIED = true; }catch(e){ setPanel('<h3>Erreur</h3><p class="small">' + esc(e.message) + '</p>'); } btn.disabled = false; };
+    document.getElementById('btnCancel').onclick = function(){ setPanel(''); btn.disabled = false; };
+    return;
+  }
+  try{
+    var sim = await runApply(true);
+    renderLines();
+    var ko = sim.filter(function(x){ return !x.ok; });
+    var recettes = sim.reduce(function(n, x){ (x.warnings || []).forEach(function(w){ if(w.code === 'RECIPES_RECALCULATED' && w.context) n += w.context.count || 0; }); return n; }, 0);
+    var html = '<h3>Simulation : ' + (sim.length - ko.length) + ' / ' + sim.length + ' modification(s) acceptée(s) par Sextan</h3>' + warnDup +
+      '<ul>' + sim.map(function(x){ var r = RES.lignes[+x.key]; return '<li>' + (x.ok ? '✓ ' : '✗ ') + esc(r ? r.ligne.designation : x.key) + ' — ' + esc(x.message) + '</li>'; }).join('') + '</ul>' +
+      (recettes ? '<p class="small muted">Environ ' + recettes + ' recalcul(s) de recettes seront déclenchés par Sextan.</p>' : '') +
+      (ko.length ? '<p class="small" style="color:var(--err)">Corrige ou passe en « Ignorer la ligne » les lignes refusées, puis relance.</p>' : '') +
+      '<div class="row"><button class="primary" id="btnConfirm"' + (ko.length ? ' disabled' : '') + '>Confirmer l\'enregistrement dans Sextan</button><button id="btnCancel">Annuler</button></div>';
+    setPanel(html);
+    document.getElementById('btnCancel').onclick = function(){ RES.lignes.forEach(function(r){ r.result = null; }); setPanel(''); renderLines(); btn.disabled = false; };
+    document.getElementById('btnConfirm').onclick = async function(){
+      this.disabled = true;
+      try{
+        var real = await runApply(false);
+        renderLines();
+        var nok = real.filter(function(x){ return !x.ok; }).length;
+        var hmsg = '';
+        try{ await saveHistory(real); hmsg = 'Historique mis à jour.'; }catch(e){ hmsg = 'Attention : historique non enregistré (' + e.message + ').'; }
+        CAT = null; APPLIED = true;
+        setPanel('<h3>' + (nok ? '⚠ ' : '✓ ') + (real.length - nok) + ' / ' + real.length + ' modification(s) enregistrée(s) dans Sextan</h3><p class="small muted">' + esc(hmsg) + '</p>' +
+          real.filter(function(x){ return x.ok && x.url; }).map(function(x){ var r = RES.lignes[+x.key]; return '<div class="small"><a style="color:var(--ink)" target="_blank" rel="noopener" href="' + esc(x.url) + '">Ouvrir « ' + esc(r && r.action === 'creer' ? r.nouvel.name : (r && r.article ? r.article.name : x.article_id)) + ' » dans Sextan</a></div>'; }).join(''));
+      }catch(e){ setPanel('<h3>Erreur pendant l\'enregistrement</h3><p class="small">' + esc(e.message) + '</p><p class="small muted">Relance la simulation pour voir l\'état réel : les fiches sont relues à chaque passage.</p>'); }
+      btn.disabled = false;
+    };
+  }catch(e){ setPanel('<h3>Simulation impossible</h3><p class="small">' + esc(e.message) + '</p>'); btn.disabled = false; }
+}
+document.getElementById('btnApply').onclick = startApply;
+
+/* ---------- Historique ---------- */
+async function loadHist(force){
+  if(HIST && !force) return HIST;
+  var j = await post('prix-historique', { action:'lire' });
+  if(!j.ok) throw new Error(j.error || 'Historique indisponible.');
+  HIST = j; return HIST;
+}
+function histRows(){
+  var arts = HIST.articles || {}, q = normU(document.getElementById('histQ').value).replace(/[^a-z0-9%]/g, '');
+  var rows = Object.keys(arts).map(function(k){
+    var a = arts[k], pts = a.points || [], last = pts[pts.length - 1], prev = pts.length > 1 ? pts[pts.length - 2] : null;
+    return { k:k, a:a, last:last, prev:prev, var: prev && prev.p > 0 ? (last.p / prev.p - 1) * 100 : null };
+  }).filter(function(x){
+    if(!q) return true;
+    var hay = normU(x.a.name + ' ' + x.a.points.map(function(p){ return p.ref + ' ' + p.fn + ' ' + p.des; }).join(' ')).replace(/[^a-z0-9%]/g, '');
+    return hay.indexOf(q) >= 0;
+  });
+  rows.sort(function(x, y){ return String(y.last.d).localeCompare(String(x.last.d)) || x.a.name.localeCompare(y.a.name); });
+  return rows;
+}
+function renderHist(){
+  var rows = histRows(), box = document.getElementById('histList');
+  document.getElementById('histInfo').textContent = (HIST.docs || []).length + ' document(s) · ' + Object.keys(HIST.articles || {}).length + ' article(s) suivis' + (rows.length !== Object.keys(HIST.articles || {}).length ? ' · ' + rows.length + ' affiché(s)' : '');
+  document.getElementById('btnHistCsv').disabled = !rows.length;
+  box.innerHTML = rows.slice(0, 200).map(function(x){
+    var pts = x.a.points.slice().reverse();
+    return '<details class="hrow"><summary><span>' + esc(x.a.name) + (x.k.indexOf('x:') === 0 ? ' <span class="muted">(hors Sextan)</span>' : '') + '</span>' +
+      '<span>' + fmtP(x.last.p) + ' € / ' + esc(x.a.unit || 'u.') + '</span>' +
+      '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var)) + '</span>' +
+      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(x.last.d || '') + '</span></summary>' +
+      '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th></tr>' +
+      pts.map(function(p, i){ var older = pts[i + 1]; return '<tr><td>' + esc(p.d) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) : '') + '</td></tr>'; }).join('') +
+      '</table></div></details>';
+  }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
+}
+document.getElementById('btnHist').onclick = async function(){
+  this.disabled = true;
+  try{ await loadHist(true); renderHist(); }catch(e){ document.getElementById('histInfo').textContent = e.message; }
+  this.disabled = false;
+};
+document.getElementById('histQ').oninput = function(){ if(HIST) renderHist(); };
+document.getElementById('btnHistCsv').onclick = function(){
+  if(!HIST) return;
+  var num = function(v){ return v === null || v === undefined || !isFinite(v) ? '' : String(v).replace('.', ','); };
+  var q = function(s){ s = String(s === null || s === undefined ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  var lines = [['Article','ID article','Unité','Date','Fournisseur','Réf.','Désignation facture','Prix / unité','Prix facturé','Unité facturée','Négocié avant','Action','Document'].join(';')];
+  histRows().forEach(function(x){ x.a.points.forEach(function(p){
+    lines.push([x.a.name, x.k.indexOf('x:') === 0 ? '' : x.k, x.a.unit, p.d, p.fn, p.ref, p.des, num(p.p), num(p.pf), p.up, num(p.neg), p.a, p.doc].map(q).join(';'));
+  }); });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type:'text/csv;charset=utf-8' }));
+  a.download = 'historique-prix-fournisseurs.csv'; document.body.appendChild(a); a.click(); a.remove();
+};
+
 
 refreshConn();
 </script>
