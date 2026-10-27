@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 :root{
   --bg:#0f0f0f; --panel:#141414; --panel-h:#181818; --panel-2:#1b1b1b;
@@ -115,6 +116,15 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 .hrow th,.hrow td{text-align:left;padding:6px 12px;border-top:1px solid var(--line)}
 .hrow th{color:var(--mut-2);font-weight:400;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
 .tablewrap{overflow-x:auto}
+.btable{width:100%;border-collapse:collapse;font-size:12px}
+.btable th,.btable td{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}
+.btable th{color:var(--mut-2);font-weight:400;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border-top:none}
+.btable tr.cur td{background:rgba(255,255,255,.03)}
+.btable button{padding:6px 9px;font-size:11px}
+.subcard{border:1px solid var(--line-2);border-radius:9px;padding:14px;margin-top:12px}
+.subcard h3{margin:0 0 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:500}
+.chk{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;line-height:1.5;cursor:pointer}
+.chk input{margin-top:3px}
 @media (max-width:820px){
   .ln{grid-template-columns:1fr 1fr}
 }
@@ -168,6 +178,39 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
     </div>
     <div class="progress" id="progress"></div>
   </section>
+
+  <!-- Lot -->
+  <details class="card" id="batchCard">
+    <summary class="conn"><span class="small" style="letter-spacing:.16em;text-transform:uppercase;color:var(--mut)">Traitement par lot</span><span class="small muted">· plusieurs factures d'un coup, depuis des fichiers ou Gmail</span></summary>
+    <div class="subcard">
+      <h3>Fichiers</h3>
+      <div class="row"><label class="btn">Choisir des fichiers<input type="file" id="inBatch" accept="image/*,application/pdf" multiple hidden></label>
+      <span class="small muted">Un fichier = un document. Un PDF contenant plusieurs factures est découpé automatiquement.</span></div>
+    </div>
+    <div class="subcard">
+      <h3>Mails (Gmail, lecture seule)</h3>
+      <div class="meta">
+        <label class="fld">Boîte mail<input id="gBox" value="me" title="« me » = le compte Google avec lequel tu te connectes"></label>
+        <label class="fld">Du<input type="date" id="gFrom"></label>
+        <label class="fld">Au<input type="date" id="gTo"></label>
+        <label class="fld">Filtre (facultatif)<input id="gQuery" placeholder="ex. facture  ou  from:patisfrais.fr"></label>
+      </div>
+      <div class="row"><button id="btnGSearch">Chercher les PDF</button><span class="small muted">« me » = le compte Google connecté. La connexion Google demande seulement la lecture des mails.</span></div>
+      <div id="gResults" style="margin-top:10px"></div>
+    </div>
+    <div class="subcard">
+      <h3>Lot</h3>
+      <label class="chk"><input type="checkbox" id="histOnly"><span><b>Rattrapage : historique seulement</b><br><span class="muted">Les prix vont dans l'historique, Sextan n'est pas modifié. À utiliser pour les anciennes factures.</span></span></label>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="btnBatchRun" disabled>Lancer le traitement</button>
+        <button id="btnBatchBulk" disabled>Ajouter à l'historique</button>
+        <button class="ghost" id="btnBatchClear" disabled>Vider</button>
+      </div>
+      <div class="small muted" id="batchMsg" style="margin-top:10px"></div>
+      <div id="batchList" style="margin-top:10px"></div>
+      <p class="small muted" style="margin:10px 0 0;line-height:1.6">Les documents sont classés par date. « Ouvrir » affiche un document dans l'écran de contrôle ci-dessous pour le valider comme d'habitude. Garde cet onglet ouvert pendant le traitement.</p>
+    </div>
+  </details>
 
   <!-- Résultat -->
   <section class="card" id="resultCard" hidden>
@@ -317,40 +360,46 @@ function fixEncoding(t){
   if(suspect < 2) return t;
   return t.replace(/[^\x00-\x7f]/g, function(c){ return MAC2WIN[c] || c; });
 }
+// Convertit un PDF (octets) en pages à lire : texte natif si présent, sinon image de la page
+async function pdfBytesToPages(name, data){
+  if(!window.pdfjsLib) throw new Error('Lecteur PDF non chargé.');
+  var out = [];
+  var pdf = await pdfjsLib.getDocument({ data: data, cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
+  for(var p = 1; p <= pdf.numPages; p++){
+    var page = await pdf.getPage(p);
+    var tc = await page.getTextContent();
+    var text = fixEncoding(pdfItemsToText(tc.items));
+    var vp = page.getViewport({ scale: 0.35 });
+    var tcv = document.createElement('canvas'); tcv.width = vp.width; tcv.height = vp.height;
+    await page.render({ canvasContext: tcv.getContext('2d'), viewport: vp }).promise;
+    var thumb = tcv.toDataURL('image/jpeg', 0.7);
+    if(text.replace(/\s/g, '').length > 80){
+      out.push({ kind:'text', text:text, thumb:thumb, name:name + ' p.' + p });
+    } else { // PDF scanné : on envoie l'image de la page
+      var vp2 = page.getViewport({ scale: 2 });
+      var cv = document.createElement('canvas'); cv.width = vp2.width; cv.height = vp2.height;
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp2 }).promise;
+      out.push({ kind:'image', image:canvasToJpeg(cv, cv.width, cv.height), thumb:thumb, name:name + ' p.' + p });
+    }
+  }
+  return out;
+}
+async function fileToPages(f){
+  if(f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) return pdfBytesToPages(f.name, await f.arrayBuffer());
+  if(/^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name)){
+    var img = await loadImage(f);
+    var data = canvasToJpeg(img, img.naturalWidth, img.naturalHeight);
+    return [{ kind:'image', image:data, thumb:data, name:f.name }];
+  }
+  throw new Error('Format non pris en charge : ' + f.name);
+}
 async function addFiles(list){
   var files = Array.prototype.slice.call(list || []);
   var prog = document.getElementById('progress');
   for(var i = 0; i < files.length; i++){
-    var f = files[i];
     try{
-      if(f.type === 'application/pdf' || /\.pdf$/i.test(f.name)){
-        if(!window.pdfjsLib) throw new Error('Lecteur PDF non chargé.');
-        prog.textContent = 'Ouverture de ' + f.name + '…';
-        var pdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
-        for(var p = 1; p <= pdf.numPages; p++){
-          var page = await pdf.getPage(p);
-          var tc = await page.getTextContent();
-          var text = fixEncoding(pdfItemsToText(tc.items));
-          var vp = page.getViewport({ scale: 0.35 });
-          var tcv = document.createElement('canvas'); tcv.width = vp.width; tcv.height = vp.height;
-          await page.render({ canvasContext: tcv.getContext('2d'), viewport: vp }).promise;
-          var thumb = tcv.toDataURL('image/jpeg', 0.7);
-          if(text.replace(/\s/g, '').length > 80){
-            PAGES.push({ kind:'text', text:text, thumb:thumb, name:f.name + ' p.' + p });
-          } else { // PDF scanné : on envoie l'image de la page
-            var vp2 = page.getViewport({ scale: 2 });
-            var cv = document.createElement('canvas'); cv.width = vp2.width; cv.height = vp2.height;
-            await page.render({ canvasContext: cv.getContext('2d'), viewport: vp2 }).promise;
-            PAGES.push({ kind:'image', image:canvasToJpeg(cv, cv.width, cv.height), thumb:thumb, name:f.name + ' p.' + p });
-          }
-        }
-      } else if(/^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name)){
-        var img = await loadImage(f);
-        var data = canvasToJpeg(img, img.naturalWidth, img.naturalHeight);
-        PAGES.push({ kind:'image', image:data, thumb:data, name:f.name });
-      } else {
-        throw new Error('Format non pris en charge : ' + f.name);
-      }
+      prog.textContent = 'Ouverture de ' + files[i].name + '…';
+      PAGES = PAGES.concat(await fileToPages(files[i]));
       prog.textContent = '';
     }catch(e){ prog.innerHTML = '<div class="err-box">' + esc(e.message) + '</div>'; }
   }
@@ -798,6 +847,7 @@ function validate(){
   var errs = [];
   if(!providerId()) errs.push('Choisis le fournisseur.');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(document.getElementById('docDate').value)) errs.push('Renseigne la date du document (date de facture ou de BL) : elle date les prix dans l\'historique.');
+  if(HIST_ONLY) return errs; // rattrapage : rien n'est écrit dans Sextan, seuls fournisseur et date comptent
   RES.lignes.forEach(function(r){
     var name = '« ' + r.ligne.designation + ' »';
     if(r.action === 'choisir') errs.push(name + ' : référence en double, choisis l\'article et l\'action.');
@@ -825,7 +875,7 @@ function batches(lines){
   return out;
 }
 async function runApply(dry){
-  var lines = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0; }).map(payloadLine);
+  var lines = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale; }).map(payloadLine);
   var all = [];
   var bs = batches(lines);
   for(var i = 0; i < bs.length; i++){
@@ -852,7 +902,7 @@ function histLines(results){
       prix_unitaire: isNew ? r.prix_nouvel : r.prix_saisi,
       prix_facture: r.ligne.prix, unite_prix: r.ligne.unite_prix, quantite: r.ligne.quantite,
       negocie_avant: r.ligne_fournisseur ? r.ligne_fournisseur.price : null, dernier_avant: r.article ? r.article.price : null,
-      action: r.action, statut: r.statut, applique: !!(res && res.ok && !res.dry_run), message: res ? res.message : null
+      action: HIST_ONLY ? 'historique' : (r.stale ? 'anterieur' : r.action), statut: r.statut, applique: !!(res && res.ok && !res.dry_run), message: res ? res.message : (r.stale || null)
     };
   });
 }
@@ -872,14 +922,25 @@ async function saveHistory(results){
 async function startApply(){
   var errs = validate();
   if(errs.length){ setPanel('<h3>À compléter avant l\'enregistrement</h3><ul>' + errs.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>'); return; }
-  var writes = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0; });
-  // document déjà traité ?
-  try{ await loadHist(); }catch(e){}
+  // document déjà traité ? (et dates des derniers prix connus)
+  try{ await loadHist(true); }catch(e){}
+  // Règle : une facture ne remplace jamais dans Sextan un prix issu d'une facture plus récente
+  var docDate = document.getElementById('docDate').value, myKey = docKey();
+  RES.lignes.forEach(function(r){
+    r.stale = null;
+    if(HIST_ONLY || !r.article || ['maj_prix','maj_dernier','rattacher'].indexOf(r.action) < 0) return;
+    var h = HIST && HIST.articles && HIST.articles[String(r.article.id)];
+    var later = h ? (h.points || []).filter(function(p){ return p.doc !== myKey && p.d && p.d > docDate; }) : [];
+    if(later.length){ var l = later[later.length - 1]; r.stale = 'Non appliqué dans Sextan : un prix plus récent est déjà connu (' + l.d + ', ' + l.fn + ', ' + fmtP(l.p) + '). Ajouté à l\'historique seulement.'; }
+  });
+  var stale = RES.lignes.filter(function(r){ return r.stale; });
+  var writes = HIST_ONLY ? [] : RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale; });
+  var staleHtml = stale.length ? '<p class="small" style="color:var(--warn)">' + stale.length + ' ligne(s) ne seront pas appliquées dans Sextan car un prix plus récent est déjà enregistré :</p><ul>' + stale.map(function(r){ return '<li>' + esc(r.ligne.designation) + ' — ' + esc(r.stale) + '</li>'; }).join('') + '</ul>' : '';
   var prev = HIST && (HIST.docs || []).find(function(d){ return d.key === docKey(); });
   var warnDup = prev ? '<p class="small" style="color:var(--warn)">Ce document a déjà été enregistré le ' + esc(new Date(prev.saisi_le).toLocaleString('fr-FR')) + '. L\'historique sera remplacé ; les modifications Sextan seront rejouées (sans doublon pour les créations).</p>' : '';
   var btn = document.getElementById('btnApply'); btn.disabled = true;
   if(!writes.length){
-    setPanel('<h3>Aucune modification Sextan à faire</h3>' + warnDup + '<p class="small muted">Le document sera seulement ajouté à l\'historique des prix.</p><div class="row"><button class="primary" id="btnHistOnly">Ajouter à l\'historique</button><button id="btnCancel">Annuler</button></div>');
+    setPanel('<h3>' + (HIST_ONLY ? 'Rattrapage : historique seulement' : 'Aucune modification Sextan à faire') + '</h3>' + warnDup + staleHtml + '<p class="small muted">Le document sera seulement ajouté à l\'historique des prix' + (HIST_ONLY ? ', Sextan ne sera pas modifié' : '') + '.</p><div class="row"><button class="primary" id="btnHistOnly">Ajouter à l\'historique</button><button id="btnCancel">Annuler</button></div>');
     document.getElementById('btnHistOnly').onclick = async function(){ this.disabled = true; try{ await saveHistory([]); setPanel('<h3>✓ Ajouté à l\'historique</h3>'); APPLIED = true; }catch(e){ setPanel('<h3>Erreur</h3><p class="small">' + esc(e.message) + '</p>'); } btn.disabled = false; };
     document.getElementById('btnCancel').onclick = function(){ setPanel(''); btn.disabled = false; };
     return;
@@ -889,7 +950,7 @@ async function startApply(){
     renderLines();
     var ko = sim.filter(function(x){ return !x.ok; });
     var recettes = sim.reduce(function(n, x){ (x.warnings || []).forEach(function(w){ if(w.code === 'RECIPES_RECALCULATED' && w.context) n += w.context.count || 0; }); return n; }, 0);
-    var html = '<h3>Simulation : ' + (sim.length - ko.length) + ' / ' + sim.length + ' modification(s) acceptée(s) par Sextan</h3>' + warnDup +
+    var html = '<h3>Simulation : ' + (sim.length - ko.length) + ' / ' + sim.length + ' modification(s) acceptée(s) par Sextan</h3>' + warnDup + staleHtml +
       '<ul>' + sim.map(function(x){ var r = RES.lignes[+x.key]; return '<li>' + (x.ok ? '✓ ' : '✗ ') + esc(r ? r.ligne.designation : x.key) + ' — ' + esc(x.message) + '</li>'; }).join('') + '</ul>' +
       (recettes ? '<p class="small muted">Environ ' + recettes + ' recalcul(s) de recettes seront déclenchés par Sextan.</p>' : '') +
       (ko.length ? '<p class="small" style="color:var(--err)">Corrige ou passe en « Ignorer la ligne » les lignes refusées, puis relance.</p>' : '') +
@@ -968,6 +1029,285 @@ document.getElementById('btnHistCsv').onclick = function(){
   a.download = 'historique-prix-fournisseurs.csv'; document.body.appendChild(a); a.click(); a.remove();
 };
 
+
+/* =========================================================
+   Traitement par lot : fichiers ou Gmail, un document par facture
+   ========================================================= */
+var BATCH = [], CURRENT = null, HIST_ONLY = false, BATCH_RUNNING = false, BATCH_SEQ = 0;
+
+// Lit une liste de pages (3 en parallèle) : renvoie un résultat par page (ou null) + erreurs
+async function readPageList(pages, onStep){
+  var n = pages.length, results = new Array(n), errors = [], queue = pages.map(function(p, i){ return i; });
+  async function worker(){
+    while(queue.length){
+      var i = queue.shift(), p = pages[i];
+      var body = p.kind === 'image' ? { image:p.image } : { text:p.text };
+      body.page = i + 1; body.pages = n;
+      try{ var j = await post('prix-lecture', body); if(!j.ok) throw new Error(j.error || 'erreur'); results[i] = j; }
+      catch(e){ errors.push(p.name + ' : ' + e.message); }
+      if(onStep) onStep();
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  return { results: results, errors: errors };
+}
+function mergePages(list){
+  var D = { fournisseur:{ nom:null }, document:{ type:'autre', numero:null, date:null, bl:[] }, lignes:[], remarques:[] };
+  list.forEach(function(r){
+    var d = r.data;
+    if(!D.fournisseur.nom && d.fournisseur && d.fournisseur.nom) D.fournisseur = d.fournisseur;
+    if(D.document.type === 'autre' && d.document.type !== 'autre') D.document.type = d.document.type;
+    if(!D.document.numero && d.document.numero) D.document.numero = d.document.numero;
+    if(!D.document.date && d.document.date) D.document.date = d.document.date;
+    (d.document.bl || []).forEach(function(b){ if(D.document.bl.indexOf(b) < 0) D.document.bl.push(b); });
+    D.lignes = D.lignes.concat(d.lignes || []);
+    D.remarques = D.remarques.concat(d.remarques || []);
+    if(r.truncated) D.remarques.push('Une page a été lue partiellement (réponse tronquée).');
+  });
+  return D;
+}
+// Un PDF peut contenir plusieurs factures : on coupe quand le numéro de document change
+function splitByNumero(results){
+  var groups = [], cur = null;
+  results.forEach(function(r){
+    if(!r) return;
+    var num = r.data.document.numero;
+    if(!cur || (num && cur.numero && num !== cur.numero)){ cur = { numero: num, list: [] }; groups.push(cur); }
+    if(!cur.numero && num) cur.numero = num;
+    cur.list.push(r);
+  });
+  return groups.map(function(g){ return g.list; });
+}
+async function matchQuiet(doc){
+  var j = await post('prix-rapprochement', { document: doc, seuil: parseFloat(document.getElementById('seuil').value) || 1 });
+  if(!j.ok){ if(j.reconnect){ document.getElementById('connCard').open = true; setState('err', 'Sextan : reconnexion nécessaire'); } throw new Error(j.error || 'Rapprochement impossible.'); }
+  j.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; initForms(r); });
+  return j;
+}
+function itemKey(it){
+  var pid = it.res && it.res.fournisseur ? it.res.fournisseur.id : 'x';
+  var n = (it.doc.document.numero || it.doc.document.date || 'sans-numero').replace(/[^A-Za-z0-9-]+/g, '-');
+  return pid + '_' + n;
+}
+function itemTodo(it){ return it.res ? it.res.lignes.filter(function(r){ return !(r.statut === 'ok' && r.action === 'aucune'); }).length : 0; }
+
+function addBatchItem(name, src, pages){ BATCH.push({ id: ++BATCH_SEQ, name: name, src: src, pages: pages, status: 'en attente' }); renderBatch(); }
+async function runBatch(){
+  if(BATCH_RUNNING) return;
+  BATCH_RUNNING = true; renderBatch();
+  try{ await loadHist(true); }catch(e){}
+  for(var i = 0; i < BATCH.length; i++){
+    var it = BATCH[i];
+    if(it.status !== 'en attente') continue;
+    try{
+      it.status = 'lecture'; var done = 0; renderBatch();
+      var rd = await readPageList(it.pages, function(){ done++; it.step = done + ' / ' + it.pages.length; renderBatch(); });
+      var groups = splitByNumero(rd.results);
+      if(!groups.length) throw new Error(rd.errors.join(' · ') || 'Aucune page lue.');
+      // plusieurs factures dans le même fichier : un élément par facture
+      var items = groups.map(function(list, gi){
+        return gi === 0 ? it : { id: ++BATCH_SEQ, name: it.name + ' (' + (gi + 1) + ')', src: it.src, pages: [], status: 'lecture' };
+      });
+      for(var g = 0; g < groups.length; g++){
+        var x = items[g];
+        x.doc = mergePages(groups[g]);
+        if(rd.errors.length) x.doc.remarques = x.doc.remarques.concat(rd.errors);
+        if(g > 0) BATCH.splice(BATCH.indexOf(it) + g, 0, x);
+        x.status = 'rapprochement'; renderBatch();
+        x.res = await matchQuiet(x.doc);
+        x.key = itemKey(x);
+        x.dupe = !!(HIST && (HIST.docs || []).some(function(d){ return d.key === x.key; }));
+        x.status = 'prêt'; x.pages = null; // libère la mémoire des images
+      }
+      i += groups.length - 1;
+    }catch(e){ it.status = 'erreur'; it.err = e.message; }
+    renderBatch();
+  }
+  // ordre chronologique
+  BATCH.sort(function(a, b){ return String((a.doc && a.doc.document.date) || '9999').localeCompare(String((b.doc && b.doc.document.date) || '9999')); });
+  BATCH_RUNNING = false; renderBatch();
+}
+function batchState(it){
+  if(it.status === 'enregistré') return { t:'Enregistré', b:'b-ok' };
+  if(it.status === 'erreur') return { t:'Erreur', b:'b-err' };
+  if(it.status !== 'prêt') return { t: it.status + (it.step && it.status === 'lecture' ? ' ' + it.step : '') + '…', b:'b-info' };
+  if(it.dupe) return { t:'Déjà enregistré', b:'b-info' };
+  if(!it.doc.document.date) return { t:'Date manquante', b:'b-ecart' };
+  if(!it.res.fournisseur) return { t:'Fournisseur à choisir', b:'b-ecart' };
+  return itemTodo(it) ? { t: itemTodo(it) + ' ligne(s) à traiter', b:'b-ecart' } : { t:'Conforme', b:'b-ok' };
+}
+function bulkEligible(it){
+  if(it.status !== 'prêt' || it.dupe || !it.doc.document.date || !it.res.fournisseur) return false;
+  return HIST_ONLY ? true : itemTodo(it) === 0;
+}
+function renderBatch(){
+  var box = document.getElementById('batchList'); if(!box) return;
+  var waiting = BATCH.filter(function(x){ return x.status === 'en attente'; }).length;
+  var elig = BATCH.filter(bulkEligible).length;
+  document.getElementById('btnBatchRun').disabled = BATCH_RUNNING || !waiting;
+  document.getElementById('btnBatchRun').textContent = BATCH_RUNNING ? 'Traitement en cours…' : 'Lancer le traitement (' + waiting + ')';
+  var bulk = document.getElementById('btnBatchBulk');
+  bulk.disabled = BATCH_RUNNING || !elig;
+  bulk.textContent = (HIST_ONLY ? 'Ajouter à l\'historique tous les documents prêts' : 'Ajouter à l\'historique les documents conformes') + ' (' + elig + ')';
+  document.getElementById('btnBatchClear').disabled = BATCH_RUNNING || !BATCH.length;
+  if(!BATCH.length){ box.innerHTML = '<p class="small muted">Aucun document dans le lot.</p>'; return; }
+  box.innerHTML = '<div class="tablewrap"><table class="btable"><tr><th>Date</th><th>Fournisseur</th><th>N°</th><th>Lignes</th><th>État</th><th></th></tr>' +
+    BATCH.map(function(it){
+      var st = batchState(it), d = it.doc ? it.doc.document : {};
+      return '<tr' + (CURRENT === it ? ' class="cur"' : '') + '><td>' + esc(d.date || '—') + '</td>' +
+        '<td>' + esc(it.res && it.res.fournisseur ? it.res.fournisseur.name : (it.doc && it.doc.fournisseur.nom) || it.name) + '<div class="small muted">' + esc(it.src) + '</div></td>' +
+        '<td>' + esc(d.numero || '') + '</td><td>' + (it.res ? it.res.lignes.length : '') + '</td>' +
+        '<td><span class="badge ' + st.b + '">' + esc(st.t) + '</span>' + (it.err ? '<div class="small" style="color:var(--err)">' + esc(it.err) + '</div>' : '') + '</td>' +
+        '<td style="white-space:nowrap">' + (it.status === 'prêt' || it.status === 'enregistré' ? '<button class="ghost" data-open="' + it.id + '">Ouvrir</button>' : '') +
+        (it.status !== 'lecture' && it.status !== 'rapprochement' ? ' <button class="ghost" data-del="' + it.id + '" title="Retirer">✕</button>' : '') + '</td></tr>';
+    }).join('') + '</table></div>';
+  box.querySelectorAll('[data-open]').forEach(function(b){ b.onclick = function(){ openItem(+this.dataset.open); }; });
+  box.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ var id = +this.dataset.del; BATCH = BATCH.filter(function(x){ return x.id !== id; }); if(CURRENT && CURRENT.id === id) CURRENT = null; renderBatch(); }; });
+}
+function openItem(id){
+  var it = BATCH.find(function(x){ return x.id === id; }); if(!it || !it.res) return;
+  CURRENT = it; DOC = it.doc; RES = it.res; FILTER = 'todo';
+  document.getElementById('progress').textContent = 'Document du lot : ' + it.name;
+  renderResult(); renderBatch();
+  if(it.dupe) setPanel('<h3>Document déjà enregistré</h3><p class="small muted">Un nouvel enregistrement remplacera la version précédente dans l\'historique.</p>');
+  document.getElementById('resultCard').scrollIntoView({ behavior:'smooth' });
+}
+async function bulkHistory(){
+  var list = BATCH.filter(bulkEligible); if(!list.length) return;
+  var btn = document.getElementById('btnBatchBulk'); btn.disabled = true;
+  var keep = RES, ok = 0, ko = [];
+  for(var i = 0; i < list.length; i++){
+    var it = list[i];
+    btn.textContent = 'Ajout à l\'historique ' + (i + 1) + ' / ' + list.length + '…';
+    try{
+      RES = it.res;
+      var entry = {
+        key: it.key, fournisseur: { id: it.res.fournisseur.id, name: it.res.fournisseur.name },
+        document: { type: it.doc.document.type, numero: it.doc.document.numero, date: it.doc.document.date, bl: it.doc.document.bl },
+        lecture: { fournisseur_lu: it.doc.fournisseur, remarques: it.doc.remarques, source: it.src, lot: true, historique_seulement: HIST_ONLY },
+        lignes: histLines([])
+      };
+      var j = await post('prix-historique', { action:'ajouter', entry: entry });
+      if(!j.ok) throw new Error(j.error || 'refus');
+      it.status = 'enregistré'; ok++;
+    }catch(e){ ko.push(it.name + ' : ' + e.message); }
+  }
+  RES = keep; HIST = null;
+  document.getElementById('batchMsg').innerHTML = '✓ ' + ok + ' document(s) ajouté(s) à l\'historique' + (ko.length ? '<div class="err-box">' + esc(ko.join(' · ')) + '</div>' : '');
+  renderBatch();
+}
+
+/* ---------- Sources : fichiers ---------- */
+async function addBatchFiles(list){
+  var files = Array.prototype.slice.call(list || []), msg = document.getElementById('batchMsg');
+  for(var i = 0; i < files.length; i++){
+    try{ msg.textContent = 'Ouverture de ' + files[i].name + '…'; addBatchItem(files[i].name, 'Fichier', await fileToPages(files[i])); }
+    catch(e){ msg.innerHTML = '<div class="err-box">' + esc(e.message) + '</div>'; }
+  }
+  msg.textContent = files.length ? files.length + ' fichier(s) ajouté(s) au lot.' : '';
+}
+
+/* ---------- Sources : Gmail (lecture seule) ---------- */
+var G_CLIENT = '31703629214-ej72ursr2609cfnbun5se5vf2clrmptn.apps.googleusercontent.com';
+var GTOKEN = null, GEXP = 0, GTC = null, GWAIT = [], GFOUND = [];
+function gToken(){
+  return new Promise(function(resolve, reject){
+    if(!window.google || !google.accounts || !google.accounts.oauth2) return reject(new Error('Connexion Google non chargée, recharge la page.'));
+    if(!GTC) GTC = google.accounts.oauth2.initTokenClient({
+      client_id: G_CLIENT, scope: 'https://www.googleapis.com/auth/gmail.readonly',
+      callback: function(r){
+        var w = GWAIT.splice(0);
+        if(r && r.access_token){ GTOKEN = r.access_token; GEXP = Date.now() + ((parseInt(r.expires_in, 10) || 3600) - 60) * 1000; w.forEach(function(x){ x.res(GTOKEN); }); }
+        else w.forEach(function(x){ x.rej(new Error((r && r.error) || 'Accès Gmail refusé.')); });
+      }
+    });
+    GWAIT.push({ res: resolve, rej: reject });
+    GTC.requestAccessToken(GTOKEN ? { prompt: '' } : {});
+  });
+}
+async function gGet(path){
+  if(!GTOKEN || Date.now() > GEXP) await gToken();
+  var box = (document.getElementById('gBox').value || 'me').trim();
+  var r = await fetch('https://gmail.googleapis.com/gmail/v1/users/' + encodeURIComponent(box) + path, { headers: { Authorization: 'Bearer ' + GTOKEN } });
+  if(!r.ok){ var t = await r.text(); throw new Error('Gmail ' + r.status + ' : ' + t.slice(0, 160)); }
+  return r.json();
+}
+function gDate(v){ return v ? v.replace(/-/g, '/') : ''; }
+function pdfParts(part, acc){
+  acc = acc || [];
+  if(part.filename && /\.pdf$/i.test(part.filename) && part.body && part.body.attachmentId) acc.push({ filename: part.filename, attachmentId: part.body.attachmentId, size: part.body.size || 0 });
+  (part.parts || []).forEach(function(p){ pdfParts(p, acc); });
+  return acc;
+}
+function header(msg, name){ var h = (msg.payload.headers || []).find(function(x){ return x.name.toLowerCase() === name.toLowerCase(); }); return h ? h.value : ''; }
+async function gSearch(){
+  var out = document.getElementById('gResults'), btn = document.getElementById('btnGSearch');
+  btn.disabled = true; out.innerHTML = '<p class="small muted">Recherche dans Gmail…</p>';
+  try{
+    var from = document.getElementById('gFrom').value, to = document.getElementById('gTo').value;
+    var q = 'has:attachment filename:pdf';
+    if(from) q += ' after:' + gDate(from);
+    if(to){ var d = new Date(to + 'T00:00:00'); d.setDate(d.getDate() + 1); q += ' before:' + d.toISOString().slice(0, 10).replace(/-/g, '/'); }
+    var extra = document.getElementById('gQuery').value.trim(); if(extra) q += ' ' + extra;
+    var ids = [], token = '';
+    do{
+      var page = await gGet('/messages?maxResults=100&q=' + encodeURIComponent(q) + (token ? '&pageToken=' + token : ''));
+      ids = ids.concat((page.messages || []).map(function(m){ return m.id; }));
+      token = page.nextPageToken;
+    } while(token && ids.length < 300);
+    GFOUND = [];
+    for(var i = 0; i < ids.length; i++){
+      out.innerHTML = '<p class="small muted">Lecture des mails : ' + (i + 1) + ' / ' + ids.length + '…</p>';
+      var m = await gGet('/messages/' + ids[i] + '?format=full');
+      pdfParts(m.payload).forEach(function(a){ GFOUND.push({ msgId: m.id, from: header(m, 'From'), subject: header(m, 'Subject'), date: new Date(parseInt(m.internalDate, 10)).toISOString().slice(0, 10), filename: a.filename, attachmentId: a.attachmentId, size: a.size, sel: true }); });
+    }
+    renderGResults();
+  }catch(e){ out.innerHTML = '<div class="err-box">' + esc(e.message) + '</div>'; }
+  btn.disabled = false;
+}
+function renderGResults(){
+  var out = document.getElementById('gResults');
+  if(!GFOUND.length){ out.innerHTML = '<p class="small muted">Aucun PDF trouvé avec ces critères.</p>'; return; }
+  out.innerHTML = '<div class="tablewrap"><table class="btable"><tr><th></th><th>Date</th><th>Expéditeur</th><th>Objet</th><th>PDF</th></tr>' +
+    GFOUND.map(function(g, i){ return '<tr><td><input type="checkbox" data-g="' + i + '"' + (g.sel ? ' checked' : '') + '></td><td>' + esc(g.date) + '</td><td>' + esc(g.from) + '</td><td>' + esc(g.subject) + '</td><td>' + esc(g.filename) + '</td></tr>'; }).join('') +
+    '</table></div><div class="row" style="margin-top:10px"><button class="primary" id="btnGAdd">Ajouter la sélection au lot</button><span class="small muted" id="gCount"></span></div>';
+  out.querySelectorAll('[data-g]').forEach(function(cb){ cb.onchange = function(){ GFOUND[+this.dataset.g].sel = this.checked; }; });
+  document.getElementById('btnGAdd').onclick = gAdd;
+}
+function b64urlToBytes(s){
+  s = s.replace(/-/g, '+').replace(/_/g, '/'); while(s.length % 4) s += '=';
+  var bin = atob(s), bytes = new Uint8Array(bin.length);
+  for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+async function gAdd(){
+  var sel = GFOUND.filter(function(g){ return g.sel; }), btn = document.getElementById('btnGAdd'), msg = document.getElementById('batchMsg');
+  btn.disabled = true; var ok = 0;
+  for(var i = 0; i < sel.length; i++){
+    var g = sel[i];
+    try{
+      btn.textContent = 'Téléchargement ' + (i + 1) + ' / ' + sel.length + '…';
+      var a = await gGet('/messages/' + g.msgId + '/attachments/' + g.attachmentId);
+      addBatchItem(g.filename, 'Mail du ' + g.date + ' · ' + g.from.replace(/<.*>/, '').trim(), await pdfBytesToPages(g.filename, b64urlToBytes(a.data)));
+      ok++;
+    }catch(e){ msg.innerHTML += '<div class="err-box">' + esc(g.filename + ' : ' + e.message) + '</div>'; }
+  }
+  btn.textContent = 'Ajouter la sélection au lot'; btn.disabled = false;
+  msg.textContent = ok + ' PDF ajouté(s) au lot.';
+}
+
+/* ---------- Branchements ---------- */
+document.getElementById('inBatch').onchange = function(){ addBatchFiles(this.files); this.value = ''; };
+document.getElementById('btnBatchRun').onclick = runBatch;
+document.getElementById('btnBatchBulk').onclick = bulkHistory;
+document.getElementById('btnBatchClear').onclick = function(){ if(confirm('Vider la liste du lot ? (ce qui est déjà enregistré reste dans l\'historique)')){ BATCH = []; CURRENT = null; renderBatch(); } };
+document.getElementById('btnGSearch').onclick = gSearch;
+document.getElementById('histOnly').onchange = function(){ HIST_ONLY = this.checked; renderBatch(); document.getElementById('btnApply').textContent = HIST_ONLY ? 'Ajouter à l\'historique' : 'Enregistrer dans Sextan'; };
+(function(){ var d = new Date(), from = new Date(d.getFullYear(), d.getMonth() - 1, d.getDate()); document.getElementById('gTo').value = d.toISOString().slice(0, 10); document.getElementById('gFrom').value = from.toISOString().slice(0, 10); })();
+// un document du lot enregistré depuis l'écran de contrôle passe en « Enregistré »
+var _saveHistoryBase = saveHistory;
+saveHistory = async function(results){ var j = await _saveHistoryBase(results); if(CURRENT && RES === CURRENT.res){ CURRENT.status = 'enregistré'; CURRENT.dupe = false; renderBatch(); } return j; };
+renderBatch();
 
 refreshConn();
 </script>
