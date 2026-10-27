@@ -10,7 +10,7 @@
 // À supprimer du dépôt une fois le diagnostic fait.
 
 const BASE = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
-const API_KEY = process.env.SEXTAN_API_KEY || "";
+let API_KEY = process.env.SEXTAN_API_KEY || "";
 const TEST_ARTICLE_ID = 154; // « Beurre extra-sec 84% », commentaire vide
 
 function headers() {
@@ -66,9 +66,12 @@ function summarize(r) {
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (!authorized(event)) return { statusCode: 401, headers: headers(), body: JSON.stringify({ error: "Mot de passe manquant ou incorrect (?pass=...)" }) };
+  // ?key=prix : teste la clé dédiée SEXTAN_API_KEY_PRIX au lieu de la clé principale
+  const qk = (event.queryStringParameters || {}).key;
+  API_KEY = qk === "prix" ? (process.env.SEXTAN_API_KEY_PRIX || "") : (process.env.SEXTAN_API_KEY || "");
   if (!API_KEY) return { statusCode: 500, headers: headers(), body: JSON.stringify({ error: "SEXTAN_API_KEY non configurée." }) };
 
-  const report = { base: BASE, keyLen: API_KEY.length, at: new Date().toISOString() };
+  const report = { base: BASE, keyUsed: qk === "prix" ? "SEXTAN_API_KEY_PRIX" : "SEXTAN_API_KEY", keyLen: API_KEY.length, at: new Date().toISOString() };
 
   // Mode ?mode=scopes : une lecture par ressource, pour cartographier ce que la clé obtient réellement.
   const q = event.queryStringParameters || {};
