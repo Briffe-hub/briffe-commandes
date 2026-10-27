@@ -111,10 +111,14 @@ async function refresh(){
     NEEDED.forEach(function(t){ html += li(tools.indexOf(t) >= 0, 'Outil ' + t); });
     html += li(j.test_lecture && j.test_lecture.ok, 'Lecture d\'un article' + (j.test_lecture && j.test_lecture.article ? ' (' + escHtml(j.test_lecture.article) + ')' : ''));
     html += li(j.test_ecriture_simulee && j.test_ecriture_simulee.ok, 'Modification d\'article (simulation)');
+    var extra = tools.filter(function(t){ return NEEDED.indexOf(t) < 0; });
+    var rightAccount = extra.length === 0;
+    html += li(rightAccount, rightAccount ? 'Compte limité aux outils du module (compte briffetools)'
+      : 'Le compte connecté a ' + extra.length + ' outil(s) en trop : ce n\'est probablement pas le compte briffetools');
     c.innerHTML = html; c.hidden = false;
-    var allOk = NEEDED.every(function(t){ return tools.indexOf(t) >= 0; }) && j.test_lecture && j.test_lecture.ok && j.test_ecriture_simulee && j.test_ecriture_simulee.ok;
+    var allOk = rightAccount && NEEDED.every(function(t){ return tools.indexOf(t) >= 0; }) && j.test_lecture && j.test_lecture.ok && j.test_ecriture_simulee && j.test_ecriture_simulee.ok;
     var exp = j.expires_at ? ' · jeton valable jusqu\'à ' + new Date(j.expires_at).toLocaleString('fr-FR') : '';
-    setState(allOk ? 'ok' : 'warn', (allOk ? 'Connecté, tout est opérationnel' : 'Connecté, certains points sont à régler') + exp);
+    setState(allOk ? 'ok' : 'warn', (allOk ? 'Connecté, tout est opérationnel' : (rightAccount ? 'Connecté, certains points sont à régler' : 'Connecté avec le mauvais compte')) + exp);
   }catch(e){ setState('err', e.message); }
 }
 

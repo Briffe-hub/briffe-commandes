@@ -281,6 +281,7 @@ exports.handler = async function (event) {
       u.searchParams.set("code_challenge_method", "S256");
       u.searchParams.set("state", state);
       u.searchParams.set("resource", disc.resource);
+      u.searchParams.set("prompt", "login"); // force la saisie des identifiants (évite de réutiliser une session Sextan déjà ouverte)
       if (Array.isArray(disc.scopes) && disc.scopes.length) u.searchParams.set("scope", disc.scopes.join(" "));
       return json(200, { url: u.toString() });
     }
