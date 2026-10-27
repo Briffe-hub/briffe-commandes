@@ -7,43 +7,97 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{
-  --bg:#0f0f0f; --panel:#141414; --panel-h:#181818;
-  --line:#1e1e1e; --line-2:#2a2a2a;
+  --bg:#0f0f0f; --panel:#141414; --panel-h:#181818; --panel-2:#1b1b1b;
+  --line:#1e1e1e; --line-2:#2a2a2a; --line-3:#3a3a3a;
   --ink:#e8e8e0; --mut:#8a8a82; --mut-2:#5a5a56;
-  --red:#921821; --red-h:#b3242e; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+  --red:#921821; --red-h:#b3242e; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; --info:#60a5fa;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);background:rgba(17,17,17,.6)}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(17,17,17,.6);position:sticky;top:0;z-index:5;backdrop-filter:blur(6px)}
 .topbar a{color:var(--mut);text-decoration:none;font-size:11px;letter-spacing:.16em;text-transform:uppercase}
 .topbar a:hover{color:var(--ink)}
 .topbar .mini{font-size:11px;letter-spacing:.16em;text-transform:uppercase}
 .topbar .mini b{color:var(--red);font-weight:500}
-.wrap{max-width:760px;margin:0 auto;padding:32px 16px 60px}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 80px}
 h1{font-size:20px;font-weight:500;margin:0 0 6px}
-.lead{color:var(--mut);font-size:13px;line-height:1.6;margin:0 0 28px}
-.card{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:20px}
+.lead{color:var(--mut);font-size:13px;line-height:1.6;margin:0 0 20px}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:18px;margin-bottom:16px}
 .card h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);font-weight:500;margin:0 0 14px}
-.state{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px}
+.muted{color:var(--mut)} .small{font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button,.btn{font-family:inherit;font-size:12px;letter-spacing:.06em;text-transform:uppercase;border-radius:8px;padding:11px 14px;cursor:pointer;border:1px solid var(--line-2);background:var(--panel-h);color:var(--ink);display:inline-flex;align-items:center;gap:8px}
+button:hover,.btn:hover{border-color:var(--mut-2)}
+button.primary,.btn.primary{background:var(--red);border-color:var(--red)}
+button.primary:hover,.btn.primary:hover{background:var(--red-h)}
+button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent}
+input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink);background:#0d0d0d;border:1px solid var(--line-2);border-radius:7px;padding:8px 9px;min-width:0}
+input:focus,select:focus{outline:none;border-color:var(--mut)}
+label.fld{display:flex;flex-direction:column;gap:5px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+
+/* connexion */
+.conn{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;list-style:none}
+.conn::-webkit-details-marker{display:none}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--mut-2);flex:none}
-.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
-.dot.warn{background:var(--warn)}
-.dot.err{background:var(--err)}
-.btns{display:flex;flex-wrap:wrap;gap:10px}
-button{font-family:inherit;font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:8px;padding:11px 16px;cursor:pointer;border:1px solid var(--line-2);background:var(--panel-h);color:var(--ink)}
-button:hover{border-color:var(--mut-2)}
-button.primary{background:var(--red);border-color:var(--red)}
-button.primary:hover{background:var(--red-h)}
-button:disabled{opacity:.5;cursor:default}
-.checks{list-style:none;margin:18px 0 0;padding:0;font-size:13px;line-height:1.9}
+.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+.checks{list-style:none;margin:14px 0 0;padding:0;font-size:12px;line-height:1.9}
 .checks li span{display:inline-block;width:20px}
 .checks .y{color:var(--ok)} .checks .n{color:var(--err)}
-details{margin-top:14px;font-size:12px;color:var(--mut)}
-pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:11px;color:var(--mut);max-height:320px;overflow:auto}
-.note{font-size:12px;color:var(--mut);line-height:1.6;margin-top:16px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:11px;color:var(--mut);max-height:300px;overflow:auto}
+
+/* capture */
+.drop{border:1px dashed var(--line-3);border-radius:10px;padding:18px;text-align:center;color:var(--mut);font-size:13px}
+.drop.over{border-color:var(--ink);color:var(--ink)}
+.pages{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.pg{position:relative;width:92px;height:122px;border:1px solid var(--line-2);border-radius:6px;overflow:hidden;background:#0b0b0b;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--mut);text-align:center;padding:4px}
+.pg img{width:100%;height:100%;object-fit:cover}
+.pg .x{position:absolute;top:3px;right:3px;width:22px;height:22px;padding:0;justify-content:center;border-radius:50%;background:rgba(0,0,0,.7);font-size:12px}
+.pg .tag{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.75);border-radius:4px;padding:1px 5px;font-size:9px}
+.progress{margin-top:14px;font-size:12px;color:var(--mut);line-height:1.7}
+
+/* résultat */
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}
+.chip{font-size:11px;letter-spacing:.06em;border:1px solid var(--line-2);border-radius:999px;padding:6px 11px;cursor:pointer;background:transparent;color:var(--mut);text-transform:none}
+.chip.on{border-color:var(--ink);color:var(--ink)}
+.lines{display:flex;flex-direction:column;gap:10px}
+.ln{border:1px solid var(--line-2);border-radius:9px;background:var(--panel-2);padding:12px;display:grid;grid-template-columns:1.25fr 1.25fr 1fr 1fr;gap:12px;align-items:start}
+.ln.st-ok{border-left:3px solid var(--ok)}
+.ln.st-ecart{border-left:3px solid var(--warn)}
+.ln.st-ambigu,.ln.st-designation,.ln.st-a_confirmer,.ln.st-conversion{border-left:3px solid var(--info)}
+.ln.st-inconnu{border-left:3px solid var(--err)}
+.ln.ignored{opacity:.45}
+.ln .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut-2);margin-bottom:4px}
+.ln .des{font-size:13px;line-height:1.4}
+.ln .ref{font-size:11px;color:var(--mut)}
+.badge{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:2px 6px;margin-top:6px}
+.b-ok{background:rgba(34,197,94,.12);color:var(--ok)}
+.b-ecart{background:rgba(245,158,11,.14);color:var(--warn)}
+.b-info{background:rgba(96,165,250,.14);color:var(--info)}
+.b-err{background:rgba(239,68,68,.14);color:var(--err)}
+.ln select,.ln input{width:100%}
+.pr{font-size:12px;line-height:1.7}
+.pr b{font-weight:500}
+.up{color:var(--err)} .down{color:var(--ok)}
+.alerts{grid-column:1/-1;margin:0;padding:0 0 0 16px;font-size:11.5px;color:var(--mut);line-height:1.6}
+.alerts:empty{display:none}
+.search-res{margin-top:6px;border:1px solid var(--line-2);border-radius:7px;max-height:180px;overflow:auto}
+.search-res div{padding:7px 9px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line)}
+.search-res div:hover{background:var(--panel-h)}
+.sumbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.err-box{border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.07);color:#fca5a5;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:12px}
+@media (max-width:820px){
+  .ln{grid-template-columns:1fr 1fr}
+}
+@media (max-width:520px){
+  .ln{grid-template-columns:1fr}
+  .wrap{padding:18px 12px 80px}
+}
 </style>
 </head>
 <body>
@@ -54,89 +108,516 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 
 <main class="wrap">
   <h1>Prix fournisseurs</h1>
-  <p class="lead">Mise à jour des prix d'achat dans Sextan à partir des BL et factures. Étape 1 : connexion de briffetools à Sextan.</p>
+  <p class="lead">Photo ou PDF d'un BL ou d'une facture : lecture, rapprochement avec Sextan, contrôle des prix négociés.</p>
 
-  <section class="card">
-    <h2>Connexion Sextan</h2>
-    <div class="state"><span class="dot" id="dot"></span><span id="stateTxt">Vérification…</span></div>
-    <div class="btns">
+  <!-- Connexion Sextan -->
+  <details class="card" id="connCard">
+    <summary class="conn"><span class="dot" id="dot"></span><span id="stateTxt">Connexion Sextan : vérification…</span></summary>
+    <div style="margin-top:14px" class="row">
       <button class="primary" id="btnConnect">Connecter Sextan</button>
       <button id="btnTest">Tester</button>
       <button id="btnDisconnect">Déconnecter</button>
     </div>
     <ul class="checks" id="checks" hidden></ul>
-    <details id="det" hidden><summary>Détail technique</summary><pre id="raw"></pre></details>
-    <p class="note">La connexion se fait avec le compte Sextan « briffetools ». Tu saisis son mot de passe sur la page Sextan, jamais ici. Tous les tests d'écriture sont des simulations : rien n'est modifié dans Sextan.</p>
+    <p class="small muted" style="line-height:1.6;margin:14px 0 0">La connexion se fait avec le compte Sextan « briffetools » : en cas de reconnexion, utilise une fenêtre de navigation privée pour ne pas relier un autre compte. Les tests d'écriture sont des simulations.</p>
+  </details>
+
+  <!-- Capture -->
+  <section class="card" id="captureCard">
+    <h2>1 · Document</h2>
+    <div class="row">
+      <label class="btn primary">Prendre une photo
+        <input type="file" id="inCamera" accept="image/*" capture="environment" hidden>
+      </label>
+      <label class="btn">Importer photos ou PDF
+        <input type="file" id="inFiles" accept="image/*,application/pdf" multiple hidden>
+      </label>
+    </div>
+    <div class="drop" id="drop" style="margin-top:12px">ou dépose les fichiers ici (plusieurs pages possibles pour un même document)</div>
+    <div class="pages" id="pages"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="btnRead" disabled>Lire le document</button>
+      <button class="ghost" id="btnClear" disabled>Vider</button>
+    </div>
+    <div class="progress" id="progress"></div>
+  </section>
+
+  <!-- Résultat -->
+  <section class="card" id="resultCard" hidden>
+    <h2>2 · Contrôle et validation</h2>
+    <div class="meta">
+      <label class="fld">Fournisseur<select id="selProvider"></select></label>
+      <label class="fld">Type<input id="docType" readonly></label>
+      <label class="fld">N° document<input id="docNum"></label>
+      <label class="fld">Date<input id="docDate" type="date"></label>
+      <label class="fld">Seuil d'alerte (%)<input id="seuil" type="number" min="0" step="0.5" value="1"></label>
+    </div>
+    <div class="small muted" id="docInfo"></div>
+    <div class="chips" id="chips"></div>
+    <div class="lines" id="lines"></div>
+    <div class="sumbar">
+      <div class="small muted" id="summary"></div>
+      <div class="row">
+        <button id="btnCsv">Exporter CSV</button>
+        <button class="primary" id="btnApply" disabled title="Étape 3 : écriture dans Sextan">Enregistrer dans Sextan</button>
+      </div>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">Enregistrement dans Sextan et historique des prix : prochaine étape. Pour l'instant, le module lit, rapproche et contrôle, sans rien modifier.</p>
   </section>
 </main>
 
 <script>
-var API = '/.netlify/functions/sextan-mcp';
+/* =========================================================
+   Accès API (mot de passe Briffe partagé avec les autres outils)
+   ========================================================= */
+var FN = '/.netlify/functions/';
 function getPass(){ try{ return sessionStorage.getItem('bt_liens_pass') || ''; }catch(e){ return ''; } }
 function setPass(p){ try{ sessionStorage.setItem('bt_liens_pass', p); }catch(e){} }
 function clearPass(){ try{ sessionStorage.removeItem('bt_liens_pass'); }catch(e){} }
-
-async function api(action){
+async function post(fn, body){
   var pass = getPass();
   if(!pass){ pass = prompt('Mot de passe Briffe :', '') || ''; if(!pass) throw new Error('Mot de passe requis.'); setPass(pass); }
-  var r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-briffe-pass':pass }, body:JSON.stringify({ action:action }) });
-  var j = {}; try{ j = await r.json(); }catch(e){}
+  var r = await fetch(FN + fn, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-briffe-pass':pass }, body:JSON.stringify(body) });
+  var txt = await r.text(); var j = {};
+  try{ j = JSON.parse(txt); }catch(e){ j = { error: r.status === 502 || r.status === 504 ? 'Délai dépassé côté serveur (' + r.status + ').' : 'Réponse inattendue (' + r.status + ').' }; }
   if(r.status === 401){ clearPass(); throw new Error(j.error || 'Mot de passe incorrect.'); }
+  j._status = r.status;
   return j;
 }
+function esc(s){ return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
+function fmt(v, d){ if(v === null || v === undefined || !isFinite(v)) return '—'; return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function fmtP(v){ if(v === null || v === undefined || !isFinite(v)) return '—'; var a = Math.abs(v); return Number(v).toLocaleString('fr-FR', { maximumFractionDigits: a >= 1 ? 3 : 6 }); }
+function pctTxt(v){ if(v === null || v === undefined || !isFinite(v)) return ''; var c = Math.abs(v) < 0.005 ? '' : (v > 0 ? 'up' : 'down'); return '<span class="' + c + '">' + (v > 0 ? '+' : '') + fmt(v, 1) + ' %</span>'; }
 
-function setState(kind, txt){
-  var d = document.getElementById('dot'); d.className = 'dot' + (kind ? ' ' + kind : '');
-  document.getElementById('stateTxt').textContent = txt;
-}
-function showRaw(obj){
-  document.getElementById('raw').textContent = JSON.stringify(obj, null, 2);
-  document.getElementById('det').hidden = false;
-}
-function li(ok, txt){ return '<li><span class="' + (ok ? 'y' : 'n') + '">' + (ok ? '✓' : '✗') + '</span>' + txt + '</li>'; }
-function escHtml(s){ return String(s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
-
+/* =========================================================
+   Connexion Sextan
+   ========================================================= */
 var NEEDED = ['search_articles','article_reference','category_tree','update_article','create_article','search_providers','provider_reference'];
-
-async function refresh(){
-  setState('', 'Vérification…');
+function setState(kind, txt){ document.getElementById('dot').className = 'dot' + (kind ? ' ' + kind : ''); document.getElementById('stateTxt').textContent = txt; }
+function li(ok, txt){ return '<li><span class="' + (ok ? 'y' : 'n') + '">' + (ok ? '✓' : '✗') + '</span>' + txt + '</li>'; }
+async function refreshConn(){
+  setState('', 'Connexion Sextan : vérification…');
   var c = document.getElementById('checks'); c.hidden = true;
   try{
-    var j = await api('status');
-    showRaw(j);
-    if(j.connected === false){ setState('', 'Non connecté'); return; }
-    if(j.error){ setState('err', j.reconnect ? 'Reconnexion nécessaire' : 'Erreur : ' + j.error); return; }
-    var tools = j.tools || [];
-    var html = '';
+    var j = await post('sextan-mcp', { action:'status' });
+    if(j.connected === false){ setState('err', 'Sextan non connecté'); document.getElementById('connCard').open = true; return; }
+    if(j.error){ setState('err', j.reconnect ? 'Sextan : reconnexion nécessaire' : 'Sextan : ' + j.error); document.getElementById('connCard').open = true; return; }
+    var tools = j.tools || [], html = '';
     NEEDED.forEach(function(t){ html += li(tools.indexOf(t) >= 0, 'Outil ' + t); });
-    html += li(j.test_lecture && j.test_lecture.ok, 'Lecture d\'un article' + (j.test_lecture && j.test_lecture.article ? ' (' + escHtml(j.test_lecture.article) + ')' : ''));
+    html += li(j.test_lecture && j.test_lecture.ok, 'Lecture d\'un article' + (j.test_lecture && j.test_lecture.article ? ' (' + esc(j.test_lecture.article) + ')' : ''));
     html += li(j.test_ecriture_simulee && j.test_ecriture_simulee.ok, 'Modification d\'article (simulation)');
-    var extra = tools.filter(function(t){ return NEEDED.indexOf(t) < 0; });
-    var rightAccount = extra.length === 0;
-    html += li(rightAccount, rightAccount ? 'Compte limité aux outils du module (compte briffetools)'
-      : 'Le compte connecté a ' + extra.length + ' outil(s) en trop : ce n\'est probablement pas le compte briffetools');
+    var extra = tools.filter(function(t){ return NEEDED.indexOf(t) < 0; }), rightAccount = extra.length === 0;
+    html += li(rightAccount, rightAccount ? 'Compte limité aux outils du module (compte briffetools)' : 'Le compte connecté a ' + extra.length + ' outil(s) en trop : ce n\'est probablement pas le compte briffetools');
     c.innerHTML = html; c.hidden = false;
     var allOk = rightAccount && NEEDED.every(function(t){ return tools.indexOf(t) >= 0; }) && j.test_lecture && j.test_lecture.ok && j.test_ecriture_simulee && j.test_ecriture_simulee.ok;
-    var exp = j.expires_at ? ' · jeton valable jusqu\'à ' + new Date(j.expires_at).toLocaleString('fr-FR') : '';
-    setState(allOk ? 'ok' : 'warn', (allOk ? 'Connecté, tout est opérationnel' : (rightAccount ? 'Connecté, certains points sont à régler' : 'Connecté avec le mauvais compte')) + exp);
+    setState(allOk ? 'ok' : 'warn', allOk ? 'Sextan connecté' : (rightAccount ? 'Sextan connecté, points à régler' : 'Sextan connecté avec le mauvais compte'));
+    if(!allOk) document.getElementById('connCard').open = true;
   }catch(e){ setState('err', e.message); }
 }
-
 document.getElementById('btnConnect').onclick = async function(){
   this.disabled = true;
-  try{
-    var j = await api('start');
-    if(!j.url){ showRaw(j); throw new Error(j.error || 'Adresse de connexion non reçue.'); }
-    window.location.href = j.url;
-  }catch(e){ setState('err', e.message); this.disabled = false; }
+  try{ var j = await post('sextan-mcp', { action:'start' }); if(!j.url) throw new Error(j.error || 'Adresse de connexion non reçue.'); window.location.href = j.url; }
+  catch(e){ setState('err', e.message); this.disabled = false; }
 };
-document.getElementById('btnTest').onclick = refresh;
+document.getElementById('btnTest').onclick = refreshConn;
 document.getElementById('btnDisconnect').onclick = async function(){
   if(!confirm('Déconnecter briffetools de Sextan ?')) return;
-  try{ await api('disconnect'); refresh(); }catch(e){ setState('err', e.message); }
+  try{ await post('sextan-mcp', { action:'disconnect' }); refreshConn(); }catch(e){ setState('err', e.message); }
 };
 
-refresh();
+/* =========================================================
+   Capture : photos (réduites) et PDF (texte natif ou pages rendues)
+   ========================================================= */
+var PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js';
+var PAGES = []; // { kind:'image'|'text', image?, text?, thumb?, name }
+var MAX_SIDE = 2000;
+
+function loadImage(file){
+  return new Promise(function(res, rej){
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function(){ URL.revokeObjectURL(url); res(img); };
+    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error('Image illisible : ' + file.name)); };
+    img.src = url;
+  });
+}
+function canvasToJpeg(src, w, h){
+  var s = Math.min(1, MAX_SIDE / Math.max(w, h));
+  var c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85);
+}
+// Reconstitue des lignes de texte à partir des positions pdf.js
+function pdfItemsToText(items){
+  var rows = [];
+  items.forEach(function(it){
+    if(!it.str || !it.str.trim()) return;
+    var x = it.transform[4], y = it.transform[5];
+    var row = rows.find(function(r){ return Math.abs(r.y - y) < 2.5; });
+    if(!row){ row = { y:y, parts:[] }; rows.push(row); }
+    // certains PDF dessinent deux fois le même texte (effet gras) : on ignore le doublon
+    if(row.parts.some(function(q){ return q.s === it.str && Math.abs(q.x - x) < 1.5; })) return;
+    row.parts.push({ x:x, s:it.str, w:it.width || 0 });
+  });
+  rows.sort(function(a, b){ return b.y - a.y; });
+  return rows.map(function(r){
+    r.parts.sort(function(a, b){ return a.x - b.x; });
+    var out = '', lastEnd = null;
+    r.parts.forEach(function(p){
+      if(lastEnd !== null){ var gap = p.x - lastEnd; out += gap > 12 ? '   ' : (gap > 1.5 ? ' ' : ''); }
+      out += p.s; lastEnd = p.x + p.w;
+    });
+    return out;
+  }).join('\n');
+}
+// Certains PDF (ex. Patisfrais) déclarent un codage Mac alors que le texte est en Windows-1252 :
+// « NumÈro », « 48 000Ä ». On rétablit les caractères quand le défaut est détecté sur la page.
+var MAC2WIN = {"Ä": "€", "Ç": "‚", "É": "ƒ", "Ñ": "„", "Ö": "…", "Ü": "†", "á": "‡", "à": "ˆ", "â": "‰", "ä": "Š", "ã": "‹", "å": "Œ", "é": "Ž", "ë": "‘", "í": "’", "ì": "“", "î": "”", "ï": "•", "ñ": "–", "ó": "—", "ò": "˜", "ô": "™", "ö": "š", "õ": "›", "ú": "œ", "û": "ž", "ü": "Ÿ", "†": " ", "°": "¡", "§": "¤", "•": "¥", "¶": "¦", "ß": "§", "®": "¨", "™": "ª", "´": "«", "¨": "¬", "≠": "­", "Æ": "®", "Ø": "¯", "∞": "°", "≤": "²", "≥": "³", "¥": "´", "∂": "¶", "∑": "·", "∏": "¸", "π": "¹", "∫": "º", "ª": "»", "º": "¼", "Ω": "½", "æ": "¾", "ø": "¿", "¿": "À", "¡": "Á", "¬": "Â", "√": "Ã", "ƒ": "Ä", "≈": "Å", "∆": "Æ", "«": "Ç", "»": "È", "…": "É", " ": "Ê", "À": "Ë", "Ã": "Ì", "Õ": "Í", "Œ": "Î", "œ": "Ï", "–": "Ð", "—": "Ñ", "“": "Ò", "”": "Ó", "‘": "Ô", "’": "Õ", "÷": "Ö", "◊": "×", "ÿ": "Ø", "Ÿ": "Ù", "⁄": "Ú", "€": "Û", "‹": "Ü", "›": "Ý", "ﬁ": "Þ", "ﬂ": "ß", "‡": "à", "·": "á", "‚": "â", "„": "ã", "‰": "ä", "Â": "å", "Ê": "æ", "Á": "ç", "Ë": "è", "È": "é", "Í": "ê", "Î": "ë", "Ï": "ì", "Ì": "í", "Ó": "î", "Ô": "ï", "": "ð", "Ò": "ñ", "Ú": "ò", "Û": "ó", "Ù": "ô", "ı": "õ", "ˆ": "ö", "˜": "÷", "¯": "ø", "˘": "ù", "˙": "ú", "˚": "û", "¸": "ü", "˝": "ý", "˛": "þ", "ˇ": "ÿ"};
+function fixEncoding(t){
+  var suspect = (t.match(/[a-z][ÈË‡ÍÔ][a-z]/g) || []).length + (/∞|\d\s?Ä/.test(t) ? 2 : 0);
+  if(suspect < 2) return t;
+  return t.replace(/[^\x00-\x7f]/g, function(c){ return MAC2WIN[c] || c; });
+}
+async function addFiles(list){
+  var files = Array.prototype.slice.call(list || []);
+  var prog = document.getElementById('progress');
+  for(var i = 0; i < files.length; i++){
+    var f = files[i];
+    try{
+      if(f.type === 'application/pdf' || /\.pdf$/i.test(f.name)){
+        if(!window.pdfjsLib) throw new Error('Lecteur PDF non chargé.');
+        prog.textContent = 'Ouverture de ' + f.name + '…';
+        var pdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
+        for(var p = 1; p <= pdf.numPages; p++){
+          var page = await pdf.getPage(p);
+          var tc = await page.getTextContent();
+          var text = fixEncoding(pdfItemsToText(tc.items));
+          var vp = page.getViewport({ scale: 0.35 });
+          var tcv = document.createElement('canvas'); tcv.width = vp.width; tcv.height = vp.height;
+          await page.render({ canvasContext: tcv.getContext('2d'), viewport: vp }).promise;
+          var thumb = tcv.toDataURL('image/jpeg', 0.7);
+          if(text.replace(/\s/g, '').length > 80){
+            PAGES.push({ kind:'text', text:text, thumb:thumb, name:f.name + ' p.' + p });
+          } else { // PDF scanné : on envoie l'image de la page
+            var vp2 = page.getViewport({ scale: 2 });
+            var cv = document.createElement('canvas'); cv.width = vp2.width; cv.height = vp2.height;
+            await page.render({ canvasContext: cv.getContext('2d'), viewport: vp2 }).promise;
+            PAGES.push({ kind:'image', image:canvasToJpeg(cv, cv.width, cv.height), thumb:thumb, name:f.name + ' p.' + p });
+          }
+        }
+      } else if(/^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name)){
+        var img = await loadImage(f);
+        var data = canvasToJpeg(img, img.naturalWidth, img.naturalHeight);
+        PAGES.push({ kind:'image', image:data, thumb:data, name:f.name });
+      } else {
+        throw new Error('Format non pris en charge : ' + f.name);
+      }
+      prog.textContent = '';
+    }catch(e){ prog.innerHTML = '<div class="err-box">' + esc(e.message) + '</div>'; }
+  }
+  renderPages();
+}
+function renderPages(){
+  var box = document.getElementById('pages');
+  box.innerHTML = PAGES.map(function(p, i){
+    return '<div class="pg">' + (p.thumb ? '<img src="' + p.thumb + '" alt="">' : esc(p.name)) +
+      '<span class="tag">' + (i + 1) + (p.kind === 'text' ? ' · texte' : '') + '</span>' +
+      '<button class="x" data-i="' + i + '" title="Retirer">✕</button></div>';
+  }).join('');
+  box.querySelectorAll('.x').forEach(function(b){ b.onclick = function(){ PAGES.splice(+this.dataset.i, 1); renderPages(); }; });
+  document.getElementById('btnRead').disabled = !PAGES.length;
+  document.getElementById('btnClear').disabled = !PAGES.length;
+}
+document.getElementById('inCamera').onchange = function(){ addFiles(this.files); this.value = ''; };
+document.getElementById('inFiles').onchange = function(){ addFiles(this.files); this.value = ''; };
+var drop = document.getElementById('drop');
+['dragenter','dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); }); });
+['dragleave','drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); }); });
+drop.addEventListener('drop', function(e){ addFiles(e.dataTransfer.files); });
+document.getElementById('btnClear').onclick = function(){ PAGES = []; renderPages(); document.getElementById('progress').textContent = ''; };
+
+/* =========================================================
+   Lecture (une page par appel, en parallèle) puis rapprochement
+   ========================================================= */
+var DOC = null, RES = null, CAT = null, FILTER = 'todo';
+
+async function readAll(){
+  var prog = document.getElementById('progress');
+  var btn = document.getElementById('btnRead'); btn.disabled = true;
+  var n = PAGES.length, done = 0, errors = [];
+  prog.textContent = 'Lecture des pages : 0 / ' + n + '…';
+  var results = new Array(n);
+  var queue = PAGES.map(function(p, i){ return i; });
+  async function worker(){
+    while(queue.length){
+      var i = queue.shift(), p = PAGES[i];
+      var body = p.kind === 'image' ? { image:p.image } : { text:p.text };
+      body.page = i + 1; body.pages = n;
+      try{
+        var j = await post('prix-lecture', body);
+        if(!j.ok) throw new Error(j.error || 'erreur');
+        results[i] = j;
+      }catch(e){ errors.push('Page ' + (i + 1) + ' : ' + e.message); }
+      done++; prog.textContent = 'Lecture des pages : ' + done + ' / ' + n + '…';
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  var ok = results.filter(Boolean);
+  if(!ok.length){ prog.innerHTML = '<div class="err-box">' + esc(errors.join(' · ') || 'Aucune page lue.') + '</div>'; btn.disabled = false; return; }
+  // Fusion des pages
+  DOC = { fournisseur:{ nom:null }, document:{ type:'autre', numero:null, date:null, bl:[] }, lignes:[], remarques:[] };
+  ok.forEach(function(r){
+    var d = r.data;
+    if(!DOC.fournisseur.nom && d.fournisseur && d.fournisseur.nom) DOC.fournisseur = d.fournisseur;
+    if(DOC.document.type === 'autre' && d.document.type !== 'autre') DOC.document.type = d.document.type;
+    if(!DOC.document.numero && d.document.numero) DOC.document.numero = d.document.numero;
+    if(!DOC.document.date && d.document.date) DOC.document.date = d.document.date;
+    (d.document.bl || []).forEach(function(b){ if(DOC.document.bl.indexOf(b) < 0) DOC.document.bl.push(b); });
+    DOC.lignes = DOC.lignes.concat(d.lignes || []);
+    DOC.remarques = DOC.remarques.concat(d.remarques || []);
+    if(r.truncated) DOC.remarques.push('Une page a été lue partiellement (réponse tronquée).');
+  });
+  var times = ok.map(function(r){ return r.ms; });
+  prog.innerHTML = esc(DOC.lignes.length + ' ligne(s) lue(s) en ' + fmt(Math.max.apply(null, times) / 1000, 1) + ' s') +
+    (errors.length ? '<div class="err-box">' + esc(errors.join(' · ')) + '</div>' : '') + '<br>Rapprochement avec Sextan…';
+  await match(null);
+  btn.disabled = false;
+}
+async function match(providerId){
+  var prog = document.getElementById('progress');
+  try{
+    var body = { document: DOC, seuil: parseFloat(document.getElementById('seuil').value) || 1 };
+    if(providerId) body.provider_id = providerId;
+    var j = await post('prix-rapprochement', body);
+    if(!j.ok){
+      if(j.reconnect){ document.getElementById('connCard').open = true; setState('err', 'Sextan : reconnexion nécessaire'); }
+      throw new Error(j.error || 'Rapprochement impossible.');
+    }
+    RES = j;
+    RES.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; });
+    prog.innerHTML = prog.innerHTML.replace('Rapprochement avec Sextan…', 'Rapprochement terminé.');
+    renderResult();
+  }catch(e){ prog.innerHTML += '<div class="err-box">' + esc(e.message) + '</div>'; }
+}
+document.getElementById('btnRead').onclick = readAll;
+
+async function ensureCatalogue(){
+  if(CAT) return CAT;
+  var j = await post('prix-rapprochement', { action:'catalogue' });
+  if(!j.ok) throw new Error(j.error || 'Catalogue indisponible.');
+  CAT = j; return CAT;
+}
+
+/* =========================================================
+   Conversion côté navigateur (même logique que le serveur)
+   ========================================================= */
+function normU(u){ return String(u || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s/g, ''); }
+function articleUnit(u){
+  var x = normU(u);
+  if(['g','gr','gramme','grammes'].indexOf(x) >= 0) return { dim:'masse', q:1 };
+  if(x === 'kg') return { dim:'masse', q:1000 };
+  if(x === 'ml') return { dim:'volume', q:1 };
+  if(x === 'cl') return { dim:'volume', q:10 };
+  if(['l','litre','litres'].indexOf(x) >= 0) return { dim:'volume', q:1000 };
+  return { dim:'piece', q:1 };
+}
+function convertPrice(line, article, sl){
+  var p = line.prix; if(p === null || p === undefined) return { value:null, how:'prix illisible', sure:false };
+  var au = articleUnit(article.unit), opts = [], up = String(line.unite_prix || '').toUpperCase();
+  var compat = function(a, b){ return a === b || (a !== 'piece' && b !== 'piece'); };
+  if(line.base_prix && line.base_prix.quantite > 0){
+    var bd = line.base_prix.unite === 'g' ? 'masse' : line.base_prix.unite === 'ml' ? 'volume' : 'piece';
+    if(compat(bd, au.dim)) opts.push({ value:p / line.base_prix.quantite * au.q, how:'prix ÷ ' + line.base_prix.quantite + ' ' + (line.base_prix.unite === 'piece' ? 'pièces' : line.base_prix.unite), sure:true });
+  }
+  if(au.dim !== 'piece' && (up === 'KG' || up === 'L')) opts.push({ value:p / 1000 * au.q, how:'prix au ' + up.toLowerCase() + ' ÷ 1000', sure:true });
+  if(au.dim !== 'piece' && up !== 'KG' && up !== 'L') opts.push({ value:p / 1000 * au.q, how:'1 unité facturée = 1 kg ou 1 L (supposé)', sure:false });
+  if(sl && sl.lot > 0) opts.push({ value:p / sl.lot, how:'prix ÷ conditionnement Sextan (' + sl.lot + ')', sure:false });
+  if(au.dim === 'piece') opts.push({ value:p, how:'prix à l\'unité', sure:false });
+  if(!opts.length) return { value:null, how:'conversion impossible', sure:false };
+  var ref = sl && sl.price > 0 ? sl.price : (article.price > 0 ? article.price : null), best = opts[0];
+  if(ref){
+    var dist = function(o){ return Math.abs(Math.log(o.value / ref)); };
+    if(!(best.sure && dist(best) < Math.log(2))){ best = opts.reduce(function(a, b){ return dist(b) < dist(a) ? b : a; }); best = Object.assign({}, best, { sure:false }); }
+  }
+  return best;
+}
+function sameRef(a, b){ return !!a && !!b && String(a).replace(/^0+/, '').toLowerCase() === String(b).replace(/^0+/, '').toLowerCase(); }
+function pct(a, b){ return a !== null && a !== undefined && b > 0 ? (a / b - 1) * 100 : null; }
+
+// Réaffecte une ligne à un autre article (choisi dans la liste ou par recherche)
+function reassign(r, art){
+  var pid = RES.fournisseur && RES.fournisseur.id;
+  var sl = (art.suppliers || []).find(function(s){ return s.provider_id === pid && sameRef(s.ref, r.ligne.ref); })
+        || (art.suppliers || []).find(function(s){ return s.provider_id === pid; }) || null;
+  r.article = { id:art.id, name:art.name, unit:art.unit, price:art.price };
+  r.ligne_fournisseur = sl;
+  r.conversion = convertPrice(r.ligne, art, sl);
+  r.prix_saisi = r.conversion.value !== null ? Math.round(r.conversion.value * 1e6) / 1e6 : null;
+  r.manuel = true;
+  var hasRef = sl && sameRef(sl.ref, r.ligne.ref);
+  r.action = hasRef ? (Math.abs(pct(r.prix_saisi, sl.price) || 0) > seuil() ? 'maj_prix' : 'aucune') : 'rattacher';
+}
+function seuil(){ return parseFloat(document.getElementById('seuil').value) || 1; }
+
+/* =========================================================
+   Rendu du récapitulatif
+   ========================================================= */
+var ST = {
+  ok:{ t:'Conforme', b:'b-ok' }, ecart:{ t:'Écart de prix', b:'b-ecart' }, ambigu:{ t:'Référence en double', b:'b-info' },
+  designation:{ t:'Désignation différente', b:'b-info' }, a_confirmer:{ t:'À confirmer', b:'b-info' },
+  conversion:{ t:'Unité à vérifier', b:'b-info' }, inconnu:{ t:'Inconnu dans Sextan', b:'b-err' }
+};
+var ACTIONS = [
+  ['aucune', 'Aucune modification'],
+  ['maj_prix', 'MAJ négocié + dernier prix'],
+  ['maj_dernier', 'MAJ dernier prix seul'],
+  ['rattacher', 'Rattacher la réf. à la fiche'],
+  ['creer', 'Créer un article'],
+  ['ignorer', 'Ignorer la ligne']
+];
+function liveStatus(r){
+  if(r.action === 'ignorer') return 'ignore';
+  return r.statut;
+}
+function renderResult(){
+  document.getElementById('resultCard').hidden = false;
+  var d = DOC.document;
+  document.getElementById('docType').value = d.type === 'facture' ? 'Facture' : d.type === 'bl' ? 'Bon de livraison' : 'Document';
+  document.getElementById('docNum').value = d.numero || '';
+  document.getElementById('docDate').value = d.date || '';
+  var sel = document.getElementById('selProvider');
+  var provs = (RES.providers || []).filter(function(p){ return !p.inactive; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+  sel.innerHTML = '<option value="">— à choisir —</option>' + provs.map(function(p){ return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+  sel.value = RES.fournisseur ? RES.fournisseur.id : '';
+  document.getElementById('docInfo').innerHTML =
+    'Lu : « ' + esc(DOC.fournisseur.nom || '?') + ' »' + (RES.fournisseur ? ' → ' + esc(RES.fournisseur.name) + ' (' + esc(RES.fournisseur_via) + ')' : ' → fournisseur non reconnu') +
+    (d.bl && d.bl.length ? ' · BL ' + esc(d.bl.join(', ')) : '') +
+    (DOC.remarques.length ? '<br>Remarques de lecture : ' + esc(DOC.remarques.join(' · ')) : '');
+  renderChips(); renderLines();
+}
+function counts(){
+  var c = { all:0, todo:0, ok:0 };
+  RES.lignes.forEach(function(r){ c.all++; if(r.statut === 'ok' && r.action === 'aucune') c.ok++; else c.todo++; });
+  return c;
+}
+function renderChips(){
+  var c = counts();
+  var defs = [['todo', 'À traiter (' + c.todo + ')'], ['ok', 'Conformes (' + c.ok + ')'], ['all', 'Toutes (' + c.all + ')']];
+  var box = document.getElementById('chips');
+  box.innerHTML = defs.map(function(x){ return '<button class="chip' + (FILTER === x[0] ? ' on' : '') + '" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+  box.querySelectorAll('.chip').forEach(function(b){ b.onclick = function(){ FILTER = this.dataset.f; renderChips(); renderLines(); }; });
+}
+function lineHtml(r){
+  var l = r.ligne, st = ST[r.statut] || { t:r.statut, b:'b-info' };
+  var sl = r.ligne_fournisseur, neg = sl && sl.price > 0 ? sl.price : null;
+  var unitArt = r.article ? r.article.unit : '';
+  var bp = l.base_prix ? ' (' + fmt(l.base_prix.quantite, 0) + ' ' + (l.base_prix.unite === 'piece' ? 'pièces' : l.base_prix.unite) + ')' : '';
+  // choix d'article
+  var opts = (r.candidats || []).map(function(c){ return '<option value="' + c.id + '"' + (r.article && r.article.id === c.id ? ' selected' : '') + '>' + esc(c.name) + ' · ' + esc(c.unit) + (c.via === 'nom' ? ' (nom)' : '') + '</option>'; });
+  if(r.article && !(r.candidats || []).some(function(c){ return c.id === r.article.id; })) opts.unshift('<option value="' + r.article.id + '" selected>' + esc(r.article.name) + ' · ' + esc(r.article.unit) + '</option>');
+  var artSel = '<select data-k="art">' + (r.article ? '' : '<option value="">— aucun —</option>') + opts.join('') + '<option value="__search">Chercher un autre article…</option></select>' +
+    '<div class="srch" hidden><input data-k="q" placeholder="Rechercher dans Sextan"><div class="search-res"></div></div>';
+  var actSel = '<select data-k="act">' + ACTIONS.map(function(a){ return '<option value="' + a[0] + '"' + (r.action === a[0] ? ' selected' : '') + '>' + a[1] + '</option>'; }).join('') + '</select>';
+  var en = r.prix_saisi;
+  var alerts = (r.alertes || []).slice();
+  if(r.manuel) alerts = alerts.filter(function(a){ return !/^La référence|^Aucune fiche/.test(a); });
+  if(r.conversion && r.conversion.value !== null) alerts.push('Conversion : ' + r.conversion.how + '.');
+  return '<div class="ln st-' + r.statut + (r.action === 'ignorer' ? ' ignored' : '') + '" data-i="' + r.idx + '">' +
+    '<div><div class="lbl">Document</div><div class="des">' + esc(l.designation) + '</div>' +
+      '<div class="ref">' + (l.ref ? 'Réf. ' + esc(l.ref) : 'Sans référence') + (l.quantite !== null ? ' · ' + fmt(l.quantite, 3).replace(/,?0+$/, '') + ' ' + esc(l.unite_quantite || '') : '') + '</div>' +
+      '<span class="badge ' + st.b + '">' + st.t + '</span></div>' +
+    '<div><div class="lbl">Article Sextan</div>' + artSel + '</div>' +
+    '<div class="pr"><div class="lbl">Prix</div>' +
+      'Facturé : <b>' + fmtP(l.prix) + ' €</b> / ' + esc(l.unite_prix || '?') + esc(bp) + '<br>' +
+      '<label class="small muted">Soit € / ' + esc(unitArt || 'unité') + ' :</label><input data-k="px" inputmode="decimal" value="' + (en === null || en === undefined ? '' : String(en).replace('.', ',')) + '">' +
+    '</div>' +
+    '<div class="pr"><div class="lbl">Comparaison</div>' +
+      'Négocié : ' + (neg ? fmtP(neg) + ' ' + pctTxt(pct(en, neg)) : '<span class="muted">non renseigné</span>') + '<br>' +
+      'Dernier achat : ' + (r.article && r.article.price !== null ? fmtP(r.article.price) + ' ' + (en !== null && en !== undefined && Math.round(en * 1000) === Math.round(r.article.price * 1000) ? '<span class="muted">(arrondi Sextan)</span>' : pctTxt(pct(en, r.article.price))) : '—') +
+      '<div style="margin-top:8px">' + actSel + '</div>' +
+    '</div>' +
+    '<ul class="alerts">' + alerts.map(function(a){ return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' +
+  '</div>';
+}
+function renderLines(){
+  var rows = RES.lignes.filter(function(r){
+    var isOk = r.statut === 'ok' && r.action === 'aucune';
+    return FILTER === 'all' || (FILTER === 'ok' ? isOk : !isOk);
+  });
+  var box = document.getElementById('lines');
+  box.innerHTML = rows.length ? rows.map(lineHtml).join('') : '<p class="small muted">Aucune ligne dans ce filtre.</p>';
+  box.querySelectorAll('.ln').forEach(bindLine);
+  renderSummary();
+}
+function bindLine(el){
+  var r = RES.lignes[+el.dataset.i];
+  var art = el.querySelector('[data-k="art"]'), srch = el.querySelector('.srch');
+  art.onchange = async function(){
+    if(this.value === '__search'){ srch.hidden = false; srch.querySelector('input').focus(); return; }
+    if(!this.value) return;
+    try{
+      var cat = await ensureCatalogue();
+      var a = cat.articles.find(function(x){ return String(x.id) === art.value; });
+      if(a){ reassign(r, a); renderLines(); }
+    }catch(e){ alert(e.message); }
+  };
+  var q = srch.querySelector('input'), res = srch.querySelector('.search-res');
+  q.oninput = async function(){
+    var v = normU(this.value); if(v.length < 2){ res.innerHTML = ''; return; }
+    try{
+      var cat = await ensureCatalogue();
+      var words = String(this.value).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).filter(Boolean);
+      var hits = cat.articles.filter(function(a){
+        var hay = (a.name + ' ' + a.suppliers.map(function(s){ return s.ref; }).join(' ')).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        return words.every(function(w){ return hay.indexOf(w) >= 0; });
+      }).slice(0, 30);
+      res.innerHTML = hits.map(function(a){ return '<div data-id="' + a.id + '">' + esc(a.name) + ' <span class="muted">· ' + esc(a.unit) + '</span></div>'; }).join('') || '<div class="muted">Aucun résultat</div>';
+      res.querySelectorAll('[data-id]').forEach(function(d){ d.onclick = function(){
+        var a = cat.articles.find(function(x){ return String(x.id) === d.dataset.id; });
+        if(a){ if(!r.candidats.some(function(c){ return c.id === a.id; })) r.candidats.push({ id:a.id, name:a.name, unit:a.unit, via:'manuel' }); reassign(r, a); renderLines(); }
+      }; });
+    }catch(e){ res.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+  };
+  el.querySelector('[data-k="px"]').onchange = function(){
+    var v = parseFloat(String(this.value).replace(/\s/g, '').replace(',', '.'));
+    r.prix_saisi = isFinite(v) ? v : null; r.manuel = true; renderLines();
+  };
+  el.querySelector('[data-k="act"]').onchange = function(){ r.action = this.value; renderLines(); };
+}
+function renderSummary(){
+  var tally = {};
+  RES.lignes.forEach(function(r){ tally[r.action] = (tally[r.action] || 0) + 1; });
+  var label = { maj_prix:'mise(s) à jour de prix', maj_dernier:'mise(s) à jour du dernier prix', rattacher:'référence(s) à rattacher', creer:'article(s) à créer', ignorer:'ignorée(s)', aucune:'sans modification', choisir:'à départager' };
+  document.getElementById('summary').textContent = RES.lignes.length + ' lignes · ' + Object.keys(tally).map(function(k){ return tally[k] + ' ' + (label[k] || k); }).join(' · ');
+}
+document.getElementById('selProvider').onchange = function(){ if(this.value) match(parseInt(this.value, 10)); };
+document.getElementById('seuil').onchange = function(){ if(DOC) match(document.getElementById('selProvider').value ? parseInt(document.getElementById('selProvider').value, 10) : null); };
+
+/* =========================================================
+   Export CSV (séparateur ; et virgule décimale, pour Excel FR)
+   ========================================================= */
+document.getElementById('btnCsv').onclick = function(){
+  if(!RES) return;
+  var num = function(v){ return v === null || v === undefined || !isFinite(v) ? '' : String(v).replace('.', ','); };
+  var q = function(s){ s = String(s === null || s === undefined ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  var head = ['Fournisseur','Document','Date','Réf.','Désignation','Quantité','Unité','Prix facturé','Unité prix','Article Sextan','ID article','Prix converti','Unité article','Prix négocié','Écart négocié %','Dernier prix','Écart dernier %','Statut','Action','Alertes'];
+  var rows = RES.lignes.map(function(r){
+    var neg = r.ligne_fournisseur && r.ligne_fournisseur.price > 0 ? r.ligne_fournisseur.price : null;
+    return [RES.fournisseur ? RES.fournisseur.name : DOC.fournisseur.nom, document.getElementById('docNum').value, document.getElementById('docDate').value,
+      r.ligne.ref, r.ligne.designation, num(r.ligne.quantite), r.ligne.unite_quantite, num(r.ligne.prix), r.ligne.unite_prix,
+      r.article ? r.article.name : '', r.article ? r.article.id : '', num(r.prix_saisi), r.article ? r.article.unit : '',
+      num(neg), num(pct(r.prix_saisi, neg) !== null ? Math.round(pct(r.prix_saisi, neg) * 100) / 100 : null),
+      num(r.article ? r.article.price : null), num(r.article && pct(r.prix_saisi, r.article.price) !== null ? Math.round(pct(r.prix_saisi, r.article.price) * 100) / 100 : null),
+      (ST[r.statut] || {}).t || r.statut, (ACTIONS.find(function(a){ return a[0] === r.action; }) || [0, r.action])[1], (r.alertes || []).join(' | ')].map(q).join(';');
+  });
+  var csv = '﻿' + head.join(';') + '\n' + rows.join('\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+  a.download = 'controle-prix-' + (RES.fournisseur ? RES.fournisseur.name.replace(/\W+/g, '-').toLowerCase() : 'fournisseur') + '-' + (document.getElementById('docNum').value || 'document') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+refreshConn();
 </script>
 </body>
 </html>
