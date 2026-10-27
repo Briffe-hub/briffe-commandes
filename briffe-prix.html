@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prix fournisseurs · briffetools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f0f0f; --panel:#141414; --panel-h:#181818;
+  --line:#1e1e1e; --line-2:#2a2a2a;
+  --ink:#e8e8e0; --mut:#8a8a82; --mut-2:#5a5a56;
+  --red:#921821; --red-h:#b3242e; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);background:rgba(17,17,17,.6)}
+.topbar a{color:var(--mut);text-decoration:none;font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.topbar a:hover{color:var(--ink)}
+.topbar .mini{font-size:11px;letter-spacing:.16em;text-transform:uppercase}
+.topbar .mini b{color:var(--red);font-weight:500}
+.wrap{max-width:760px;margin:0 auto;padding:32px 16px 60px}
+h1{font-size:20px;font-weight:500;margin:0 0 6px}
+.lead{color:var(--mut);font-size:13px;line-height:1.6;margin:0 0 28px}
+.card{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:20px}
+.card h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);font-weight:500;margin:0 0 14px}
+.state{display:flex;align-items:center;gap:10px;font-size:14px;margin-bottom:16px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut-2);flex:none}
+.dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.dot.warn{background:var(--warn)}
+.dot.err{background:var(--err)}
+.btns{display:flex;flex-wrap:wrap;gap:10px}
+button{font-family:inherit;font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:8px;padding:11px 16px;cursor:pointer;border:1px solid var(--line-2);background:var(--panel-h);color:var(--ink)}
+button:hover{border-color:var(--mut-2)}
+button.primary{background:var(--red);border-color:var(--red)}
+button.primary:hover{background:var(--red-h)}
+button:disabled{opacity:.5;cursor:default}
+.checks{list-style:none;margin:18px 0 0;padding:0;font-size:13px;line-height:1.9}
+.checks li span{display:inline-block;width:20px}
+.checks .y{color:var(--ok)} .checks .n{color:var(--err)}
+details{margin-top:14px;font-size:12px;color:var(--mut)}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:11px;color:var(--mut);max-height:320px;overflow:auto}
+.note{font-size:12px;color:var(--mut);line-height:1.6;margin-top:16px}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a href="index.html">&larr; Outils</a>
+  <span class="mini"><b>briffe</b>tools</span>
+</header>
+
+<main class="wrap">
+  <h1>Prix fournisseurs</h1>
+  <p class="lead">Mise à jour des prix d'achat dans Sextan à partir des BL et factures. Étape 1 : connexion de briffetools à Sextan.</p>
+
+  <section class="card">
+    <h2>Connexion Sextan</h2>
+    <div class="state"><span class="dot" id="dot"></span><span id="stateTxt">Vérification…</span></div>
+    <div class="btns">
+      <button class="primary" id="btnConnect">Connecter Sextan</button>
+      <button id="btnTest">Tester</button>
+      <button id="btnDisconnect">Déconnecter</button>
+    </div>
+    <ul class="checks" id="checks" hidden></ul>
+    <details id="det" hidden><summary>Détail technique</summary><pre id="raw"></pre></details>
+    <p class="note">La connexion se fait avec le compte Sextan « briffetools ». Tu saisis son mot de passe sur la page Sextan, jamais ici. Tous les tests d'écriture sont des simulations : rien n'est modifié dans Sextan.</p>
+  </section>
+</main>
+
+<script>
+var API = '/.netlify/functions/sextan-mcp';
+function getPass(){ try{ return sessionStorage.getItem('bt_liens_pass') || ''; }catch(e){ return ''; } }
+function setPass(p){ try{ sessionStorage.setItem('bt_liens_pass', p); }catch(e){} }
+function clearPass(){ try{ sessionStorage.removeItem('bt_liens_pass'); }catch(e){} }
+
+async function api(action){
+  var pass = getPass();
+  if(!pass){ pass = prompt('Mot de passe Briffe :', '') || ''; if(!pass) throw new Error('Mot de passe requis.'); setPass(pass); }
+  var r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-briffe-pass':pass }, body:JSON.stringify({ action:action }) });
+  var j = {}; try{ j = await r.json(); }catch(e){}
+  if(r.status === 401){ clearPass(); throw new Error(j.error || 'Mot de passe incorrect.'); }
+  return j;
+}
+
+function setState(kind, txt){
+  var d = document.getElementById('dot'); d.className = 'dot' + (kind ? ' ' + kind : '');
+  document.getElementById('stateTxt').textContent = txt;
+}
+function showRaw(obj){
+  document.getElementById('raw').textContent = JSON.stringify(obj, null, 2);
+  document.getElementById('det').hidden = false;
+}
+function li(ok, txt){ return '<li><span class="' + (ok ? 'y' : 'n') + '">' + (ok ? '✓' : '✗') + '</span>' + txt + '</li>'; }
+function escHtml(s){ return String(s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
+
+var NEEDED = ['search_articles','article_reference','category_tree','update_article','create_article','search_providers','provider_reference'];
+
+async function refresh(){
+  setState('', 'Vérification…');
+  var c = document.getElementById('checks'); c.hidden = true;
+  try{
+    var j = await api('status');
+    showRaw(j);
+    if(j.connected === false){ setState('', 'Non connecté'); return; }
+    if(j.error){ setState('err', j.reconnect ? 'Reconnexion nécessaire' : 'Erreur : ' + j.error); return; }
+    var tools = j.tools || [];
+    var html = '';
+    NEEDED.forEach(function(t){ html += li(tools.indexOf(t) >= 0, 'Outil ' + t); });
+    html += li(j.test_lecture && j.test_lecture.ok, 'Lecture d\'un article' + (j.test_lecture && j.test_lecture.article ? ' (' + escHtml(j.test_lecture.article) + ')' : ''));
+    html += li(j.test_ecriture_simulee && j.test_ecriture_simulee.ok, 'Modification d\'article (simulation)');
+    c.innerHTML = html; c.hidden = false;
+    var allOk = NEEDED.every(function(t){ return tools.indexOf(t) >= 0; }) && j.test_lecture && j.test_lecture.ok && j.test_ecriture_simulee && j.test_ecriture_simulee.ok;
+    var exp = j.expires_at ? ' · jeton valable jusqu\'à ' + new Date(j.expires_at).toLocaleString('fr-FR') : '';
+    setState(allOk ? 'ok' : 'warn', (allOk ? 'Connecté, tout est opérationnel' : 'Connecté, certains points sont à régler') + exp);
+  }catch(e){ setState('err', e.message); }
+}
+
+document.getElementById('btnConnect').onclick = async function(){
+  this.disabled = true;
+  try{
+    var j = await api('start');
+    if(!j.url){ showRaw(j); throw new Error(j.error || 'Adresse de connexion non reçue.'); }
+    window.location.href = j.url;
+  }catch(e){ setState('err', e.message); this.disabled = false; }
+};
+document.getElementById('btnTest').onclick = refresh;
+document.getElementById('btnDisconnect').onclick = async function(){
+  if(!confirm('Déconnecter briffetools de Sextan ?')) return;
+  try{ await api('disconnect'); refresh(); }catch(e){ setState('err', e.message); }
+};
+
+refresh();
+</script>
+</body>
+</html>
