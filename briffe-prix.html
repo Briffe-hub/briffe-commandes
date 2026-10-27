@@ -266,6 +266,9 @@ async function post(fn, body){
   j._status = r.status;
   return j;
 }
+// Dates affichées au format français JJ-MM-AA (stockage interne en AAAA-MM-JJ pour le tri)
+function fmtD(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? m[3] + '-' + m[2] + '-' + m[1].slice(2) : (iso || ''); }
+function fmtDT(iso){ var d = new Date(iso); if(isNaN(d)) return ''; var p = function(n){ return (n < 10 ? '0' : '') + n; }; return p(d.getDate()) + '-' + p(d.getMonth() + 1) + '-' + String(d.getFullYear()).slice(2) + ' à ' + p(d.getHours()) + 'h' + p(d.getMinutes()); }
 function esc(s){ return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
 function fmt(v, d){ if(v === null || v === undefined || !isFinite(v)) return '—'; return Number(v).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtP(v){ if(v === null || v === undefined || !isFinite(v)) return '—'; var a = Math.abs(v); return Number(v).toLocaleString('fr-FR', { maximumFractionDigits: a >= 1 ? 3 : 6 }); }
@@ -702,7 +705,7 @@ document.getElementById('btnCsv').onclick = function(){
   var head = ['Fournisseur','Document','Date','Réf.','Désignation','Quantité','Unité','Prix facturé','Unité prix','Article Sextan','ID article','Prix converti','Unité article','Prix négocié','Écart négocié %','Dernier prix','Écart dernier %','Statut','Action','Alertes'];
   var rows = RES.lignes.map(function(r){
     var neg = r.ligne_fournisseur && r.ligne_fournisseur.price > 0 ? r.ligne_fournisseur.price : null;
-    return [RES.fournisseur ? RES.fournisseur.name : DOC.fournisseur.nom, document.getElementById('docNum').value, document.getElementById('docDate').value,
+    return [RES.fournisseur ? RES.fournisseur.name : DOC.fournisseur.nom, document.getElementById('docNum').value, fmtD(document.getElementById('docDate').value),
       r.ligne.ref, r.ligne.designation, num(r.ligne.quantite), r.ligne.unite_quantite, num(r.ligne.prix), r.ligne.unite_prix,
       r.article ? r.article.name : '', r.article ? r.article.id : '', num(r.prix_saisi), r.article ? r.article.unit : '',
       num(neg), num(pct(r.prix_saisi, neg) !== null ? Math.round(pct(r.prix_saisi, neg) * 100) / 100 : null),
@@ -932,13 +935,13 @@ async function startApply(){
     if(HIST_ONLY || !r.article || ['maj_prix','maj_dernier','rattacher'].indexOf(r.action) < 0) return;
     var h = HIST && HIST.articles && HIST.articles[String(r.article.id)];
     var later = h ? (h.points || []).filter(function(p){ return p.doc !== myKey && p.d && p.d > docDate; }) : [];
-    if(later.length){ var l = later[later.length - 1]; r.stale = 'Non appliqué dans Sextan : un prix plus récent est déjà connu (' + l.d + ', ' + l.fn + ', ' + fmtP(l.p) + '). Ajouté à l\'historique seulement.'; }
+    if(later.length){ var l = later[later.length - 1]; r.stale = 'Non appliqué dans Sextan : un prix plus récent est déjà connu (' + fmtD(l.d) + ', ' + l.fn + ', ' + fmtP(l.p) + '). Ajouté à l\'historique seulement.'; }
   });
   var stale = RES.lignes.filter(function(r){ return r.stale; });
   var writes = HIST_ONLY ? [] : RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale; });
   var staleHtml = stale.length ? '<p class="small" style="color:var(--warn)">' + stale.length + ' ligne(s) ne seront pas appliquées dans Sextan car un prix plus récent est déjà enregistré :</p><ul>' + stale.map(function(r){ return '<li>' + esc(r.ligne.designation) + ' — ' + esc(r.stale) + '</li>'; }).join('') + '</ul>' : '';
   var prev = HIST && (HIST.docs || []).find(function(d){ return d.key === docKey(); });
-  var warnDup = prev ? '<p class="small" style="color:var(--warn)">Ce document a déjà été enregistré le ' + esc(new Date(prev.saisi_le).toLocaleString('fr-FR')) + '. L\'historique sera remplacé ; les modifications Sextan seront rejouées (sans doublon pour les créations).</p>' : '';
+  var warnDup = prev ? '<p class="small" style="color:var(--warn)">Ce document a déjà été enregistré le ' + esc(fmtDT(prev.saisi_le)) + '. L\'historique sera remplacé ; les modifications Sextan seront rejouées (sans doublon pour les créations).</p>' : '';
   var btn = document.getElementById('btnApply'); btn.disabled = true;
   if(!writes.length){
     setPanel('<h3>' + (HIST_ONLY ? 'Rattrapage : historique seulement' : 'Aucune modification Sextan à faire') + '</h3>' + warnDup + staleHtml + '<p class="small muted">Le document sera seulement ajouté à l\'historique des prix' + (HIST_ONLY ? ', Sextan ne sera pas modifié' : '') + '.</p><div class="row"><button class="primary" id="btnHistOnly">Ajouter à l\'historique</button><button id="btnCancel">Annuler</button></div>');
@@ -997,7 +1000,7 @@ async function applyHistChecks(res, doc){
     if(k){
       var fixed = Math.round(v / Math.pow(10, k) * 1e6) / 1e6;
       if(isNew) r.prix_nouvel = fixed; else r.prix_saisi = fixed;
-      r.alertes.push('Conversion corrigée d\'après l\'historique (÷ ' + Math.pow(10, k) + ', dernier relevé ' + fmtP(last.p) + ' le ' + last.d + ') : à vérifier.');
+      r.alertes.push('Conversion corrigée d\'après l\'historique (÷ ' + Math.pow(10, k) + ', dernier relevé ' + fmtP(last.p) + ' le ' + fmtD(last.d) + ') : à vérifier.');
       if(r.statut === 'ok') r.statut = 'conversion';
     }
   });
@@ -1039,11 +1042,11 @@ function renderHist(){
     return '<details class="hrow" data-k="' + esc(x.k) + '"' + (OPEN_HK === x.k ? ' open' : '') + '><summary><span>' + esc(x.a.name) + (hors ? ' <span class="muted">(hors Sextan)</span>' : '') + '</span>' +
       '<span>' + fmtP(x.last.p) + ' € / ' + esc(x.a.unit || 'u.') + '</span>' +
       '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var) + lastSus) + '</span>' +
-      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(x.last.d || '') + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
+      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(fmtD(x.last.d)) + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
       (hors ? '<div class="row" style="padding:8px 12px"><button class="ghost" data-att="1">Rattacher à une fiche Sextan…</button><span class="small muted">Les prochains documents avec cette désignation iront sur la fiche choisie.</span></div><div class="att" hidden style="padding:0 12px 10px"></div>' : '') +
       '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
       pts.map(function(p, i){ var older = pts[i + 1];
-        return '<tr><td>' + esc(p.d) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
+        return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
           '<td>' + (p.li !== undefined ? '<button class="ghost" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
       '</table></div></details>';
   }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
@@ -1085,7 +1088,7 @@ function openAttach(el){
         var bad = pts.filter(function(p){ return p.apres === null; }).length;
         prev.innerHTML = '<div class="panel"><h3>Rattacher « ' + esc(a.name) + ' » à « ' + esc(art.name) + ' » (' + esc(art.unit) + ')</h3>' +
           '<div class="tablewrap"><table class="btable"><tr><th>Date</th><th>Facturé</th><th>Prix actuel / ' + esc(a.unit || 'u.') + '</th><th>Nouveau prix / ' + esc(art.unit) + '</th></tr>' +
-          pts.map(function(p){ return '<tr><td>' + esc(p.d) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + fmtP(p.avant) + '</td><td>' + (p.apres === null ? '<span style="color:var(--err)">non convertible</span>' : fmtP(p.apres)) + '</td></tr>'; }).join('') + '</table></div>' +
+          pts.map(function(p){ return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + fmtP(p.avant) + '</td><td>' + (p.apres === null ? '<span style="color:var(--err)">non convertible</span>' : fmtP(p.apres)) + '</td></tr>'; }).join('') + '</table></div>' +
           (bad ? '<p class="small" style="color:var(--err)">' + bad + ' relevé(s) ne peuvent pas être convertis dans l\'unité de la fiche : choisis une fiche dans une unité compatible.</p>' : '') +
           '<div class="row" style="margin-top:10px"><button class="primary" data-go="1"' + (bad ? ' disabled' : '') + '>Confirmer le rattachement</button><button data-no="1">Annuler</button></div></div>';
         prev.querySelector('[data-no]').onclick = function(){ box.hidden = true; };
@@ -1112,7 +1115,7 @@ document.getElementById('btnHistCsv').onclick = function(){
   var q = function(s){ s = String(s === null || s === undefined ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   var lines = [['Article','ID article','Unité','Date','Fournisseur','Réf.','Désignation facture','Prix / unité','Prix facturé','Unité facturée','Négocié avant','Action','Document'].join(';')];
   histRows().forEach(function(x){ x.a.points.forEach(function(p){
-    lines.push([x.a.name, x.k.indexOf('x:') === 0 ? '' : x.k, x.a.unit, p.d, p.fn, p.ref, p.des, num(p.p), num(p.pf), p.up, num(p.neg), p.a, p.doc].map(q).join(';'));
+    lines.push([x.a.name, x.k.indexOf('x:') === 0 ? '' : x.k, x.a.unit, fmtD(p.d), p.fn, p.ref, p.des, num(p.p), num(p.pf), p.up, num(p.neg), p.a, p.doc].map(q).join(';'));
   }); });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type:'text/csv;charset=utf-8' }));
@@ -1245,7 +1248,7 @@ function renderBatch(){
   box.innerHTML = '<div class="tablewrap"><table class="btable"><tr><th>Date</th><th>Fournisseur</th><th>N°</th><th>Lignes</th><th>État</th><th></th></tr>' +
     BATCH.map(function(it){
       var st = batchState(it), d = it.doc ? it.doc.document : {};
-      return '<tr' + (CURRENT === it ? ' class="cur"' : '') + '><td>' + esc(d.date || '—') + '</td>' +
+      return '<tr' + (CURRENT === it ? ' class="cur"' : '') + '><td>' + esc(d.date ? fmtD(d.date) : '—') + '</td>' +
         '<td>' + esc(it.res && it.res.fournisseur ? it.res.fournisseur.name : (it.doc && it.doc.fournisseur.nom) || it.name) + '<div class="small muted">' + esc(it.src) + '</div></td>' +
         '<td>' + esc(d.numero || '') + '</td><td>' + (it.res ? it.res.lignes.length : '') + '</td>' +
         '<td><span class="badge ' + st.b + '">' + esc(st.t) + '</span>' + (it.err ? '<div class="small" style="color:var(--err)">' + esc(it.err) + '</div>' : '') + '</td>' +
@@ -1360,7 +1363,7 @@ function renderGResults(){
   var out = document.getElementById('gResults');
   if(!GFOUND.length){ out.innerHTML = '<p class="small muted">Aucun PDF trouvé avec ces critères.</p>'; return; }
   out.innerHTML = '<div class="tablewrap"><table class="btable"><tr><th></th><th>Date</th><th>Expéditeur</th><th>Objet</th><th>PDF</th></tr>' +
-    GFOUND.map(function(g, i){ return '<tr><td><input type="checkbox" data-g="' + i + '"' + (g.sel ? ' checked' : '') + '></td><td>' + esc(g.date) + '</td><td>' + esc(g.from) + '</td><td>' + esc(g.subject) + '</td><td>' + esc(g.filename) + '</td></tr>'; }).join('') +
+    GFOUND.map(function(g, i){ return '<tr><td><input type="checkbox" data-g="' + i + '"' + (g.sel ? ' checked' : '') + '></td><td>' + esc(fmtD(g.date)) + '</td><td>' + esc(g.from) + '</td><td>' + esc(g.subject) + '</td><td>' + esc(g.filename) + '</td></tr>'; }).join('') +
     '</table></div><div class="row" style="margin-top:10px"><button class="primary" id="btnGAdd">Ajouter la sélection au lot</button><span class="small muted" id="gCount"></span></div>';
   out.querySelectorAll('[data-g]').forEach(function(cb){ cb.onchange = function(){ GFOUND[+this.dataset.g].sel = this.checked; }; });
   document.getElementById('btnGAdd').onclick = gAdd;
@@ -1379,7 +1382,7 @@ async function gAdd(){
     try{
       btn.textContent = 'Téléchargement ' + (i + 1) + ' / ' + sel.length + '…';
       var a = await gGet('/messages/' + g.msgId + '/attachments/' + g.attachmentId);
-      addBatchItem(g.filename, 'Mail du ' + g.date + ' · ' + g.from.replace(/<.*>/, '').trim(), await pdfBytesToPages(g.filename, b64urlToBytes(a.data)));
+      addBatchItem(g.filename, 'Mail du ' + fmtD(g.date) + ' · ' + g.from.replace(/<.*>/, '').trim(), await pdfBytesToPages(g.filename, b64urlToBytes(a.data)));
       ok++;
     }catch(e){ msg.innerHTML += '<div class="err-box">' + esc(g.filename + ' : ' + e.message) + '</div>'; }
   }
