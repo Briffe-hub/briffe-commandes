@@ -125,6 +125,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 .subcard h3{margin:0 0 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:500}
 .chk{display:flex;align-items:flex-start;gap:9px;font-size:12.5px;line-height:1.5;cursor:pointer}
 .chk input{margin-top:3px}
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
+.hdr h2{margin:0}
+button.reset{padding:5px 10px;font-size:10.5px;letter-spacing:.1em;background:transparent;color:var(--mut);border-color:var(--line-2)}
+button.reset:hover{color:var(--ink)}
+summary .reset{margin-left:auto}
 @media (max-width:820px){
   .ln{grid-template-columns:1fr 1fr}
 }
@@ -161,7 +166,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 
   <!-- Capture -->
   <section class="card" id="captureCard">
-    <h2>1 · Document</h2>
+    <div class="hdr"><h2>1 · Document</h2><button class="reset" data-reset="doc" title="Vider ce bloc">Réinitialiser</button></div>
     <div class="row">
       <label class="btn primary">Prendre une photo
         <input type="file" id="inCamera" accept="image/*" capture="environment" hidden>
@@ -174,14 +179,13 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
     <div class="pages" id="pages"></div>
     <div class="row" style="margin-top:14px">
       <button class="primary" id="btnRead" disabled>Lire le document</button>
-      <button class="ghost" id="btnClear" disabled>Vider</button>
     </div>
     <div class="progress" id="progress"></div>
   </section>
 
   <!-- Lot -->
   <details class="card" id="batchCard">
-    <summary class="conn"><span class="small" style="letter-spacing:.16em;text-transform:uppercase;color:var(--mut)">Traitement par lot</span><span class="small muted">· plusieurs factures d'un coup, depuis des fichiers ou Gmail</span></summary>
+    <summary class="conn"><span class="small" style="letter-spacing:.16em;text-transform:uppercase;color:var(--mut)">Traitement par lot</span><span class="small muted">· plusieurs factures d'un coup, depuis des fichiers ou Gmail</span><button class="reset" data-reset="lot" title="Vider ce bloc">Réinitialiser</button></summary>
     <div class="subcard">
       <h3>Fichiers</h3>
       <div class="row"><label class="btn">Choisir des fichiers<input type="file" id="inBatch" accept="image/*,application/pdf" multiple hidden></label>
@@ -204,7 +208,6 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
       <div class="row" style="margin-top:12px">
         <button class="primary" id="btnBatchRun" disabled>Lancer le traitement</button>
         <button id="btnBatchBulk" disabled>Ajouter à l'historique</button>
-        <button class="ghost" id="btnBatchClear" disabled>Vider</button>
       </div>
       <div class="small muted" id="batchMsg" style="margin-top:10px"></div>
       <div id="batchList" style="margin-top:10px"></div>
@@ -214,7 +217,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 
   <!-- Résultat -->
   <section class="card" id="resultCard" hidden>
-    <h2>2 · Contrôle et validation</h2>
+    <div class="hdr"><h2>2 · Contrôle et validation</h2><button class="reset" data-reset="ctrl" title="Fermer le document en cours">Réinitialiser</button></div>
     <div class="meta">
       <label class="fld">Fournisseur<select id="selProvider"></select></label>
       <label class="fld">Type<input id="docType" readonly></label>
@@ -237,7 +240,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
   </section>
   <!-- Historique -->
   <section class="card" id="histCard">
-    <h2>3 · Historique des prix</h2>
+    <div class="hdr"><h2>3 · Historique des prix</h2><button class="reset" data-reset="hist" title="Vider l'affichage (l'historique enregistré n'est pas touché)">Réinitialiser</button></div>
     <div class="row">
       <input id="histQ" placeholder="Rechercher un article, une référence, un fournisseur" style="flex:1;min-width:200px">
       <button id="btnHist">Charger</button>
@@ -417,7 +420,6 @@ function renderPages(){
   }).join('');
   box.querySelectorAll('.x').forEach(function(b){ b.onclick = function(){ PAGES.splice(+this.dataset.i, 1); renderPages(); }; });
   document.getElementById('btnRead').disabled = !PAGES.length;
-  document.getElementById('btnClear').disabled = !PAGES.length;
 }
 document.getElementById('inCamera').onchange = function(){ addFiles(this.files); this.value = ''; };
 document.getElementById('inFiles').onchange = function(){ addFiles(this.files); this.value = ''; };
@@ -425,7 +427,6 @@ var drop = document.getElementById('drop');
 ['dragenter','dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); }); });
 ['dragleave','drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); }); });
 drop.addEventListener('drop', function(e){ addFiles(e.dataTransfer.files); });
-document.getElementById('btnClear').onclick = function(){ PAGES = []; renderPages(); document.getElementById('progress').textContent = ''; };
 
 /* =========================================================
    Lecture (une page par appel, en parallèle) puis rapprochement
@@ -433,6 +434,7 @@ document.getElementById('btnClear').onclick = function(){ PAGES = []; renderPage
 var DOC = null, RES = null, CAT = null, FILTER = 'todo';
 
 async function readAll(){
+  CURRENT = null; if(typeof renderBatch === 'function') renderBatch();
   var prog = document.getElementById('progress');
   var btn = document.getElementById('btnRead'); btn.disabled = true;
   var n = PAGES.length, done = 0, errors = [];
@@ -1243,7 +1245,6 @@ function renderBatch(){
   var bulk = document.getElementById('btnBatchBulk');
   bulk.disabled = BATCH_RUNNING || !elig;
   bulk.textContent = (HIST_ONLY ? 'Ajouter à l\'historique tous les documents prêts' : 'Ajouter à l\'historique les documents conformes') + ' (' + elig + ')';
-  document.getElementById('btnBatchClear').disabled = BATCH_RUNNING || !BATCH.length;
   if(!BATCH.length){ box.innerHTML = '<p class="small muted">Aucun document dans le lot.</p>'; return; }
   box.innerHTML = '<div class="tablewrap"><table class="btable"><tr><th>Date</th><th>Fournisseur</th><th>N°</th><th>Lignes</th><th>État</th><th></th></tr>' +
     BATCH.map(function(it){
@@ -1394,7 +1395,6 @@ async function gAdd(){
 document.getElementById('inBatch').onchange = function(){ addBatchFiles(this.files); this.value = ''; };
 document.getElementById('btnBatchRun').onclick = runBatch;
 document.getElementById('btnBatchBulk').onclick = bulkHistory;
-document.getElementById('btnBatchClear').onclick = function(){ if(confirm('Vider la liste du lot ? (ce qui est déjà enregistré reste dans l\'historique)')){ BATCH = []; CURRENT = null; renderBatch(); } };
 document.getElementById('btnGSearch').onclick = gSearch;
 document.getElementById('histOnly').onchange = function(){ HIST_ONLY = this.checked; renderBatch(); document.getElementById('btnApply').textContent = HIST_ONLY ? 'Ajouter à l\'historique' : 'Enregistrer dans Sextan'; };
 (function(){ var d = new Date(), from = new Date(d.getFullYear(), d.getMonth() - 1, d.getDate()); document.getElementById('gTo').value = d.toISOString().slice(0, 10); document.getElementById('gFrom').value = from.toISOString().slice(0, 10); })();
@@ -1402,6 +1402,54 @@ document.getElementById('histOnly').onchange = function(){ HIST_ONLY = this.chec
 var _saveHistoryBase = saveHistory;
 saveHistory = async function(results){ var j = await _saveHistoryBase(results); if(CURRENT && RES === CURRENT.res){ CURRENT.status = 'enregistré'; CURRENT.dupe = false; renderBatch(); } return j; };
 renderBatch();
+
+
+/* ---------- Réinitialisation par bloc ---------- */
+function ctrlDirty(){ return !!(RES && !APPLIED && RES.lignes && RES.lignes.some(function(r){ return r.action !== 'aucune'; })); }
+function resetCtrl(){
+  DOC = null; RES = null; CURRENT = null; APPLIED = false; FILTER = 'todo';
+  document.getElementById('applyPanel').innerHTML = '';
+  document.getElementById('lines').innerHTML = '';
+  document.getElementById('resultCard').hidden = true;
+  document.getElementById('btnApply').disabled = true;
+  renderBatch();
+}
+function resetDoc(){
+  PAGES = []; renderPages();
+  document.getElementById('progress').textContent = '';
+  if(RES && !CURRENT) resetCtrl(); // le contrôle affiché venait de ce bloc
+}
+function resetLot(){
+  BATCH = []; GFOUND = []; BATCH_SEQ = 0;
+  document.getElementById('gResults').innerHTML = '';
+  document.getElementById('batchMsg').innerHTML = '';
+  document.getElementById('gQuery').value = '';
+  document.getElementById('histOnly').checked = false; HIST_ONLY = false;
+  document.getElementById('btnApply').textContent = 'Enregistrer dans Sextan';
+  if(CURRENT) resetCtrl(); else renderBatch(); // le contrôle affiché venait du lot
+}
+function resetHist(){
+  HIST = null; OPEN_HK = null;
+  document.getElementById('histQ').value = '';
+  document.getElementById('histInfo').textContent = '';
+  document.getElementById('histList').innerHTML = '';
+  document.getElementById('btnHistCsv').disabled = true;
+}
+function busy(){ return BATCH_RUNNING || document.getElementById('btnRead').disabled && PAGES.length > 0 && /Lecture|Rapprochement avec/.test(document.getElementById('progress').textContent); }
+document.querySelectorAll('[data-reset]').forEach(function(b){
+  b.addEventListener('click', function(e){
+    e.preventDefault(); e.stopPropagation(); // dans un <summary> : ne pas replier le bloc
+    var what = this.dataset.reset;
+    if(busy() && (what === 'doc' || what === 'lot' || what === 'ctrl')){ alert('Un traitement est en cours : attends la fin avant de réinitialiser.'); return; }
+    var lost = (what === 'ctrl' || (what === 'doc' && !CURRENT) || (what === 'lot' && CURRENT)) && ctrlDirty();
+    if(what === 'lot' && BATCH.some(function(x){ return x.status !== 'enregistré'; }) && !confirm('Vider le lot ? Les documents non enregistrés devront être réimportés.')) return;
+    if(lost && !confirm('Le document en cours de contrôle n\'est pas enregistré. Réinitialiser quand même ?')) return;
+    if(what === 'doc') resetDoc();
+    if(what === 'lot') resetLot();
+    if(what === 'ctrl') resetCtrl();
+    if(what === 'hist') resetHist();
+  });
+});
 
 refreshConn();
 </script>
