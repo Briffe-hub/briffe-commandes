@@ -486,17 +486,66 @@ function flattenExtraction(ex){
   }
   return items;
 }
-// Lit le VRAI numéro de BL dans le nom du fichier de la pièce jointe (ex. "BL-15068-1.pdf" -> "15068-1").
-// Ignore l'extension et une éventuelle date jointe ; prend le 1er nombre significatif (avec suffixe -N).
+// Lit le VRAI numéro de BL dans le nom du fichier de la pièce jointe (ex. "BL-15068-1.pdf" -> "15068-1", "BL-123456-0.pdf" -> "123456-0").
+// Le suffixe est conservé tel quel, y compris "-0". Les dates éventuelles du nom (2026-11-05, 05-11-2026) sont ignorées.
 function blNumFromFilename(name){
-  var raw=(name||'').replace(/\.[a-z0-9]+$/i,'');           // retire .pdf
-  var m=raw.match(/(?:DEV[-\s]?)?\d{3,}(?:-\d+)?/i);        // 15068-1 / DEV-15068 / 15069
-  return m ? m[0].replace(/^DEV[-\s]?/i,'DEV-') : '';
+  var raw=(name||'').replace(/\.[a-z0-9]+$/i,'');
+  raw=raw.replace(/(?<![\d-])\d{4}[-_.]\d{1,2}[-_.]\d{1,2}(?!\d)/g,' ').replace(/(?<![\d-])\d{1,2}[-_.]\d{1,2}[-_.]\d{4}(?!\d)/g,' '); // retire les dates (année sur 4 chiffres)
+  var m=raw.match(/BL[\s_-]*(\d{3,}[-_]\d+)/i) || raw.match(/BL[\s_-]*(\d{3,})(?![\d])/i);  // "BL-123456-0" prioritaire
+  if(m) return m[1].replace('_','-');
+  m=raw.match(/DEV[-\s_]?(\d{3,})/i); if(m) return 'DEV-'+m[1];
+  m=raw.match(/(\d{3,}[-_]\d+)/) || raw.match(/(\d{3,})/);
+  return m ? m[1].replace('_','-') : '';
 }
-// Choisit la PJ BL correspondant à une commande (positionnel : les BL arrivent dans l'ordre des livraisons).
-function pickBlPart(pdfParts, idx){
-  if(!pdfParts||!pdfParts.length) return null;
-  return pdfParts[idx]||(pdfParts.length===1?pdfParts[0]:null);
+// Normalise un numéro de BL lu ailleurs (PDF, mail) : "BL 123456 - 0" -> "123456-0".
+function normBlNum(v){
+  var s=String(v==null?'':v).trim().replace(/^N°\s*/i,'').replace(/^BL\s*/i,'');
+  var m=s.match(/(\d{3,})\s*[-_]\s*(\d+)/); if(m) return m[1]+'-'+m[2];
+  m=s.match(/DEV[-\s_]?(\d{3,})/i); if(m) return 'DEV-'+m[1];
+  m=s.match(/(\d{3,})/); return m?m[1]:'';
+}
+// Tri des PJ BL par numéro puis suffixe (123456-0, 123456-1, 123456-2…) : ordre stable et lisible.
+function blSortKey(num){ var m=String(num||'').match(/(\d+)(?:-(\d+))?/); return m?[+m[1], m[2]==null?-1:+m[2]]:[Infinity,0]; }
+function sortBlParts(parts){
+  return parts.slice().sort(function(a,b){ var x=blSortKey(blNumFromFilename(a.filename)), y=blSortKey(blNumFromFilename(b.filename)); return x[0]-y[0]||x[1]-y[1]; });
+}
+
+// Lit UN bon de livraison (le PDF lui-même) et renvoie la livraison qu'il décrit.
+// Le corps du mail ne sert que de contexte pour un champ absent du BL. Un BL = une livraison = un bon.
+async function extractFromBl(pdfB64, filename, body, subject){
+  var fileNum=blNumFromFilename(filename);
+  var prompt="Le PDF joint est UN SEUL bon de livraison (BL) de La Consignerie"+(fileNum?(", numéro « "+fileNum+" » d'après le nom du fichier"):"")+". "
+    +"Extrais UNIQUEMENT la livraison décrite par CE BL. Un même mail peut contenir plusieurs BL (même numéro de base décliné en -0, -1, -2… pour des lieux ou des horaires différents) : "
+    +"ne reprends JAMAIS une information qui concerne un autre BL. Le corps du mail ci-dessous sert seulement à compléter un champ absent du PDF, et seulement si l'information se rapporte sans ambiguïté à CE BL (même numéro ou même lieu et même date).\n\n"
+    +"Champs : numero_bl = le numéro du BL tel qu'imprimé sur le PDF, suffixe compris et conservé tel quel même s'il vaut 0 (ex. 123456-0) ; vide s'il n'est pas imprimé. "
+    +"numero_commande = le n° de devis DEV-XXXXX s'il apparaît, sinon vide. client = UNIVERSITE DE LILLE=UnivLille, EURATECHNOLOGIES/EURATECH=EuraTech, SCIENCES PO=SciencePo, CARSAT=Carsat, CCI=CCI, sinon Inconnu. "
+    +"date_evenement (JJ/MM/AAAA), heure_mise_en_place (HH:MM, heure de début), heure_evenement (HH:MM, début ; pour une plage « HH:MM - HH:MM » prends le début), heure_evenement_fin (HH:MM si plage, sinon vide), "
+    +"type_prestation (nom exact du produit en minuscules sans accents), nombre_personnes (ignorer la vaisselle), lieu (adresse de livraison de CE BL), salle, contact (nom - tel), "
+    +"service (nombre de personnes en service si une ligne « service » figure, ex. « service - 1 » -> 1 ; 0 sinon).\n\n"
+    +"Sujet du mail : "+subject+"\n\nCorps du mail (contexte) :\n"+(body||"").slice(0,12000)+"\n\n"
+    +"Réponds UNIQUEMENT en JSON valide sans markdown :\n{\"numero_bl\":\"123456-0\",\"numero_commande\":\"\",\"client\":\"EuraTech\",\"date_evenement\":\"JJ/MM/AAAA\",\"heure_mise_en_place\":\"08:00\",\"heure_evenement\":\"12:00\",\"heure_evenement_fin\":\"\",\"type_prestation\":\"petit dejeuner simple\",\"nombre_personnes\":25,\"lieu\":\"adresse\",\"salle\":\"\",\"contact\":\"nom - tel\",\"service\":0}";
+  var resp=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    model:"claude-sonnet-4-5", max_tokens:1500,
+    messages:[{role:"user",content:[
+      {type:"document",source:{type:"base64",media_type:"application/pdf",data:pdfB64}},
+      {type:"text",text:prompt}
+    ]}]
+  })});
+  var data=await resp.json();
+  if(data&&data.error) throw new Error("lecture du BL "+(fileNum||filename)+" : "+(data.error.message||data.error));
+  var text=((data.content||[]).find(function(b){return b.type==="text";})||{}).text||"";
+  var j; try{ j=JSON.parse(text.replace(/```json|```/g,"").trim()); }catch(e){ throw new Error("lecture du BL "+(fileNum||filename)+" : réponse illisible"); }
+  if(j&&Array.isArray(j.livraisons)&&j.livraisons.length) j=Object.assign({},j,j.livraisons[0]); // tolère un format imbriqué
+  return j||{};
+}
+// Numéro retenu pour un BL : le nom du fichier fait foi (règle : ne jamais inventer), le numéro imprimé
+// sert de repli et de contrôle. Renvoie { num, warn }.
+function resolveBlNum(fileNum, pdfNum){
+  fileNum=normBlNum(fileNum); pdfNum=normBlNum(pdfNum);
+  if(fileNum && pdfNum && fileNum!==pdfNum) return { num:fileNum, warn:"BL "+fileNum+" : le PDF indique « "+pdfNum+" » — numéro du nom de fichier conservé, à vérifier." };
+  if(fileNum) return { num:fileNum, warn:null };
+  if(pdfNum) return { num:pdfNum, warn:null };
+  return { num:"", warn:"Numéro de BL introuvable (ni dans le nom du fichier, ni sur le PDF)." };
 }
 
 async function processEmail(msg) {
@@ -507,25 +556,42 @@ async function processEmail(msg) {
   try {
     var body = getPlainBody(msg.payload);
     var subject = getHeader(msg,"subject");
-    var pdfParts = findPdfParts(msg.payload&&msg.payload.parts);
-    // Indices pour l'extraction : nombre de BL joints + leurs VRAIS numéros lus dans les noms de fichiers
-    var blHints = pdfParts.map(function(p){ return { filename:p.filename||"", dev:blNumFromFilename(p.filename) }; });
-    var extracted = await extractFromBody(body, subject, blHints);
-    var items = flattenExtraction(extracted);
-    if (!items.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
-
+    var pdfParts = sortBlParts(findPdfParts(msg.payload&&msg.payload.parts));
     var sheetResults=[], sheetErrors=[], processedLivs=[], resolvedClients=[];
+    var items=[], extracted=null;
+    if (pdfParts.length) {
+      // UN BL = UNE livraison = UN bon : chaque PDF est lu pour lui-même (pas d'appariement par position).
+      var reads = await Promise.all(pdfParts.map(async function(part){
+        var fileNum=blNumFromFilename(part.filename), b64=null;
+        try{
+          b64=await fetchAttachment(msg.id, part.body.attachmentId);
+          var ex=await extractFromBl(b64, part.filename||"", body, subject);
+          var r=resolveBlNum(fileNum, ex.numero_bl);
+          return { ok:true, part:part, b64:b64, num:r.num, warn:r.warn, client:ex.client||"", liv:ex };
+        }catch(e){ return { ok:false, part:part, b64:b64, num:fileNum, error:e.message }; }
+      }));
+      reads.forEach(function(r){
+        if(r.warn) sheetErrors.push(r.warn);
+        if(!r.ok){ sheetErrors.push((r.num||r.part.filename||"BL")+" : non traité ("+r.error+")"); return; }
+        items.push({ numero_commande:r.num, client:r.client, liv:r.liv, pdfPart:r.part, blB64:r.b64 });
+      });
+      var nums=items.map(function(it){return it.numero_commande;}).filter(Boolean);
+      nums.forEach(function(n,i){ if(nums.indexOf(n)!==i) sheetErrors.push("⚠ Deux pièces jointes portent le même n° de BL « "+n+" » — vérifie l'email."); });
+      if (!items.length) throw new Error("Aucun BL n'a pu être lu : "+sheetErrors.join(" | "));
+    } else {
+      // Pas de BL joint : extraction depuis le corps du mail (ancien flux)
+      extracted = await extractFromBody(body, subject, []);
+      items = flattenExtraction(extracted);
+      if (!items.length) throw new Error("Extraction echouee (body: "+body.length+" chars)");
+    }
 
     for (var li=0;li<items.length;li++) {
       var item = items[li];
       var liv = item.liv;
-
-      // Le BL de cette livraison (positionnel) est la SOURCE DE VÉRITÉ du numéro.
-      var pdfPart = pickBlPart(pdfParts, li);
-      var blBase64 = null;
-      // Numéro réel lu dans le nom du fichier BL ; repli sur l'extraction email si aucune PJ.
-      var dev = (pdfPart && blNumFromFilename(pdfPart.filename)) || item.numero_commande || (extracted&&extracted.numero_commande) || "";
-      if (pdfPart){ try{ blBase64=await fetchAttachment(msg.id,pdfPart.body.attachmentId); }catch(e){ console.warn("BL fetch:", e); sheetErrors.push((dev||"?")+" : BL non récupéré ("+e.message+")"); } }
+      var pdfPart = item.pdfPart || null;
+      var blBase64 = item.blB64 || null;
+      // N° de BL : déjà résolu pour ce PDF (nom du fichier, recoupé avec le PDF) ; sans PJ, celui du mail.
+      var dev = item.numero_commande || (extracted&&extracted.numero_commande) || "";
 
       // Address lookup
       var addrLookup = null;
@@ -546,6 +612,7 @@ async function processEmail(msg) {
       }
 
       liv.numero_commande = dev;
+      liv._blFile = pdfPart ? (pdfPart.filename||"") : "";
       liv.client = resolvedClient;
       normLivTimes(liv);
       resolvedClients.push(resolvedClient);
@@ -586,6 +653,7 @@ async function processEmail(msg) {
           sheetResults.push({
             sheetName:sheetName||(liv.prestaName||liv.type_prestation),
             dev:dev,
+            liv:liv,
             nb:liv.nombre_personnes,
             pdfFileId:result.pdfFileId,
             pdfFileName:result.pdfFileName,
@@ -609,9 +677,8 @@ async function processEmail(msg) {
     try { await archiveEmail(msg.id); } catch(e) { console.warn("Archive failed:", e); btNotify("Email non archivé (reste dans la boîte de réception) : "+e.message, "warn"); }
 
     var devSet=[]; processedLivs.forEach(function(l){ if(l.numero_commande&&devSet.indexOf(l.numero_commande)<0) devSet.push(l.numero_commande); });
-    if(pdfParts.length>1 && items.length<pdfParts.length){
-      console.warn("Sous-détection : "+pdfParts.length+" BL joints mais "+items.length+" commande(s) extraite(s).");
-      sheetErrors.push("⚠ "+pdfParts.length+" BL joints mais seulement "+items.length+" commande(s) détectée(s) — vérifie l'email.");
+    if(pdfParts.length && items.length<pdfParts.length){
+      sheetErrors.push("⚠ "+pdfParts.length+" BL joints, "+items.length+" lu(s) — les autres sont à reprendre (voir ci-dessus).");
     }
     var dataOut = {
       numero_commande: devSet.join(" · ") || (extracted&&extracted.numero_commande) || "",
@@ -848,7 +915,10 @@ async function regenerate(msgId) {
     liv.sheetName = sheetName;
 
     var blBase64 = null;
-    var pdfPart = pdfParts[li]||pdfParts[0];
+    // BL de CETTE livraison (mémorisé au traitement) ; jamais un BL voisin par position
+    var pdfPart = pdfParts.find(function(p){ return liv._blFile && p.filename===liv._blFile; })
+      || pdfParts.find(function(p){ return liv.numero_commande && blNumFromFilename(p.filename)===liv.numero_commande; })
+      || (pdfParts.length===1?pdfParts[0]:null);
     if (pdfPart){try{blBase64=await fetchAttachment(msgId,pdfPart.body.attachmentId);}catch(e){ console.warn("BL fetch:", e); sheetErrors.push("BL non récupéré ("+e.message+")"); }}
 
     try {
@@ -858,7 +928,7 @@ async function regenerate(msgId) {
         body:JSON.stringify({
           googleToken:TOKEN,
           livraison:liv,
-          numero_commande:order.data.numero_commande,
+          numero_commande:liv.numero_commande||order.data.numero_commande,
           client:resolvedClient,
           blBase64:blBase64
         })
@@ -867,6 +937,8 @@ async function regenerate(msgId) {
       if (result.ok){
         sheetResults.push({
           sheetName:sheetName,
+          dev:liv.numero_commande||"",
+          liv:liv,
           nb:liv.nombre_personnes,
           pdfFileId:result.pdfFileId,
           pdfFileName:result.pdfFileName,
@@ -961,7 +1033,7 @@ function renderEmailList(){
       for (var li=0;li<livs.length;li++){
         var l=livs[li];
         var livSvc=parseInt(l.service,10)||0;
-        var livTitle='Livraison '+(li+1)+(d.multiDev&&l.numero_commande?(' · '+esc(l.numero_commande)):'')
+        var livTitle='Livraison '+(li+1)+(l.numero_commande?(' · BL '+esc(l.numero_commande)):'')
           +(livSvc>0?' <span style="background:#921821;color:#fff;border-radius:4px;padding:1px 7px;font-size:10px;letter-spacing:.04em;margin-left:6px">SERVICE ×'+livSvc+'</span>':'');
         html+='<div class="liv-block"><div class="liv-title">'+livTitle+'</div><div class="grid3">';
         html+=field("Prestation",l.type_prestation)+field("Personnes",l.nombre_personnes)+field("Date",l.date_evenement);
@@ -1387,7 +1459,7 @@ async function printBonApp(msgId){
   var entries=[];
   if(order.sheetResult&&order.sheetResult.length){
     order.sheetResult.forEach(function(sr,idx){
-      var liv=livs[idx]||livs[0]||{};
+      var liv=sr.liv||livs[idx]||livs[0]||{};
       entries.push({client:clientFromSheet(sr.sheetName), pax:sr.nb!=null?sr.nb:liv.nombre_personnes, tp:liv.type_prestation, liv:liv});
     });
   } else {
@@ -1432,7 +1504,7 @@ function printLabels(msgId, count){
   var bl=order.data.numero_commande||'';
   var entries=[];
   if(order.sheetResult&&order.sheetResult.length){
-    order.sheetResult.forEach(function(sr,idx){ var liv=livs[idx]||livs[0]||{}; entries.push({place:clientFromSheet(sr.sheetName)||order.data.client||liv.lieu, pax:sr.nb!=null?sr.nb:liv.nombre_personnes, date:liv.date_evenement, heure:liv.heure_mise_en_place, bl:sr.dev||(liv&&liv.numero_commande)||bl}); });
+    order.sheetResult.forEach(function(sr,idx){ var liv=sr.liv||livs[idx]||livs[0]||{}; entries.push({place:clientFromSheet(sr.sheetName)||order.data.client||liv.lieu, pax:sr.nb!=null?sr.nb:liv.nombre_personnes, date:liv.date_evenement, heure:liv.heure_mise_en_place, bl:sr.dev||(liv&&liv.numero_commande)||bl}); });
   } else {
     livs.forEach(function(l){ entries.push({place:order.data.client||l.lieu, pax:l.nombre_personnes, date:l.date_evenement, heure:l.heure_mise_en_place, bl:(l&&l.numero_commande)||bl}); });
   }
@@ -1513,14 +1585,27 @@ async function extractModif(body, subject){
   var text=((data.content||[]).find(function(b){return b.type==="text";})||{}).text||"{}";
   try{ return JSON.parse(text.replace(/```json|```/g,"").trim()); }catch(e){ return null; }
 }
+// Le texte contient-il ce numéro de BL ? exact=true : "123456-1" ne matche ni "123456-10" ni "123456-0",
+// et "123456" (sans suffixe) ne matche pas "123456-0". exact=false : "123456" accepte n'importe quel suffixe.
+function blNumMatches(text, num, exact){
+  num=String(num||"").trim(); if(!num) return false;
+  var e=num.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  var re=new RegExp("(^|[^0-9A-Za-z-])"+e+(exact?"(?![0-9]|-[0-9])":"(?![0-9])"));
+  return re.test(String(text||""));
+}
 async function findAgendaByDev(dev, hint){
   try{
     var CAL="logistique@briffe.me";
     var timeMin=new Date(Date.now()-1000*60*60*24*150).toISOString();
-    var data=await gFetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(CAL)+"/events?q="+encodeURIComponent(dev)+"&timeMin="+encodeURIComponent(timeMin)+"&singleEvents=true&maxResults=25");
+    dev=String(dev||"").trim(); if(!dev) return null;
+    // Recherche large sur le numéro de base (la recherche Google découpe sur le tiret), puis filtre EXACT :
+    // 123456-1 ne doit jamais renvoyer 123456-10 ni 123456-0. Aucun repli sur un événement quelconque.
+    var base=(dev.match(/\d{3,}/)||[dev])[0];
+    var data=await gFetch("https://www.googleapis.com/calendar/v3/calendars/"+encodeURIComponent(CAL)+"/events?q="+encodeURIComponent(base)+"&timeMin="+encodeURIComponent(timeMin)+"&singleEvents=true&maxResults=50");
     var items=data.items||[];
-    var cands=items.filter(function(e){ return ((e.description||"")+(e.summary||"")).indexOf(dev)>=0; });
-    if(!cands.length) cands=items;
+    var cands=items.filter(function(e){ return blNumMatches((e.description||"")+" "+(e.summary||""), dev, true); });
+    if(!cands.length && !/-\d+$/.test(dev)) cands=items.filter(function(e){ return blNumMatches((e.description||"")+" "+(e.summary||""), dev, false); });
+    if(!cands.length) return null;
     function evDate(e){ if(e.start&&e.start.dateTime){ var dt=new Date(e.start.dateTime); return ("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(); } return ""; }
     var ev=cands[0];
     if(hint){
@@ -1545,15 +1630,59 @@ async function findAgendaByDev(dev, hint){
     }};
   }catch(e){ console.warn("findAgendaByDev", e); return null; }
 }
+// Modification accompagnée de BL : chaque BL est relu (nouvelles valeurs complètes) et remplace
+// l'entrée agenda qui porte EXACTEMENT son numéro ; s'il n'y en a pas, une nouvelle entrée est créée.
+async function processModificationBls(msg, body, subject, pdfParts, ex){
+  var id=msg.id, cfg=await loadPrepConfig(), results=[], viewLivs=[], errs=[];
+  for(var i=0;i<pdfParts.length;i++){
+    var part=pdfParts[i], fileNum=blNumFromFilename(part.filename), b64=null, bl;
+    try{ b64=await fetchAttachment(msg.id, part.body.attachmentId); bl=await extractFromBl(b64, part.filename||"", body, subject); }
+    catch(e){ errs.push((fileNum||part.filename||"BL")+" : non traité ("+e.message+")"); continue; }
+    var r=resolveBlNum(fileNum, bl.numero_bl); if(r.warn) errs.push(r.warn);
+    var num=r.num;
+    var orig=num?await findAgendaByDev(num):null, b=(orig&&orig.fields)||{};
+    var client=(bl.client&&bl.client!=="Inconnu"?bl.client:"")||(ex&&ex.client)||b.client||"Inconnu";
+    var liv={
+      type_prestation: bl.type_prestation||b.presta||"",
+      nombre_personnes: (bl.nombre_personnes!=null&&bl.nombre_personnes!==""?bl.nombre_personnes:b.pax),
+      date_evenement: bl.date_evenement||b.date||"",
+      heure_mise_en_place: bl.heure_mise_en_place||((b.mep||"").replace("h",":"))||"07:00",
+      heure_evenement: bl.heure_evenement||((b.ev||"").replace("h",":"))||"",
+      heure_evenement_fin: bl.heure_evenement_fin||"",
+      lieu: bl.lieu||b.lieu||"", salle: bl.salle||b.salle||"", contact: bl.contact||b.contact||"",
+      service: (bl.service!=null?bl.service:(b.service||0)),
+      numero_commande: num, _blFile: part.filename||""
+    };
+    normLivTimes(liv);
+    var found=cfg?findPrepPresta(cfg, client, liv.type_prestation):null;
+    if(found) liv.prestaName=found.presta.name;
+    var bonPdf=found?await bonPdfBase64Gen(found.client.name, found.presta, liv.nombre_personnes, liv, num):null;
+    if(!bonPdf){ errs.push((num||"?")+" : prestation non reconnue ("+client+" / "+liv.type_prestation+")"); viewLivs.push(liv); continue; }
+    var resp=await fetch("/api/process",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({googleToken:TOKEN, livraison:liv, numero_commande:num, client:found.client.name, blBase64:b64, bonPdfBase64:bonPdf, replaceEventId:(orig?orig.eventId:null), isModif:true})});
+    var result=await resp.json();
+    if(!result.ok){ errs.push((num||"?")+" : "+(result.error||"traitement refusé")); viewLivs.push(liv); continue; }
+    if(result.calOk===false) errs.push((num||"?")+" : "+(result.calError||"agenda non mis à jour"));
+    if(!orig) errs.push((num||"?")+" : aucune entrée agenda existante avec ce n° — une nouvelle a été créée.");
+    viewLivs.push(liv);
+    results.push({nb:liv.nombre_personnes, dev:num, liv:liv, sheetName:found.client.name+" · "+liv.type_prestation, bonPdfBase64:bonPdf, blBase64:b64, calEventLink:result.calEventLink, pdfFileId:result.bonFileId});
+  }
+  if(results.length){ try{ await archiveEmail(msg.id); }catch(e){ btNotify("Email de modification non archivé : "+e.message,"warn"); } }
+  var nums=viewLivs.map(function(l){return l.numero_commande;}).filter(Boolean);
+  ORDERS[id]={status:results.length?"success":"partial", data:{numero_commande:nums.join(" · ")||((ex&&ex.numero_commande)||""), client:(ex&&ex.client)||"", isModif:true, livraisons:viewLivs, multiDev:nums.length>1}, sheetResult:results.length?results:null, error:errs.length?errs.join(" | "):null, msgId:msg.id, agendaReplaced:results.length>0};
+  renderEmailList();
+  (async function(){ for(var k=0;k<results.length;k++){ var x=results[k]; if(x.blBase64){autoPrint(x.blBase64); await new Promise(function(res){setTimeout(res,4000);});} if(x.bonPdfBase64){autoPrint(x.bonPdfBase64); await new Promise(function(res){setTimeout(res,4000);});} } })();
+}
 async function processModification(msg){
   var id=msg.id; ORDERS[id]={status:"loading"}; renderEmailList();
   try{
     var body=getPlainBody(msg.payload), subject=getHeader(msg,"subject");
     var ex=await extractModif(body, subject);
     if((!ex||!ex.numero_commande)){ var dm=(subject+" "+body).match(/DEV-\d+/); if(dm){ ex=ex||{}; ex.numero_commande=dm[0]; } }
-    if(!ex||!ex.numero_commande) throw new Error("N° de commande introuvable dans la modification.");
-    var dev=ex.numero_commande;
-    var pdfParts=findPdfParts(msg.payload&&msg.payload.parts);
+    var hasBl=findPdfParts(msg.payload&&msg.payload.parts).length>0;
+    if((!ex||!ex.numero_commande) && !hasBl) throw new Error("N° de commande introuvable dans la modification.");
+    var dev=(ex&&ex.numero_commande)||"";
+    var pdfParts=sortBlParts(findPdfParts(msg.payload&&msg.payload.parts));
+    if(pdfParts.length){ return await processModificationBls(msg, body, subject, pdfParts, ex); }
     var orig=await findAgendaByDev(dev);
     var cfg=await loadPrepConfig();
     var modLivs=(ex.livraisons&&ex.livraisons.length)?ex.livraisons:[{}];
@@ -1667,7 +1796,7 @@ async function importAgendaStats(){
       var s=ev.summary||"", d=ev.description||"";
       if(!/^AO\s/.test(s)) return;
       function g(re){ var m=d.match(re); return m?m[1].trim():""; }
-      var dev=g(/N°\s*(?:BL|Commande)\s*:\s*(DEV-\d+)/)||((s.match(/DEV-\d+/)||[])[0])||"";
+      var dev=normBlNum(g(/N°\s*(?:BL|Commande)\s*:\s*((?:DEV-)?\d{3,}(?:\s*-\s*\d+)?)/))||((s.match(/DEV-\d+/)||[])[0])||"";
       var pax=parseInt(g(/Nombre de personnes\s*:\s*(\d+)/),10)||0;
       var client=g(/Client\s*:\s*(.+)/), presta=g(/Prestation\s*:\s*(.+)/), lieu=g(/Adresse\s*:\s*(.+)/), date="";
       if(ev.start&&ev.start.dateTime){ var dt=new Date(ev.start.dateTime); date=("0"+dt.getDate()).slice(-2)+"/"+("0"+(dt.getMonth()+1)).slice(-2)+"/"+dt.getFullYear(); }
