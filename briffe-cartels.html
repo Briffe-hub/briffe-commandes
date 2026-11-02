@@ -75,6 +75,27 @@ table.list{width:100%;border-collapse:collapse}
 .label .alg{flex:none;margin-top:auto;width:100%}
 .label .alg .k{display:block;font-family:'Commuters','DM Mono',sans-serif;text-transform:uppercase;letter-spacing:.07em;font-size:calc(3mm * var(--s));color:#921B21;margin-bottom:.5mm}
 .label .alg .lst{display:block;font-family:'IkiMono','DM Mono',monospace;font-size:calc(3.3mm * var(--s));line-height:1.16;color:#222}
+/* ---- Onglets source : réception / déjà imprimés / bibliothèque ---- */
+.tabs{display:flex;gap:0;padding:0 24px;background:#111;border-bottom:1px solid #1e1e1e}
+.tabs button{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;background:transparent;border:none;border-bottom:2px solid transparent;color:#777;padding:12px 16px;cursor:pointer}
+.tabs button:hover{color:#ccc}
+.tabs button.on{color:#e8e8e0;border-bottom-color:#b3242e}
+.srcbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 24px;background:#141210;border-bottom:1px solid #1e1e1e}
+.srcbar input{background:#0f0f0f;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:8px 12px;font-size:13px;width:280px;max-width:100%}
+.srcbar input:focus{outline:none;border-color:#f59e0b}
+.srcpanel{max-width:1100px;margin:0 auto;padding:16px 24px 0}
+.jobs{display:flex;flex-direction:column;gap:6px}
+.job{display:grid;grid-template-columns:120px 1fr auto;gap:14px;align-items:center;border:1px solid #1e1e1e;border-radius:6px;padding:10px 12px;background:#121212}
+.job:hover{border-color:#2e2e2e}
+.job .when{font-size:11px;color:#888;line-height:1.5}
+.job .what{font-size:12px;line-height:1.55;min-width:0}
+.job .what b{font-weight:500;color:#e8e8e0}
+.job .what .lbls{color:#777;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .acts{display:flex;gap:5px;white-space:nowrap}
+.libpick td{padding:6px 8px}
+.libpick .alg{font-size:11px;color:#9a9a9a}
+.srcfoot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 4px}
+@media (max-width:640px){ .job{grid-template-columns:1fr} .job .acts{justify-content:flex-start} }
 #render-holder{position:fixed;left:-99999px;top:0}
 #previewwrap{position:fixed;right:18px;bottom:18px;z-index:30;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
 #previewwrap .pv-h{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#777;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
@@ -99,6 +120,42 @@ table.list{width:100%;border-collapse:collapse}
   </div>
 </div>
 
+<div class="tabs" id="srcTabs">
+  <button class="on" data-src="sextan" onclick="setSrc('sextan')">Réception Sextan</button>
+  <button data-src="hist" onclick="setSrc('hist')">Déjà imprimés</button>
+  <button data-src="lib" onclick="setSrc('lib')">Bibliothèque</button>
+</div>
+
+<!-- Déjà imprimés : journal des tirages, réimpression sans Sextan -->
+<div id="src-hist" style="display:none">
+  <div class="srcbar">
+    <span class="ib-title">Déjà imprimés</span>
+    <input id="histQ" placeholder="Rechercher une réception, un client, un produit" oninput="renderJobs()">
+    <button class="btn" onclick="loadHistory(true)">Actualiser</button>
+    <span id="histInfo" class="ib-status"></span>
+  </div>
+  <div class="srcpanel"><div class="jobs" id="jobs"><div class="hint">Chargement…</div></div></div>
+</div>
+
+<!-- Bibliothèque : tous les produits mémorisés -->
+<div id="src-lib" style="display:none">
+  <div class="srcbar">
+    <span class="ib-title">Bibliothèque</span>
+    <input id="libQ" placeholder="Rechercher un produit" oninput="renderLibPick()">
+    <span id="libInfo" class="ib-status"></span>
+  </div>
+  <div class="srcpanel">
+    <div class="srcfoot">
+      <button class="btn small" onclick="libPickAll(true)">Tout cocher (filtre)</button>
+      <button class="btn small" onclick="libPickAll(false)">Tout décocher</button>
+      <span class="selcount" id="libSel"></span>
+      <span style="flex:1"></span>
+      <button class="btn primary" onclick="libToList()">Préparer les étiquettes cochées</button>
+    </div>
+    <div id="libPick"></div>
+  </div>
+</div>
+
 <div id="import-bar">
   <span class="ib-title">Réception Sextan</span>
   <input id="sx" type="text" placeholder="N° de réception" onkeydown="if(event.key==='Enter')loadEvent()">
@@ -106,7 +163,7 @@ table.list{width:100%;border-collapse:collapse}
   <span id="ib-status" class="ib-status"></span>
 </div>
 
-<div class="wrap">
+<div class="wrap" id="editWrap">
   <div class="recap" id="recap"></div>
   <div class="toolbar" id="toolbar" style="display:none">
     <button class="btn small" onclick="selectAll(true)">Tout cocher</button>
@@ -293,8 +350,9 @@ async function makePdf(list){
 }
 
 /* ---------- Impression (pilote Brother, via PDF 62×32 exact) ---------- */
-async function printLabels(list){
+async function printLabels(list, ev){
   if(!list.length){ alert('Aucune étiquette à imprimer.'); return; }
+  logPrint(list, ev);
   setStatus('Préparation de l’impression ('+list.length+')…');
   var doc=await makePdf(list); if(!doc){ setStatus(''); return; }
   try{ doc.autoPrint(); }catch(e){}
@@ -307,8 +365,8 @@ function printOne(i){ printLabels([P[i]]); }
 function printSelected(){ printLabels(P.filter(p=>p.sel)); }
 
 /* ---------- Export PDF ---------- */
-async function pdfOne(i){ var d=await makePdf([P[i]]); if(d) d.save('cartel-'+slugify(P[i].name||P[i].id)+'.pdf'); }
-async function pdfSelected(){ var l=P.filter(p=>p.sel); var d=await makePdf(l); if(d) d.save('cartels-'+(EV&&EV.id||'')+'.pdf'); }
+async function pdfOne(i){ var d=await makePdf([P[i]]); if(d){ logPrint([P[i]]); } if(d) d.save('cartel-'+slugify(P[i].name||P[i].id)+'.pdf'); }
+async function pdfSelected(){ var l=P.filter(p=>p.sel); var d=await makePdf(l); if(d){ logPrint(l); } if(d) d.save('cartels-'+(EV&&EV.id||'')+'.pdf'); }
 function slugify(s){ return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'etiquette'; }
 
 /* ---------- Bibliothèque partagée ---------- */
@@ -337,9 +395,121 @@ async function saveAll(){
   catch(e){ setStatus('Échec : '+e.message,'err'); }
 }
 
+
+/* ---------- Sources sans Sextan : déjà imprimés / bibliothèque ---------- */
+var SRC='sextan', JOBS=null, LIBSEL={};
+function setSrc(k){
+  SRC=k;
+  document.querySelectorAll('#srcTabs button').forEach(function(b){ b.classList.toggle('on', b.dataset.src===k); });
+  document.getElementById('import-bar').style.display = k==='sextan'?'flex':'none';
+  document.getElementById('src-hist').style.display = k==='hist'?'block':'none';
+  document.getElementById('src-lib').style.display = k==='lib'?'block':'none';
+  document.getElementById('editWrap').style.display = k==='sextan'?'block':'none';
+  if(k==='hist') loadHistory(false);
+  if(k==='lib') renderLibPick();
+}
+function fmtAt(ts){ var d=new Date(ts); if(isNaN(d)) return ''; var p=function(n){return (n<10?'0':'')+n;}; return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+'<br>'+p(d.getHours())+'h'+p(d.getMinutes()); }
+function normTxt(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+async function loadHistory(force){
+  if(JOBS && !force){ renderJobs(); return; }
+  document.getElementById('jobs').innerHTML='<div class="hint">Chargement…</div>';
+  try{ var r=await fetch(API_BASE+'/api/cartels-lib?history=1',{cache:'no-store'}); var j=await r.json(); JOBS=(j&&j.history)||[]; }
+  catch(e){ JOBS=[]; document.getElementById('histInfo').textContent='Journal indisponible : '+e.message; }
+  renderJobs();
+}
+function renderJobs(){
+  var host=document.getElementById('jobs'); if(!JOBS){ return; }
+  var q=normTxt(document.getElementById('histQ').value);
+  var list=JOBS.filter(function(x){
+    if(!q) return true;
+    var t=normTxt([x.ev&&x.ev.id, x.ev&&x.ev.name, x.ev&&x.ev.client, x.ev&&x.ev.date].concat((x.labels||[]).map(function(l){return l.name;})).join(' '));
+    return t.indexOf(q)>=0;
+  });
+  document.getElementById('histInfo').textContent=JOBS.length?(list.length+' tirage(s)'+(q?' sur '+JOBS.length:'')):'';
+  if(!list.length){ host.innerHTML='<div class="hint">'+(JOBS.length?'Aucun tirage ne correspond.':'Aucun tirage enregistré pour l’instant. Les prochaines impressions et exports PDF apparaîtront ici.')+'</div>'; return; }
+  host.innerHTML=list.slice(0,150).map(function(x){
+    var ev=x.ev||{}, n=(x.labels||[]).length;
+    var title=ev.name||(ev.id?('Réception '+ev.id):'Étiquettes hors réception');
+    return '<div class="job"><div class="when">'+fmtAt(x.at)+(x.n>1?'<br>'+x.n+' tirages':'')+'</div>'
+      +'<div class="what"><b>'+esc(title)+'</b>'+(ev.id&&ev.name?' · n° '+esc(ev.id):'')+(ev.date?' · '+esc(ev.date):'')+(ev.client?' · '+esc(ev.client):'')
+      +'<div class="lbls">'+n+' étiquette(s) : '+esc((x.labels||[]).map(function(l){return l.name;}).join(', '))+'</div></div>'
+      +'<div class="acts"><button class="btn small primary" onclick="jobReprint(\''+esc(x.id)+'\')">Réimprimer</button>'
+      +'<button class="btn small" onclick="jobOpen(\''+esc(x.id)+'\')">Ouvrir</button>'
+      +'<button class="btn small ghost" title="Retirer du journal" onclick="jobDelete(\''+esc(x.id)+'\')">✕</button></div></div>';
+  }).join('');
+}
+function jobFind(id){ return (JOBS||[]).find(function(x){ return x.id===id; }); }
+function labelsToP(labels){
+  return (labels||[]).map(function(l,i){
+    var id=l.id!=null&&l.id!==''?l.id:('h'+Date.now()+'_'+i);
+    return { id:id, name:l.name||'', allergens:(l.allergens||[]).slice(), step:'', saved:!!LIB[String(id)], found:true, manual:(String(id).charAt(0)==='m'||String(id).charAt(0)==='h'), sel:true };
+  });
+}
+// Ouvre un tirage dans la liste d'édition (modifiable, puis impression / PDF comme d'habitude)
+function jobOpen(id){
+  var x=jobFind(id); if(!x) return;
+  EV=Object.assign({}, x.ev||{}); if(!EV.name && !EV.id) EV.name='Étiquettes hors réception';
+  P=labelsToP(x.labels);
+  setSrc('sextan');
+  setStatus('<b>✓ Tirage du '+fmtAt(x.at).replace('<br>',' à ')+' rechargé</b> · '+P.length+' étiquette(s), sans Sextan','');
+  renderRecap(); renderList(); window.scrollTo(0,0);
+}
+async function jobReprint(id){
+  var x=jobFind(id); if(!x) return;
+  var list=labelsToP(x.labels);
+  await printLabels(list, x.ev);
+}
+async function jobDelete(id){
+  if(!confirm('Retirer ce tirage du journal ? (les étiquettes mémorisées en bibliothèque ne sont pas touchées)')) return;
+  try{ await libPost({ action:'history_delete', id:id }); JOBS=(JOBS||[]).filter(function(x){ return x.id!==id; }); renderJobs(); }
+  catch(e){ alert('Échec : '+e.message); }
+}
+// Enregistre un tirage dans le journal (sans bloquer l'impression ; sans mot de passe)
+function logPrint(list, ev){
+  try{
+    var e=ev||EV||{};
+    var job={ ev:{ id:e.id||'', name:e.name||'', date:e.date||'', client:e.client||'' },
+      labels:list.map(function(p){ return { id:p.id, name:p.name, allergens:(p.allergens||[]).slice() }; }) };
+    fetch(API_BASE+'/api/cartels-lib',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ action:'history_add', job:job })})
+      .then(function(r){ return r.json(); }).then(function(){ if(SRC==='hist') loadHistory(true); else JOBS=null; }).catch(function(e){ console.warn('journal cartels:', e); });
+  }catch(e){ console.warn('journal cartels:', e); }
+}
+
+// Bibliothèque : choisir des produits mémorisés et préparer leurs étiquettes
+function libEntries(){
+  return Object.keys(LIB).map(function(k){ var e=LIB[k]||{}; return { id:k, name:e.name||'', allergens:(e.allergens||[]).map(function(a){ return a&&a.name?a.name:a; }), at:e.at||0 }; })
+    .filter(function(e){ return e.name; })
+    .sort(function(a,b){ return a.name.localeCompare(b.name,'fr'); });
+}
+function libFiltered(){ var q=normTxt(document.getElementById('libQ').value); return libEntries().filter(function(e){ return !q || normTxt(e.name+' '+e.allergens.join(' ')).indexOf(q)>=0; }); }
+function renderLibPick(){
+  var all=libEntries(), list=libFiltered(), host=document.getElementById('libPick');
+  document.getElementById('libInfo').textContent=all.length?(list.length+' produit(s)'+(list.length!==all.length?' sur '+all.length:'')):'';
+  document.getElementById('libSel').textContent=Object.keys(LIBSEL).length+' coché(s)';
+  if(!all.length){ host.innerHTML='<div class="hint">La bibliothèque est vide : enregistre des étiquettes (💾) depuis une réception pour les retrouver ici.</div>'; return; }
+  if(!list.length){ host.innerHTML='<div class="hint">Aucun produit ne correspond.</div>'; return; }
+  host.innerHTML='<table class="list libpick"><tr><th class="cellchk"></th><th style="width:45%">Intitulé</th><th>Allergènes</th></tr>'
+    +list.slice(0,400).map(function(e){
+      return '<tr><td class="cellchk"><input type="checkbox" '+(LIBSEL[e.id]?'checked':'')+' onchange="libToggle(\''+esc(e.id)+'\',this.checked)"></td>'
+        +'<td>'+esc(e.name)+'</td><td class="alg">'+(e.allergens.length?esc(e.allergens.join(', ')):'<span style="color:#555">aucun</span>')+'</td></tr>';
+    }).join('')+'</table>';
+}
+function libToggle(id,v){ if(v) LIBSEL[id]=true; else delete LIBSEL[id]; document.getElementById('libSel').textContent=Object.keys(LIBSEL).length+' coché(s)'; }
+function libPickAll(v){ if(v) libFiltered().forEach(function(e){ LIBSEL[e.id]=true; }); else LIBSEL={}; renderLibPick(); }
+function libToList(){
+  var ids=Object.keys(LIBSEL); if(!ids.length){ alert('Coche au moins un produit.'); return; }
+  var picked=libEntries().filter(function(e){ return LIBSEL[e.id]; });
+  EV={ name:'Bibliothèque', id:'', date:'', client:'' };
+  P=picked.map(function(e){ return { id:e.id, name:e.name, allergens:e.allergens.slice(), step:'', saved:true, found:true, manual:false, sel:true }; });
+  LIBSEL={};
+  setSrc('sextan');
+  setStatus('<b>✓ '+P.length+' étiquette(s) depuis la bibliothèque</b>, sans Sextan','');
+  renderRecap(); renderList(); window.scrollTo(0,0);
+}
+
 /* ---------- Init ---------- */
 (function(){ var s=document.getElementById('rotsel'); if(s) s.value=String(getRot()); })();
-loadLib();
+loadLib().then(function(){ if(SRC==='lib') renderLibPick(); });
 </script>
 </body>
 </html>
