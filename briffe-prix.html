@@ -130,6 +130,35 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 button.reset{padding:5px 10px;font-size:10.5px;letter-spacing:.1em;background:transparent;color:var(--mut);border-color:var(--line-2)}
 button.reset:hover{color:var(--ink)}
 summary .reset{margin-left:auto}
+/* comptes */
+[hidden]{display:none!important}
+.who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.who .u{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+.who .u b{color:var(--ink);font-weight:500}
+.who button{padding:6px 9px;font-size:10.5px}
+.role{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:2px 6px;margin-left:6px}
+.role.admin{background:rgba(146,24,33,.25);color:#f3a5ab}
+.role.editeur{background:rgba(96,165,250,.14);color:var(--info)}
+.role.lecteur{background:rgba(138,138,130,.14);color:var(--mut)}
+body:not(.can-edit) .need-editeur{display:none!important}
+body:not(.can-admin) .need-admin{display:none!important}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:20;display:flex;align-items:flex-start;justify-content:center;padding:60px 16px;overflow:auto}
+.overlay[hidden]{display:none}
+.modal{background:var(--panel);border:1px solid var(--line-3);border-radius:12px;padding:20px;width:100%;max-width:420px}
+.modal.wide{max-width:880px}
+.modal h2{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);font-weight:500;margin:0 0 16px}
+.modal .stack{display:flex;flex-direction:column;gap:12px}
+.modal .msg{font-size:12px;line-height:1.5;min-height:1em}
+.modal .msg.ko{color:#fca5a5} .modal .msg.ok{color:#86efac}
+.utable{width:100%;border-collapse:collapse;font-size:12px}
+.utable th,.utable td{text-align:left;padding:8px;border-top:1px solid var(--line);vertical-align:middle}
+.utable th{color:var(--mut-2);font-weight:400;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border-top:none}
+.utable tr.off td{opacity:.5}
+.utable select{padding:5px 6px;font-size:12px}
+.utable button{padding:5px 8px;font-size:10.5px}
+.utable .acts{display:flex;gap:6px;flex-wrap:wrap}
+.newuser{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.rolehelp{font-size:11.5px;color:var(--mut);line-height:1.6;margin:12px 0 0}
 @media (max-width:820px){
   .ln{grid-template-columns:1fr 1fr}
 }
@@ -145,8 +174,60 @@ summary .reset{margin-left:auto}
 <body>
 <header class="topbar">
   <a href="index.html">&larr; Outils</a>
-  <span class="mini"><b>briffe</b>tools</span>
+  <div class="who">
+    <span class="u" id="whoTxt"></span>
+    <button class="ghost" id="btnMyPass" hidden>Mon mot de passe</button>
+    <button class="ghost need-admin" id="btnUsers">Utilisateurs</button>
+    <button class="ghost" id="btnLogout" hidden>Déconnexion</button>
+    <span class="mini"><b>briffe</b>tools</span>
+  </div>
 </header>
+
+<!-- Connexion -->
+<div class="overlay" id="loginOv" hidden>
+  <form class="modal" id="loginForm" autocomplete="on">
+    <h2>Connexion · Prix fournisseurs</h2>
+    <div class="stack">
+      <label class="fld">Identifiant<input id="lgLogin" name="username" autocomplete="username" autocapitalize="none" required></label>
+      <label class="fld">Mot de passe<input id="lgPass" name="password" type="password" autocomplete="current-password" required></label>
+      <div class="msg ko" id="lgMsg"></div>
+      <div class="row"><button class="primary" type="submit" id="lgBtn">Se connecter</button><button type="button" class="ghost" id="lgSecours">Accès de secours</button></div>
+      <p class="small muted" style="margin:0;line-height:1.6">L'accès de secours utilise le mot de passe Briffe partagé et donne les droits admin : à réserver à la création des comptes ou à un oubli de mot de passe.</p>
+    </div>
+  </form>
+</div>
+
+<!-- Mon mot de passe -->
+<div class="overlay" id="myPassOv" hidden>
+  <form class="modal" id="myPassForm">
+    <h2>Changer mon mot de passe</h2>
+    <div class="stack">
+      <label class="fld">Mot de passe actuel<input type="password" id="mpCur" autocomplete="current-password" required></label>
+      <label class="fld">Nouveau mot de passe (8 caractères min.)<input type="password" id="mpNew" autocomplete="new-password" minlength="8" required></label>
+      <label class="fld">Confirmation<input type="password" id="mpNew2" autocomplete="new-password" minlength="8" required></label>
+      <div class="msg" id="mpMsg"></div>
+      <div class="row"><button class="primary" type="submit">Enregistrer</button><button type="button" class="ghost" data-close="myPassOv">Fermer</button></div>
+      <p class="small muted" style="margin:0">Tes autres sessions ouvertes seront déconnectées.</p>
+    </div>
+  </form>
+</div>
+
+<!-- Gestion des utilisateurs (admin) -->
+<div class="overlay" id="usersOv" hidden>
+  <div class="modal wide">
+    <div class="hdr"><h2>Utilisateurs</h2><button class="ghost" data-close="usersOv">Fermer</button></div>
+    <div class="tablewrap"><table class="utable" id="usersTable"></table></div>
+    <div class="msg" id="usersMsg" style="margin-top:10px"></div>
+    <form class="newuser" id="newUserForm" autocomplete="off">
+      <label class="fld">Nom affiché<input id="nuName" placeholder="ex. Constance Beernaert"></label>
+      <label class="fld">Identifiant<input id="nuLogin" placeholder="ex. constance" autocapitalize="none" required></label>
+      <label class="fld">Rôle<select id="nuRole"><option value="lecteur">Lecteur</option><option value="editeur" selected>Éditeur</option><option value="admin">Admin</option></select></label>
+      <label class="fld">Mot de passe initial<input id="nuPass" type="text" minlength="8" required autocomplete="new-password"></label>
+      <div class="row"><button class="primary" type="submit">Créer le compte</button><button type="button" class="ghost" id="nuGen" title="Générer un mot de passe">Générer</button></div>
+    </form>
+    <p class="rolehelp"><b>Lecteur</b> : consulte et exporte l'historique des prix. <b>Éditeur</b> : en plus, lit les documents, les rapproche et enregistre dans Sextan. <b>Admin</b> : en plus, gère les utilisateurs et la connexion Sextan. Communique le mot de passe initial à la personne : elle pourra le changer via « Mon mot de passe ».</p>
+  </div>
+</div>
 
 <main class="wrap">
   <h1>Prix fournisseurs</h1>
@@ -156,16 +237,16 @@ summary .reset{margin-left:auto}
   <details class="card" id="connCard">
     <summary class="conn"><span class="dot" id="dot"></span><span id="stateTxt">Connexion Sextan : vérification…</span></summary>
     <div style="margin-top:14px" class="row">
-      <button class="primary" id="btnConnect">Connecter Sextan</button>
+      <button class="primary need-admin" id="btnConnect">Connecter Sextan</button>
       <button id="btnTest">Tester</button>
-      <button id="btnDisconnect">Déconnecter</button>
+      <button class="need-admin" id="btnDisconnect">Déconnecter</button>
     </div>
     <ul class="checks" id="checks" hidden></ul>
     <p class="small muted" style="line-height:1.6;margin:14px 0 0">La connexion se fait avec le compte Sextan « briffetools » : en cas de reconnexion, utilise une fenêtre de navigation privée pour ne pas relier un autre compte. Les tests d'écriture sont des simulations.</p>
   </details>
 
   <!-- Capture -->
-  <section class="card" id="captureCard">
+  <section class="card need-editeur" id="captureCard">
     <div class="hdr"><h2>1 · Document</h2><button class="reset" data-reset="doc" title="Vider ce bloc">Réinitialiser</button></div>
     <div class="row">
       <label class="btn primary">Prendre une photo
@@ -184,7 +265,7 @@ summary .reset{margin-left:auto}
   </section>
 
   <!-- Lot -->
-  <details class="card" id="batchCard">
+  <details class="card need-editeur" id="batchCard">
     <summary class="conn"><span class="small" style="letter-spacing:.16em;text-transform:uppercase;color:var(--mut)">Traitement par lot</span><span class="small muted">· plusieurs factures d'un coup, depuis des fichiers ou Gmail</span><button class="reset" data-reset="lot" title="Vider ce bloc">Réinitialiser</button></summary>
     <div class="subcard">
       <h3>Fichiers</h3>
@@ -216,7 +297,7 @@ summary .reset{margin-left:auto}
   </details>
 
   <!-- Résultat -->
-  <section class="card" id="resultCard" hidden>
+  <section class="card need-editeur" id="resultCard" hidden>
     <div class="hdr"><h2>2 · Contrôle et validation</h2><button class="reset" data-reset="ctrl" title="Fermer le document en cours">Réinitialiser</button></div>
     <div class="meta">
       <label class="fld">Fournisseur<select id="selProvider"></select></label>
@@ -253,21 +334,184 @@ summary .reset{margin-left:auto}
 
 <script>
 /* =========================================================
-   Accès API (mot de passe Briffe partagé avec les autres outils)
+   Comptes et accès API
+   Jeton de session (compte nominatif) ou accès de secours (mot de passe Briffe = admin).
    ========================================================= */
 var FN = '/.netlify/functions/';
-function getPass(){ try{ return sessionStorage.getItem('bt_liens_pass') || ''; }catch(e){ return ''; } }
-function setPass(p){ try{ sessionStorage.setItem('bt_liens_pass', p); }catch(e){} }
-function clearPass(){ try{ sessionStorage.removeItem('bt_liens_pass'); }catch(e){} }
-async function post(fn, body){
-  var pass = getPass();
-  if(!pass){ pass = prompt('Mot de passe Briffe :', '') || ''; if(!pass) throw new Error('Mot de passe requis.'); setPass(pass); }
-  var r = await fetch(FN + fn, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-briffe-pass':pass }, body:JSON.stringify(body) });
-  var txt = await r.text(); var j = {};
+var ME = null, LOGIN_WAIT = [];
+var ROLE_LABEL = { lecteur:'Lecteur', editeur:'Éditeur', admin:'Admin' };
+function ss(k, v){ try{ if(v === undefined) return localStorage.getItem(k) || ''; if(v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); }catch(e){ return ''; } }
+function sss(k, v){ try{ if(v === undefined) return sessionStorage.getItem(k) || ''; if(v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); }catch(e){ return ''; } }
+function getToken(){ var t = ss('bt_prix_token'), exp = parseInt(ss('bt_prix_exp'), 10) || 0; return t && exp > Date.now() ? t : ''; }
+function authHeaders(){
+  var h = { 'Content-Type':'application/json' }, t = getToken(), sec = sss('bt_prix_secours');
+  if(t) h['x-briffe-token'] = t; else if(sec) h['x-briffe-pass'] = sec;
+  return h;
+}
+function clearAuth(){ ss('bt_prix_token', null); ss('bt_prix_exp', null); sss('bt_prix_secours', null); ME = null; applyRole(); }
+function hasRole(r){ var o = ['lecteur','editeur','admin']; return !!ME && o.indexOf(ME.role) >= o.indexOf(r); }
+function applyRole(){
+  var b = document.body;
+  b.classList.toggle('can-edit', hasRole('editeur'));
+  b.classList.toggle('can-admin', hasRole('admin'));
+  document.getElementById('whoTxt').innerHTML = ME ? '<b>' + esc(ME.name || ME.login) + '</b><span class="role ' + esc(ME.role) + '">' + esc(ROLE_LABEL[ME.role] || ME.role) + '</span>' : '';
+  document.getElementById('btnLogout').hidden = !ME;
+  document.getElementById('btnMyPass').hidden = !ME || !!ME.master;
+}
+// Affiche l'écran de connexion et attend qu'elle réussisse
+function needLogin(msg){
+  clearAuth();
+  document.getElementById('lgMsg').textContent = msg || '';
+  document.getElementById('loginOv').hidden = false;
+  setTimeout(function(){ document.getElementById('lgLogin').focus(); }, 50);
+  return new Promise(function(res){ LOGIN_WAIT.push(res); });
+}
+function loginDone(user){
+  ME = user; applyRole();
+  document.getElementById('loginOv').hidden = true;
+  document.getElementById('lgPass').value = '';
+  var w = LOGIN_WAIT; LOGIN_WAIT = []; w.forEach(function(f){ f(); });
+}
+async function rawPost(fn, body, hdrs){
+  var r = await fetch(FN + fn, { method:'POST', headers: hdrs || authHeaders(), body: JSON.stringify(body) });
+  var txt = await r.text(), j = {};
   try{ j = JSON.parse(txt); }catch(e){ j = { error: r.status === 502 || r.status === 504 ? 'Délai dépassé côté serveur (' + r.status + ').' : 'Réponse inattendue (' + r.status + ').' }; }
-  if(r.status === 401){ clearPass(); throw new Error(j.error || 'Mot de passe incorrect.'); }
   j._status = r.status;
   return j;
+}
+async function post(fn, body){
+  if(!getToken() && !sss('bt_prix_secours')) await needLogin();
+  var j = await rawPost(fn, body);
+  if(j._status === 401){ await needLogin(j.error); j = await rawPost(fn, body); } // une seule relance après reconnexion
+  if(j._status === 401) throw new Error(j.error || 'Connexion requise.');
+  if(j._status === 403) throw new Error(j.error || 'Droits insuffisants.');
+  return j;
+}
+document.getElementById('loginForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var btn = document.getElementById('lgBtn'), msg = document.getElementById('lgMsg');
+  btn.disabled = true; msg.textContent = '';
+  try{
+    var j = await rawPost('users', { action:'login', login: document.getElementById('lgLogin').value, password: document.getElementById('lgPass').value }, { 'Content-Type':'application/json' });
+    if(!j.ok) throw new Error(j.error || 'Connexion impossible.');
+    ss('bt_prix_token', j.token); ss('bt_prix_exp', String(j.exp)); sss('bt_prix_secours', null);
+    loginDone(j.user);
+  }catch(err){ msg.textContent = err.message; }
+  finally{ btn.disabled = false; }
+});
+document.getElementById('lgSecours').onclick = async function(){
+  var pw = prompt('Mot de passe Briffe (accès de secours) :', '');
+  if(!pw) return;
+  var j = await rawPost('users', { action:'me' }, { 'Content-Type':'application/json', 'x-briffe-pass': pw });
+  if(!j.ok){ document.getElementById('lgMsg').textContent = j.error || 'Mot de passe incorrect.'; return; }
+  ss('bt_prix_token', null); ss('bt_prix_exp', null); sss('bt_prix_secours', pw);
+  loginDone(j.user);
+};
+document.getElementById('btnLogout').onclick = function(){
+  if(typeof ctrlDirty === 'function' && ctrlDirty() && !confirm('Le document en cours n\'est pas enregistré. Se déconnecter quand même ?')) return;
+  clearAuth(); location.reload();
+};
+document.querySelectorAll('[data-close]').forEach(function(b){ b.onclick = function(){ document.getElementById(this.dataset.close).hidden = true; }; });
+
+// --- Mon mot de passe ---
+document.getElementById('btnMyPass').onclick = function(){
+  ['mpCur','mpNew','mpNew2'].forEach(function(id){ document.getElementById(id).value = ''; });
+  document.getElementById('mpMsg').textContent = ''; document.getElementById('myPassOv').hidden = false;
+};
+document.getElementById('myPassForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var m = document.getElementById('mpMsg'), n1 = document.getElementById('mpNew').value;
+  if(n1 !== document.getElementById('mpNew2').value){ m.className = 'msg ko'; m.textContent = 'Les deux saisies ne correspondent pas.'; return; }
+  try{
+    var j = await post('users', { action:'change_password', current: document.getElementById('mpCur').value, password: n1 });
+    if(!j.ok) throw new Error(j.error);
+    ss('bt_prix_token', j.token); ss('bt_prix_exp', String(j.exp));
+    m.className = 'msg ok'; m.textContent = 'Mot de passe modifié.';
+    setTimeout(function(){ document.getElementById('myPassOv').hidden = true; }, 900);
+  }catch(err){ m.className = 'msg ko'; m.textContent = err.message; }
+});
+
+// --- Gestion des utilisateurs (admin) ---
+var USERS = [];
+function genPass(){
+  var c = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789', a = new Uint32Array(12), o = '';
+  crypto.getRandomValues(a); for(var i = 0; i < a.length; i++) o += c[a[i] % c.length];
+  return o;
+}
+function uMsg(t, ok){ var m = document.getElementById('usersMsg'); m.className = 'msg ' + (ok ? 'ok' : 'ko'); m.textContent = t || ''; }
+async function loadUsers(){
+  var j = await post('users', { action:'list' });
+  if(!j.ok) throw new Error(j.error);
+  USERS = j.users || []; renderUsers();
+}
+function renderUsers(){
+  var t = document.getElementById('usersTable');
+  if(!USERS.length){ t.innerHTML = '<tr><td class="muted">Aucun compte pour l\'instant. Crée le premier ci-dessous (pense à un compte admin pour toi).</td></tr>'; return; }
+  t.innerHTML = '<tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Actif</th><th>Dernière connexion</th><th></th></tr>' +
+    USERS.map(function(u){
+      var self = ME && ME.id === u.id;
+      return '<tr data-id="' + esc(u.id) + '"' + (u.active ? '' : ' class="off"') + '>' +
+        '<td><input data-f="name" value="' + esc(u.name) + '" style="width:100%;min-width:120px"></td>' +
+        '<td>' + esc(u.login) + (self ? ' <span class="muted">(toi)</span>' : '') + '</td>' +
+        '<td><select data-f="role"' + (self ? ' disabled' : '') + '>' + ['lecteur','editeur','admin'].map(function(r){ return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + ROLE_LABEL[r] + '</option>'; }).join('') + '</select></td>' +
+        '<td><input type="checkbox" data-f="active"' + (u.active ? ' checked' : '') + (self ? ' disabled' : '') + '></td>' +
+        '<td class="muted">' + (u.last_login ? esc(fmtDT(u.last_login)) : 'jamais') + '</td>' +
+        '<td><div class="acts"><button data-a="pass">Nouveau mdp</button><button data-a="out" title="Déconnecter toutes ses sessions ouvertes">Déconnecter</button>' + (self ? '' : '<button data-a="del">Supprimer</button>') + '</div></td></tr>';
+    }).join('');
+  t.querySelectorAll('tr[data-id]').forEach(function(tr){
+    var id = tr.dataset.id, u = USERS.find(function(x){ return x.id === id; });
+    async function upd(patch, okTxt){
+      try{ var j = await post('users', Object.assign({ action:'update', id:id }, patch)); if(!j.ok) throw new Error(j.error); Object.assign(u, j.user); uMsg(okTxt, true); }
+      catch(e){ uMsg(e.message); }
+      renderUsers();
+    }
+    tr.querySelector('[data-f="name"]').onchange = function(){ upd({ name:this.value }, 'Nom enregistré.'); };
+    tr.querySelector('[data-f="role"]').onchange = function(){ upd({ role:this.value }, 'Rôle de ' + u.login + ' : ' + ROLE_LABEL[this.value] + '.'); };
+    tr.querySelector('[data-f="active"]').onchange = function(){ upd({ active:this.checked }, this.checked ? 'Compte réactivé.' : 'Compte désactivé (sessions coupées).'); };
+    tr.querySelector('[data-a="pass"]').onclick = async function(){
+      var pw = prompt('Nouveau mot de passe pour ' + u.login + ' (8 caractères min.) :', genPass());
+      if(!pw) return;
+      try{ var j = await post('users', { action:'reset_password', id:id, password:pw }); if(!j.ok) throw new Error(j.error); uMsg('Mot de passe de ' + u.login + ' changé : ' + pw + ' (ses sessions ouvertes sont coupées).', true); }
+      catch(e){ uMsg(e.message); }
+    };
+    tr.querySelector('[data-a="out"]').onclick = async function(){
+      try{ var j = await post('users', { action:'logout_all', id:id }); if(!j.ok) throw new Error(j.error); uMsg('Sessions de ' + u.login + ' déconnectées.', true); if(ME && ME.id === id){ clearAuth(); location.reload(); } }
+      catch(e){ uMsg(e.message); }
+    };
+    var del = tr.querySelector('[data-a="del"]');
+    if(del) del.onclick = async function(){
+      if(!confirm('Supprimer définitivement le compte « ' + u.login + ' » ?')) return;
+      try{ var j = await post('users', { action:'delete', id:id }); if(!j.ok) throw new Error(j.error); USERS = USERS.filter(function(x){ return x.id !== id; }); uMsg('Compte supprimé.', true); renderUsers(); }
+      catch(e){ uMsg(e.message); }
+    };
+  });
+}
+document.getElementById('btnUsers').onclick = async function(){
+  uMsg(''); document.getElementById('usersOv').hidden = false;
+  document.getElementById('usersTable').innerHTML = '<tr><td class="muted">Chargement…</td></tr>';
+  try{ await loadUsers(); }catch(e){ uMsg(e.message); }
+};
+document.getElementById('nuGen').onclick = function(){ document.getElementById('nuPass').value = genPass(); };
+document.getElementById('newUserForm').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var login = document.getElementById('nuLogin').value, pw = document.getElementById('nuPass').value;
+  try{
+    var j = await post('users', { action:'create', login: login, name: document.getElementById('nuName').value, role: document.getElementById('nuRole').value, password: pw });
+    if(!j.ok) throw new Error(j.error);
+    USERS.push(j.user); renderUsers();
+    uMsg('Compte « ' + j.user.login + ' » créé. Mot de passe initial : ' + pw, true);
+    this.reset(); document.getElementById('nuRole').value = 'editeur';
+  }catch(err){ uMsg(err.message); }
+});
+
+// Démarrage : vérifie la session (ou la demande) puis lance la page
+async function boot(){
+  if(getToken() || sss('bt_prix_secours')){
+    var j = await rawPost('users', { action:'me' });
+    if(j.ok){ ME = j.user; applyRole(); }
+    else await needLogin(j._status === 401 ? '' : j.error);
+  } else await needLogin();
+  refreshConn();
 }
 // Dates affichées au format français JJ-MM-AA (stockage interne en AAAA-MM-JJ pour le tri)
 function fmtD(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? m[3] + '-' + m[2] + '-' + m[1].slice(2) : (iso || ''); }
@@ -1045,11 +1289,11 @@ function renderHist(){
       '<span>' + fmtP(x.last.p) + ' € / ' + esc(x.a.unit || 'u.') + '</span>' +
       '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var) + lastSus) + '</span>' +
       '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(fmtD(x.last.d)) + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
-      (hors ? '<div class="row" style="padding:8px 12px"><button class="ghost" data-att="1">Rattacher à une fiche Sextan…</button><span class="small muted">Les prochains documents avec cette désignation iront sur la fiche choisie.</span></div><div class="att" hidden style="padding:0 12px 10px"></div>' : '') +
+      (hors ? '<div class="row" style="padding:8px 12px"><button class="ghost need-editeur" data-att="1">Rattacher à une fiche Sextan…</button><span class="small muted">Les prochains documents avec cette désignation iront sur la fiche choisie.</span></div><div class="att" hidden style="padding:0 12px 10px"></div>' : '') +
       '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
       pts.map(function(p, i){ var older = pts[i + 1];
         return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
-          '<td>' + (p.li !== undefined ? '<button class="ghost" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
+          '<td>' + (p.li !== undefined ? '<button class="ghost need-editeur" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
       '</table></div></details>';
   }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
   box.querySelectorAll('.hrow').forEach(function(el){
@@ -1451,7 +1695,7 @@ document.querySelectorAll('[data-reset]').forEach(function(b){
   });
 });
 
-refreshConn();
+boot();
 </script>
 </body>
 </html>

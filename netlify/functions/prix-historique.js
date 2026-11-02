@@ -15,6 +15,7 @@
 // Produits hors Sextan : regroupés par fournisseur + désignation (les références changent souvent,
 // ex. fruits et légumes), la référence reste visible sur chaque relevé.
 
+const U = require("../lib/briffe-users.js"); // comptes et rôles (lecteur < editeur < admin)
 const SITE_ID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
 const NTOKEN = process.env.NETLIFY_TOKEN || process.env.NETLIFY_API_KEY;
 const STORE = "briffe-prix";
@@ -24,18 +25,12 @@ function headers() {
   return {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass",
+    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass, x-briffe-token",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Cache-Control": "no-store"
   };
 }
 const json = (code, obj) => ({ statusCode: code, headers: headers(), body: JSON.stringify(obj) });
-function checkPass(event) {
-  const allowed = String(process.env.BRIFFE_AUTH_PASSWORD || "").split(",").map(s => s.trim()).filter(Boolean);
-  if (!allowed.length) return false;
-  const h = event.headers || {};
-  return allowed.includes(String(h["x-briffe-pass"] || h["X-Briffe-Pass"] || "").trim());
-}
 const blobUrl = key => `https://api.netlify.com/api/v1/blobs/${SITE_ID}/${STORE}/${encodeURIComponent(key)}`;
 async function blobGet(key) {
   const r = await fetch(blobUrl(key), { headers: { Authorization: "Bearer " + NTOKEN } });
@@ -118,7 +113,7 @@ async function learnAliases(entry) {
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  if (!checkPass(event)) return json(401, { error: "Mot de passe Briffe manquant ou incorrect." });
+  { const deny = await U.guard(event, U.roleFor(event, { lire: "lecteur", document: "lecteur" }, "editeur"), json); if (deny) return deny; }
   if (!SITE_ID || !NTOKEN) return json(500, { error: "SITE_ID / NETLIFY_TOKEN non configurés." });
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}
   try {

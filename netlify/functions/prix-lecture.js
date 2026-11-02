@@ -8,6 +8,7 @@
 // Une page par appel : les pages d'un même document sont lues en parallèle par la page web,
 // ce qui garde chaque appel court (limite de durée des fonctions Netlify).
 
+const U = require("../lib/briffe-users.js"); // comptes et rôles (lecteur < editeur < admin)
 const MODEL = process.env.PRIX_MODEL || "claude-sonnet-5-5";
 const API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
@@ -15,19 +16,13 @@ function headers() {
   return {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass",
+    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass, x-briffe-token",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Cache-Control": "no-store"
   };
 }
 const json = (code, obj) => ({ statusCode: code, headers: headers(), body: JSON.stringify(obj) });
 
-function checkPass(event) {
-  const allowed = String(process.env.BRIFFE_AUTH_PASSWORD || "").split(",").map(s => s.trim()).filter(Boolean);
-  if (!allowed.length) return false;
-  const h = event.headers || {};
-  return allowed.includes(String(h["x-briffe-pass"] || h["X-Briffe-Pass"] || "").trim());
-}
 
 const SYSTEM = `Tu lis des bons de livraison et des factures de fournisseurs alimentaires pour un traiteur (BRIFFE / FESTOYER). Tu renvoies UNIQUEMENT un objet JSON valide, sans texte autour, sans bloc de code.
 
@@ -115,7 +110,7 @@ function normalize(d) {
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  if (!checkPass(event)) return json(401, { error: "Mot de passe Briffe manquant ou incorrect." });
+  { const deny = await U.guard(event, U.roleFor(event, {}, "editeur"), json); if (deny) return deny; }
   if (!API_KEY) return json(500, { error: "ANTHROPIC_API_KEY non configurée." });
 
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}

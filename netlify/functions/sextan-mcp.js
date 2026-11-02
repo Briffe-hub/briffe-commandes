@@ -13,6 +13,7 @@
 // via l'API REST, avec SITE_ID + NETLIFY_TOKEN comme les autres fonctions.
 // Le compte Sextan connecté (prévu : « briffetools ») est celui au nom duquel tout est fait.
 
+const U = require("../lib/briffe-users.js"); // comptes et rôles (lecteur < editeur < admin)
 const crypto = require("crypto");
 
 const SEXTAN = (process.env.SEXTAN_BASE || "https://briffe.sextan.catering").replace(/\/+$/, "");
@@ -28,7 +29,7 @@ function jsonHeaders() {
   return {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass",
+    "Access-Control-Allow-Headers": "Content-Type, x-briffe-pass, x-briffe-token",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Cache-Control": "no-store"
   };
@@ -36,13 +37,6 @@ function jsonHeaders() {
 const json = (code, obj) => ({ statusCode: code, headers: jsonHeaders(), body: JSON.stringify(obj, null, 2) });
 const html = (code, body) => ({ statusCode: code, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }, body });
 
-function checkPass(event) {
-  const allowed = String(process.env.BRIFFE_AUTH_PASSWORD || "").split(",").map(s => s.trim()).filter(Boolean);
-  if (!allowed.length) return false;
-  const h = event.headers || {};
-  const given = String(h["x-briffe-pass"] || h["X-Briffe-Pass"] || "").trim();
-  return allowed.includes(given);
-}
 
 async function fetchT(url, opts, ms) {
   const ctrl = new AbortController();
@@ -261,7 +255,7 @@ exports.handler = async function (event) {
   }
 
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  if (!checkPass(event)) return json(401, { error: "Mot de passe Briffe manquant ou incorrect." });
+  { const deny = await U.guard(event, U.roleFor(event, { status: "lecteur", start: "admin", disconnect: "admin" }, "admin"), json); if (deny) return deny; }
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}
 
   try {
