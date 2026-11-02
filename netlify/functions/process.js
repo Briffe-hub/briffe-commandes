@@ -138,6 +138,7 @@ exports.handler = async function(event) {
     );
     const uploadedFile = await uploadResp.json();
     console.log("Drive upload status:", uploadResp.status, "file:", JSON.stringify(uploadedFile).substring(0, 200));
+    if (uploadedFile && uploadedFile.id) await driveShareAnyone(googleToken, uploadedFile.id);
 
     // ── 6. Create Calendar event ──────────────────────────────────────────────
     let dateISO = new Date().toISOString().split("T")[0];
@@ -172,7 +173,7 @@ exports.handler = async function(event) {
       lieu ? "Adresse : " + lieu : "",
       salle ? "Salle : " + salle : "",
       contact ? "Contact : " + (contact.replace(/<[^>]+>/g, "")) : "",
-      uploadedFile.id ? "PDF : https://drive.google.com/file/d/" + uploadedFile.id : ""
+      uploadedFile.id ? "PDF : " + driveLink(uploadedFile.id) : ""
     ].filter(Boolean).join("\n");
 
     // Choose emoji based on prestation type
@@ -305,7 +306,21 @@ function simplePdfMerge(buf1, buf2) {
   ]);
 }
 
-function driveLink(id){ return "https://drive.google.com/file/d/" + id; }
+function driveLink(id){ return "https://drive.google.com/file/d/" + id + "/view?usp=sharing"; }
+
+// Rend un fichier Drive accessible via son lien à TOUTE personne (lecteur) — pour que les livreurs
+// ouvrent les BL / bons depuis l'agenda sans compte Google. Best-effort : n'interrompt pas le flux.
+async function driveShareAnyone(googleToken, fileId){
+  if(!fileId) return;
+  try{
+    const r = await fetch("https://www.googleapis.com/drive/v3/files/" + fileId + "/permissions?supportsAllDrives=true", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + googleToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "reader", type: "anyone" })
+    });
+    if(!r.ok){ const t = await r.text(); console.warn("Drive share fail:", r.status, t.slice(0,200)); }
+  }catch(e){ console.warn("Drive share error:", e.message); }
+}
 
 // Écrit un enregistrement stat dans Netlify Blobs (store briffe-stats), clé = n° de commande (upsert).
 async function writeStat(rec){
@@ -336,6 +351,7 @@ async function driveUpload(googleToken, fileName, buffer){
   });
   const j = await r.json();
   console.log("Drive upload:", r.status, fileName, j && j.id);
+  if (j && j.id) await driveShareAnyone(googleToken, j.id);
   return j;
 }
 
