@@ -130,6 +130,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:#0b0b0b;border:1px sol
 button.reset{padding:5px 10px;font-size:10.5px;letter-spacing:.1em;background:transparent;color:var(--mut);border-color:var(--line-2)}
 button.reset:hover{color:var(--ink)}
 summary .reset{margin-left:auto}
+/* lot : vue par produit */
+.pgroup{border:1px solid var(--line-2);border-radius:9px;background:var(--panel-2);margin-bottom:8px}
+.pgroup>summary{list-style:none;cursor:pointer;padding:10px 12px;display:grid;grid-template-columns:2fr 1fr 1.2fr;gap:10px;font-size:12.5px;align-items:center}
+.pgroup>summary::-webkit-details-marker{display:none}
+.pgroup .gacts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line)}
+.pgroup .gacts select,.pgroup .gacts input{max-width:320px}
+.btable tr.flash td{background:rgba(96,165,250,.12)}
+.ln.flash{outline:2px solid var(--info);outline-offset:2px}
 /* comptes */
 [hidden]{display:none!important}
 .who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
@@ -291,8 +299,14 @@ body:not(.can-admin) .need-admin{display:none!important}
         <button id="btnBatchBulk" disabled>Ajouter à l'historique</button>
       </div>
       <div class="small muted" id="batchMsg" style="margin-top:10px"></div>
+      <div class="chips" id="batchView" style="margin:12px 0 0">
+        <button class="chip on" data-v="doc">Par document</button>
+        <button class="chip" data-v="prod">Par produit</button>
+        <label class="chk small" id="prodTodoWrap" hidden style="margin-left:6px;align-items:center"><input type="checkbox" id="prodTodo" checked style="margin:0"><span>Seulement les produits à traiter</span></label>
+      </div>
       <div id="batchList" style="margin-top:10px"></div>
-      <p class="small muted" style="margin:10px 0 0;line-height:1.6">Les documents sont classés par date. « Ouvrir » affiche un document dans l'écran de contrôle ci-dessous pour le valider comme d'habitude. Garde cet onglet ouvert pendant le traitement.</p>
+      <div id="batchProducts" style="margin-top:10px" hidden></div>
+      <p class="small muted" style="margin:10px 0 0;line-height:1.6">Les documents sont classés par date. « Par produit » regroupe un même produit sur toutes les factures du lot, de la plus ancienne à la plus récente. « Ouvrir » affiche un document dans l'écran de contrôle ci-dessous pour le valider comme d'habitude. Garde cet onglet ouvert pendant le traitement.</p>
     </div>
   </details>
 
@@ -800,9 +814,9 @@ function reassign(r, art){
   r.conversion = convertPrice(r.ligne, art, sl);
   r.prix_saisi = r.conversion.value !== null ? Math.round(r.conversion.value * 1e6) / 1e6 : null;
   r.manuel = true;
-  // Ligne déjà présente pour ce produit (ou facture sans code et une seule ligne de ce fournisseur) :
-  // on met son prix à jour, on ne rattache pas une seconde référence.
-  var hasRef = !!exact || (!!sl && !r.ligne.ref && mine.length === 1);
+  // Ligne déjà présente pour CE produit (même code ou même libellé) : on met son prix à jour.
+  // Sinon on rattache une nouvelle référence : jamais d'écrasement du prix d'un autre produit.
+  var hasRef = !!exact;
   r.action = hasRef ? (Math.abs(pct(r.prix_saisi, sl.price) || 0) > seuil() ? 'maj_prix' : 'aucune') : 'rattacher';
 }
 function seuil(){ return parseFloat(document.getElementById('seuil').value) || 1; }
@@ -899,6 +913,7 @@ function renderLines(){
   box.innerHTML = rows.length ? rows.map(lineHtml).join('') : '<p class="small muted">Aucune ligne dans ce filtre.</p>';
   box.querySelectorAll('.ln').forEach(bindLine);
   renderSummary();
+  if(typeof renderProducts === 'function' && BATCH_VIEW === 'prod') renderProducts();
 }
 function bindLine(el){
   var r = RES.lignes[+el.dataset.i];
@@ -1525,8 +1540,146 @@ function renderBatch(){
         (it.status !== 'lecture' && it.status !== 'rapprochement' ? ' <button class="ghost" data-del="' + it.id + '" title="Retirer">✕</button>' : '') + '</td></tr>';
     }).join('') + '</table></div>';
   box.querySelectorAll('[data-open]').forEach(function(b){ b.onclick = function(){ openItem(+this.dataset.open); }; });
+  if(typeof renderProducts === 'function' && BATCH_VIEW === 'prod') renderProducts();
   box.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ var id = +this.dataset.del; BATCH = BATCH.filter(function(x){ return x.id !== id; }); if(CURRENT && CURRENT.id === id) CURRENT = null; renderBatch(); }; });
 }
+
+/* ---------- Lot : vue par produit (mêmes produits regroupés, classés par date de facture) ---------- */
+var BATCH_VIEW = 'doc';
+document.querySelectorAll('#batchView .chip').forEach(function(b){ b.onclick = function(){
+  BATCH_VIEW = this.dataset.v;
+  document.querySelectorAll('#batchView .chip').forEach(function(x){ x.classList.toggle('on', x.dataset.v === BATCH_VIEW); });
+  document.getElementById('prodTodoWrap').hidden = BATCH_VIEW !== 'prod';
+  document.getElementById('batchList').hidden = BATCH_VIEW !== 'doc';
+  document.getElementById('batchProducts').hidden = BATCH_VIEW !== 'prod';
+  if(BATCH_VIEW === 'prod') renderProducts();
+}; });
+document.getElementById('prodTodo').onchange = function(){ renderProducts(); };
+var OPEN_PG = {};
+function lineTodo(r){ return r.action !== 'ignorer' && !(r.statut === 'ok' && r.action === 'aucune'); } // ignorée = décision prise
+function lineDone(r){ return !!(r.result && r.result.ok && !r.result.dry_run); }
+// Toutes les lignes du lot, avec leur document
+function batchOccurrences(){
+  var occ = [];
+  BATCH.forEach(function(it){
+    if(!it.res || !it.res.lignes) return;
+    var pid = it.res.fournisseur ? it.res.fournisseur.id : null;
+    it.res.lignes.forEach(function(r){ occ.push({ it:it, r:r, pid:pid, key: histGroupKey(r, pid), date: (it.doc && it.doc.document.date) || '' }); });
+  });
+  return occ;
+}
+function productGroups(){
+  var g = {}, order = [];
+  batchOccurrences().forEach(function(o){
+    if(!g[o.key]){ g[o.key] = { key:o.key, occ:[] }; order.push(o.key); }
+    g[o.key].occ.push(o);
+  });
+  return order.map(function(k){
+    var x = g[k];
+    x.occ.sort(function(a, b){ return String(a.date || '9999').localeCompare(String(b.date || '9999')) || a.it.id - b.it.id; });
+    var first = x.occ[0].r;
+    x.name = first.article && first.action !== 'creer' ? first.article.name : first.ligne.designation;
+    x.unit = first.article && first.action !== 'creer' ? first.article.unit : '';
+    x.hors = !(first.article && first.action !== 'creer');
+    x.todo = x.occ.filter(function(o){ return lineTodo(o.r) && !lineDone(o.r); }).length;
+    x.fourn = x.occ.map(function(o){ return o.it.res.fournisseur ? o.it.res.fournisseur.name : (o.it.doc.fournisseur.nom || '?'); }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+    var px = x.occ.map(function(o){ return o.r.prix_saisi; }).filter(function(v){ return v > 0; });
+    x.min = px.length ? Math.min.apply(null, px) : null; x.max = px.length ? Math.max.apply(null, px) : null;
+    return x;
+  }).sort(function(a, b){ return (b.todo > 0) - (a.todo > 0) || b.occ.length - a.occ.length || a.name.localeCompare(b.name, 'fr'); });
+}
+function renderProducts(){
+  var box = document.getElementById('batchProducts'); if(!box || BATCH_VIEW !== 'prod') return;
+  var onlyTodo = document.getElementById('prodTodo').checked;
+  var groups = productGroups(), shown = groups.filter(function(x){ return !onlyTodo || x.todo > 0; });
+  if(!groups.length){ box.innerHTML = '<p class="small muted">Lance le traitement du lot pour voir les produits.</p>'; return; }
+  var head = '<p class="small muted" style="margin:0 0 8px">' + groups.length + ' produit(s) sur ' + BATCH.filter(function(i){ return i.res; }).length + ' document(s)' +
+    (onlyTodo ? ' · ' + shown.length + ' à traiter' : '') + '. Chaque produit liste ses factures de la plus ancienne à la plus récente.</p>';
+  box.innerHTML = head + (shown.map(function(x, gi){
+    var st = x.todo ? '<span class="badge b-ecart">' + x.todo + ' à traiter</span>' : '<span class="badge b-ok">Conforme</span>';
+    var range = x.min !== null ? fmtP(x.min) + (x.max !== x.min ? ' → ' + fmtP(x.max) : '') + ' € / ' + esc(x.unit || 'u.') : '';
+    var cands = {}; x.occ.forEach(function(o){ (o.r.candidats || []).forEach(function(c){ cands[c.id] = c; }); if(o.r.article && o.r.action !== 'creer') cands[o.r.article.id] = { id:o.r.article.id, name:o.r.article.name, unit:o.r.article.unit }; });
+    var candOpts = Object.keys(cands).map(function(id){ var c = cands[id]; return '<option value="' + c.id + '">' + esc(c.name) + ' · ' + esc(c.unit || '') + '</option>'; }).join('');
+    var open = x.todo && x.occ.length > 1 ? true : !!OPEN_PG[x.key];
+    return '<details class="pgroup" data-g="' + gi + '"' + (OPEN_PG[x.key] === false ? '' : (open ? ' open' : '')) + '><summary>' +
+      '<span><b style="font-weight:500">' + esc(x.name) + '</b>' + (x.hors ? ' <span class="muted">(non rattaché)</span>' : '') + '<div class="small muted">' + esc(x.fourn.join(', ')) + '</div></span>' +
+      '<span>' + x.occ.length + ' facture(s)<div class="small muted">' + range + '</div></span><span>' + st + '</span></summary>' +
+      (x.todo ? '<div class="gacts need-editeur"><span class="small muted">Pour les ' + x.todo + ' occurrence(s) à traiter :</span>' +
+        '<select data-ga="art"><option value="">Même article Sextan pour toutes…</option>' + candOpts + '<option value="__search">Chercher un autre article…</option></select>' +
+        '<input data-ga="q" placeholder="Rechercher dans Sextan" hidden><div class="search-res" data-ga="res" hidden style="flex-basis:100%"></div>' +
+        '<button class="ghost" data-ga="ign">Tout ignorer</button></div>' : '') +
+      '<div class="tablewrap"><table class="btable"><tr><th>Date facture</th><th>N°</th><th>Fournisseur</th><th>Désignation facturée</th><th>Prix converti</th><th>État</th><th>Action</th><th></th></tr>' +
+      x.occ.map(function(o){
+        var r = o.r, d = o.it.doc.document, s2 = ST[r.statut] || { t:r.statut, b:'b-info' };
+        var act = (ACTIONS.find(function(a){ return a[0] === r.action; }) || [r.action, r.action])[1];
+        return '<tr' + (CURRENT === o.it ? ' class="cur"' : '') + '><td>' + esc(d.date ? fmtD(d.date) : '—') + '</td><td>' + esc(d.numero || '—') + '</td>' +
+          '<td>' + esc(o.it.res.fournisseur ? o.it.res.fournisseur.name : (o.it.doc.fournisseur.nom || '?')) + '</td>' +
+          '<td>' + esc(r.ligne.designation) + (r.ligne.ref ? '<div class="small muted">Réf. ' + esc(r.ligne.ref) + '</div>' : '') + '</td>' +
+          '<td>' + (r.prix_saisi > 0 ? fmtP(r.prix_saisi) + ' €' : '—') + '</td>' +
+          '<td>' + (lineDone(r) ? '<span class="badge b-ok">Enregistré</span>' : r.action === 'ignorer' ? '<span class="badge b-info">Ignorée</span>' : '<span class="badge ' + s2.b + '">' + esc(s2.t) + '</span>') + '</td>' +
+          '<td class="small">' + esc(act) + (r.article && r.action !== 'creer' && r.article.name !== x.name ? '<div class="muted">→ ' + esc(r.article.name) + '</div>' : '') + '</td>' +
+          '<td><button class="ghost" data-go="' + o.it.id + '|' + r.idx + '">Ouvrir</button></td></tr>';
+      }).join('') + '</table></div></details>';
+  }).join('') || '<p class="small muted">Aucun produit à traiter : tout est conforme.</p>');
+  box.querySelectorAll('.pgroup').forEach(function(el){
+    var x = shown[+el.dataset.g];
+    el.addEventListener('toggle', function(){ OPEN_PG[x.key] = el.open; });
+    el.querySelectorAll('[data-go]').forEach(function(b){ b.onclick = function(){ var p = this.dataset.go.split('|'); goToLine(+p[0], +p[1]); }; });
+    var sel = el.querySelector('[data-ga="art"]'); if(!sel) return;
+    var q = el.querySelector('[data-ga="q"]'), res = el.querySelector('[data-ga="res"]');
+    var targets = function(){ return x.occ.filter(function(o){ return lineTodo(o.r) && !lineDone(o.r); }); };
+    async function applyArt(id){
+      var cat = await ensureCatalogue();
+      var a = cat.articles.find(function(z){ return String(z.id) === String(id); }); if(!a) return;
+      var t = targets();
+      t.forEach(function(o){
+        // reassign lit le fournisseur du document courant : on bascule temporairement sur le document de l'occurrence
+        var keep = RES; RES = o.it.res;
+        if(!(o.r.candidats || []).some(function(c){ return c.id === a.id; })) (o.r.candidats = o.r.candidats || []).push({ id:a.id, name:a.name, unit:a.unit, via:'manuel' });
+        reassign(o.r, a);
+        RES = keep;
+      });
+      OPEN_PG[histGroupKey(t[0].r, t[0].pid)] = true;
+      setBatchMsg('« ' + a.name + ' » choisi pour ' + t.length + ' occurrence(s). Vérifie le prix et l\'action de chacune, puis valide document par document.');
+      if(CURRENT && RES === CURRENT.res) renderLines();
+      renderBatch(); renderProducts();
+    }
+    sel.onchange = function(){
+      if(this.value === '__search'){ q.hidden = false; res.hidden = false; q.focus(); return; }
+      if(this.value) applyArt(this.value).catch(function(e){ alert(e.message); });
+    };
+    q.oninput = async function(){
+      var v = String(this.value || ''); if(v.length < 2){ res.innerHTML = ''; return; }
+      try{
+        var cat = await ensureCatalogue();
+        var words = v.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/\s+/).filter(Boolean);
+        var hits = cat.articles.filter(function(a){ var hay = (a.name + ' ' + a.suppliers.map(function(s){ return s.ref; }).join(' ')).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); return words.every(function(w){ return hay.indexOf(w) >= 0; }); }).slice(0, 30);
+        res.innerHTML = hits.map(function(a){ return '<div data-id="' + a.id + '">' + esc(a.name) + ' <span class="muted">· ' + esc(a.unit) + '</span></div>'; }).join('') || '<div class="muted">Aucun résultat</div>';
+        res.querySelectorAll('[data-id]').forEach(function(d){ d.onclick = function(){ applyArt(d.dataset.id).catch(function(e){ alert(e.message); }); }; });
+      }catch(e){ res.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
+    };
+    el.querySelector('[data-ga="ign"]').onclick = function(){
+      var t = targets(); if(!t.length) return;
+      if(!confirm('Ignorer « ' + x.name + ' » sur ' + t.length + ' facture(s) ? (aucune modification Sextan pour ces lignes)')) return;
+      t.forEach(function(o){ o.r.action = 'ignorer'; });
+      setBatchMsg(t.length + ' occurrence(s) de « ' + x.name + ' » ignorée(s).');
+      if(CURRENT && RES === CURRENT.res) renderLines();
+      renderBatch(); renderProducts();
+    };
+  });
+}
+function setBatchMsg(t){ var m = document.getElementById('batchMsg'); if(m) m.textContent = t || ''; }
+// Ouvre le document de l'occurrence et amène l'écran de contrôle sur la ligne
+function goToLine(itemId, idx){
+  openItem(itemId);
+  FILTER = 'all'; renderChips(); renderLines();
+  setTimeout(function(){
+    var el = document.querySelector('#lines .ln[data-i="' + idx + '"]'); if(!el) return;
+    el.scrollIntoView({ behavior:'smooth', block:'center' });
+    el.classList.add('flash'); setTimeout(function(){ el.classList.remove('flash'); }, 2500);
+  }, 60);
+}
+
 function openItem(id){
   var it = BATCH.find(function(x){ return x.id === id; }); if(!it || !it.res) return;
   CURRENT = it; DOC = it.doc; RES = it.res; FILTER = 'todo';

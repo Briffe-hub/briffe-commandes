@@ -85,8 +85,6 @@ function planArticle(article, ops, providerId) {
         ? lines.find(s => s.provider_id === providerId && String(s.ref || "") === String(op.target_ref)) || null : null;
       if (!target) target = M.findSupplierLine(lines, providerId, op.ref, op.designation);
       if (!target && op.action === "maj_prix") target = lines.find(s => s.provider_id === providerId && !s.ref);
-      // Facture sans code et une seule ligne de ce fournisseur sur la fiche : c'est elle.
-      if (!target && !op.ref) { const mine = lines.filter(s => s.provider_id === providerId); if (mine.length === 1) target = mine[0]; }
       if (target) {
         const before = target.price;
         target.price = p;
