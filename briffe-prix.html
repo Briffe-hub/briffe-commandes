@@ -323,7 +323,7 @@ body:not(.can-admin) .need-admin{display:none!important}
   <section class="card" id="histCard">
     <div class="hdr"><h2>3 · Historique des prix</h2><button class="reset" data-reset="hist" title="Vider l'affichage (l'historique enregistré n'est pas touché)">Réinitialiser</button></div>
     <div class="row">
-      <input id="histQ" placeholder="Rechercher un article, une référence, un fournisseur" style="flex:1;min-width:200px">
+      <input id="histQ" placeholder="Rechercher un article, une référence, un fournisseur, un n° de facture" style="flex:1;min-width:200px">
       <button id="btnHist">Charger</button>
       <button id="btnHistCsv" disabled>Exporter CSV</button>
     </div>
@@ -1270,6 +1270,18 @@ async function loadHist(force){
   if(!j.ok) throw new Error(j.error || 'Historique indisponible.');
   HIST = j; return HIST;
 }
+// N° du document (facture / BL) d'un relevé : lu dans l'index des documents, sinon déduit de sa clé
+// (« <fournisseur>_<numéro> ») — vaut aussi pour les relevés déjà enregistrés.
+var DOCNUM_CACHE = null;
+function docNum(key){
+  if(!key) return '';
+  if(!DOCNUM_CACHE || DOCNUM_CACHE._h !== HIST){ DOCNUM_CACHE = { _h: HIST }; ((HIST && HIST.docs) || []).forEach(function(d){ DOCNUM_CACHE[d.key] = d; }); }
+  var d = DOCNUM_CACHE[key];
+  if(d && d.numero) return String(d.numero);
+  var n = String(key).replace(/^[^_]*_/, '');
+  return /^\d{4}-\d{2}-\d{2}$/.test(n) || n === 'sans-numero' ? '' : n; // clé faite de la date : pas de numéro
+}
+function docType(key){ var d = DOCNUM_CACHE && DOCNUM_CACHE[key]; return d && d.type === 'bl' ? 'BL' : 'Fact.'; }
 function histRows(){
   var arts = HIST.articles || {}, q = normU(document.getElementById('histQ').value).replace(/[^a-z0-9%]/g, '');
   var rows = Object.keys(arts).map(function(k){
@@ -1277,7 +1289,7 @@ function histRows(){
     return { k:k, a:a, last:last, prev:prev, var: prev && prev.p > 0 ? (last.p / prev.p - 1) * 100 : null };
   }).filter(function(x){
     if(!q) return true;
-    var hay = normU(x.a.name + ' ' + x.a.points.map(function(p){ return p.ref + ' ' + p.fn + ' ' + p.des; }).join(' ')).replace(/[^a-z0-9%]/g, '');
+    var hay = normU(x.a.name + ' ' + x.a.points.map(function(p){ return p.ref + ' ' + p.fn + ' ' + p.des + ' ' + docNum(p.doc); }).join(' ')).replace(/[^a-z0-9%]/g, '');
     return hay.indexOf(q) >= 0;
   });
   rows.sort(function(x, y){ return String(y.last.d).localeCompare(String(x.last.d)) || x.a.name.localeCompare(y.a.name); });
@@ -1300,11 +1312,11 @@ function renderHist(){
     return '<details class="hrow" data-k="' + esc(x.k) + '"' + (OPEN_HK === x.k ? ' open' : '') + '><summary><span>' + esc(x.a.name) + (hors ? ' <span class="muted">(hors Sextan)</span>' : '') + '</span>' +
       '<span>' + fmtP(x.last.p) + ' € / ' + esc(x.a.unit || 'u.') + '</span>' +
       '<span>' + (x.var === null ? '<span class="muted">1er relevé</span>' : pctTxt(x.var) + lastSus) + '</span>' +
-      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(fmtD(x.last.d)) + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
+      '<span class="muted">' + esc(x.last.fn) + ' · ' + esc(fmtD(x.last.d)) + (docNum(x.last.doc) ? ' · ' + docType(x.last.doc) + ' ' + esc(docNum(x.last.doc)) : '') + ' · ' + x.a.points.length + ' relevé(s)</span></summary>' +
       (hors ? '<div class="row" style="padding:8px 12px"><button class="ghost need-editeur" data-att="1">Rattacher à une fiche Sextan…</button><span class="small muted">Les prochains documents avec cette désignation iront sur la fiche choisie.</span></div><div class="att" hidden style="padding:0 12px 10px"></div>' : '') +
-      '<div class="tablewrap"><table><tr><th>Date</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
+      '<div class="tablewrap"><table><tr><th>Date</th><th>N° document</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
       pts.map(function(p, i){ var older = pts[i + 1];
-        return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
+        return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + (docNum(p.doc) ? esc(docType(p.doc) + ' ' + docNum(p.doc)) : '<span class="muted">—</span>') + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
           '<td>' + (p.li !== undefined ? '<button class="ghost need-editeur" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
       '</table></div></details>';
   }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
@@ -1371,9 +1383,9 @@ document.getElementById('btnHistCsv').onclick = function(){
   if(!HIST) return;
   var num = function(v){ return v === null || v === undefined || !isFinite(v) ? '' : String(v).replace('.', ','); };
   var q = function(s){ s = String(s === null || s === undefined ? '' : s); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  var lines = [['Article','ID article','Unité','Date','Fournisseur','Réf.','Désignation facture','Prix / unité','Prix facturé','Unité facturée','Négocié avant','Action','Document'].join(';')];
+  var lines = [['Article','ID article','Unité','Date','Fournisseur','Réf.','Désignation facture','Prix / unité','Prix facturé','Unité facturée','Négocié avant','Action','N° document'].join(';')];
   histRows().forEach(function(x){ x.a.points.forEach(function(p){
-    lines.push([x.a.name, x.k.indexOf('x:') === 0 ? '' : x.k, x.a.unit, fmtD(p.d), p.fn, p.ref, p.des, num(p.p), num(p.pf), p.up, num(p.neg), p.a, p.doc].map(q).join(';'));
+    lines.push([x.a.name, x.k.indexOf('x:') === 0 ? '' : x.k, x.a.unit, fmtD(p.d), p.fn, p.ref, p.des, num(p.p), num(p.pf), p.up, num(p.neg), p.a, docNum(p.doc)].map(q).join(';'));
   }); });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type:'text/csv;charset=utf-8' }));
