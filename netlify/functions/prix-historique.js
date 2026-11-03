@@ -8,6 +8,7 @@
 //   { action:"document", key }                         -> document complet
 //   { action:"ajouter", entry }                        -> enregistre un document (remplace s'il existait)
 //   { action:"supprimer_point", doc, li }              -> écarte une ligne d'un document de l'historique
+//   { action:"supprimer_document", doc }               -> retire tout un document (ses relevés et son archive)
 //   { action:"rattacher", groupe, article:{id,name,unit}, points:[{doc,li,p}] }
 //                                                      -> rattache un produit hors Sextan à un article
 //   { action:"reconstruire" }                          -> recalcule l'agrégat depuis les documents
@@ -37,6 +38,10 @@ async function blobGet(key) {
   if (r.status === 404) return null;
   if (!r.ok) throw new Error("Blob GET " + r.status);
   return r.json();
+}
+async function blobDel(key) {
+  const r = await fetch(blobUrl(key), { method: "DELETE", headers: { Authorization: "Bearer " + NTOKEN } });
+  if (!r.ok && r.status !== 404) throw new Error("Blob DELETE " + r.status);
 }
 async function blobSet(key, value) {
   const r = await fetch(blobUrl(key), { method: "PUT", headers: { Authorization: "Bearer " + NTOKEN, "Content-Type": "application/json" }, body: JSON.stringify(value) });
@@ -141,6 +146,25 @@ exports.handler = async function (event) {
       await blobSet("historique", h);
       await learnAliases(e).catch(() => {});
       return json(200, { ok: true, key: e.key, docs: h.docs.length });
+    }
+    if (body.action === "supprimer_document") {
+      const key = String(body.doc || "");
+      if (!key) return json(400, { error: "Document manquant." });
+      const h = (await blobGet("historique")) || emptyHist();
+      const had = (h.docs || []).some(d => d.key === key);
+      h.docs = (h.docs || []).filter(d => d.key !== key);
+      let n = 0;
+      for (const id of Object.keys(h.articles || {})) {
+        const a = h.articles[id], before = (a.points || []).length;
+        a.points = (a.points || []).filter(pt => pt.doc !== key);
+        n += before - a.points.length;
+        if (!a.points.length) delete h.articles[id];
+      }
+      if (!had && !n) return json(404, { error: "Document introuvable dans l'historique." });
+      h.updated = new Date().toISOString();
+      await blobSet("historique", h);
+      await blobDel("doc/" + key).catch(() => {});
+      return json(200, Object.assign({ ok: true, retires: n }, h));
     }
     if (body.action === "supprimer_point") {
       const d = await blobGet("doc/" + body.doc);

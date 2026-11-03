@@ -1393,7 +1393,8 @@ function renderHist(){
       '<div class="tablewrap"><table><tr><th>Date</th><th>N° document</th><th>Fournisseur</th><th>Réf.</th><th>Désignation</th><th>Prix / ' + esc(x.a.unit || 'u.') + '</th><th>Facturé</th><th>Écart</th><th></th></tr>' +
       pts.map(function(p, i){ var older = pts[i + 1];
         return '<tr><td>' + esc(fmtD(p.d)) + '</td><td>' + (docNum(p.doc) ? esc(docType(p.doc) + ' ' + docNum(p.doc)) : '<span class="muted">—</span>') + '</td><td>' + esc(p.fn) + '</td><td>' + esc(p.ref) + '</td><td class="muted">' + esc(p.des || '') + '</td><td>' + fmtP(p.p) + '</td><td>' + fmtP(p.pf) + ' / ' + esc(p.up) + '</td><td>' + (older && older.p > 0 ? pctTxt((p.p / older.p - 1) * 100) + suspect(p, older) : '') + '</td>' +
-          '<td>' + (p.li !== undefined ? '<button class="ghost need-editeur" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') + '</td></tr>'; }).join('') +
+          '<td style="white-space:nowrap">' + (p.li !== undefined ? '<button class="ghost need-editeur" style="padding:3px 7px" title="Écarter ce relevé de l\'historique" data-del="' + esc(p.doc) + '|' + p.li + '">✕</button>' : '') +
+          (p.doc ? ' <button class="ghost need-editeur" style="padding:3px 7px" title="Retirer toute la facture de l\'historique (tous ses produits)" data-deldoc="' + esc(p.doc) + '">Facture ✕</button>' : '') + '</td></tr>'; }).join('') +
       '</table></div></details>';
   }).join('') || '<p class="small muted">Aucun relevé pour l\'instant.</p>';
   box.querySelectorAll('.hrow').forEach(function(el){
@@ -1402,6 +1403,13 @@ function renderHist(){
       if(!confirm('Écarter ce relevé de l\'historique ? (le document reste archivé)')) return;
       var parts = this.dataset.del.split('|');
       try{ var j = await post('prix-historique', { action:'supprimer_point', doc: parts[0], li: parseInt(parts[1], 10) }); if(!j.ok) throw new Error(j.error); HIST = j; renderHist(); }
+      catch(e){ alert(e.message); }
+    }; });
+    el.querySelectorAll('[data-deldoc]').forEach(function(b){ b.onclick = async function(){
+      var key = this.dataset.deldoc, num = docNum(key) || key;
+      var n = 0; Object.keys(HIST.articles || {}).forEach(function(k){ (HIST.articles[k].points || []).forEach(function(pt){ if(pt.doc === key) n++; }); });
+      if(!confirm('Retirer la facture ' + num + ' de l\'historique ?\n\n' + n + ' relevé(s) de prix seront supprimés, sur tous les produits de cette facture. Sextan n\'est pas modifié.')) return;
+      try{ var j = await post('prix-historique', { action:'supprimer_document', doc: key }); if(!j.ok) throw new Error(j.error); HIST = j; renderHist(); }
       catch(e){ alert(e.message); }
     }; });
     var att = el.querySelector('[data-att]'); if(att) att.onclick = function(){ openAttach(el); };
@@ -1580,13 +1588,14 @@ function batchState(it){
   if(it.status === 'enregistré') return { t:'Enregistré', b:'b-ok' };
   if(it.status === 'erreur') return { t:'Erreur', b:'b-err' };
   if(it.status !== 'prêt') return { t: it.status + (it.step && it.status === 'lecture' ? ' ' + it.step : '') + '…', b:'b-info' };
-  if(it.dupe) return { t:'Déjà enregistré', b:'b-info' };
+  if(it.dupe) return { t:'Déjà enregistré : sera remplacé', b:'b-info' };
   if(!it.doc.document.date) return { t:'Date manquante', b:'b-ecart' };
   if(!it.res.fournisseur) return { t:'Fournisseur à choisir', b:'b-ecart' };
   return itemTodo(it) ? { t: itemTodo(it) + ' ligne(s) à traiter', b:'b-ecart' } : { t:'Conforme', b:'b-ok' };
 }
 function bulkEligible(it){
-  if(it.status !== 'prêt' || it.dupe || !it.doc.document.date || !it.res.fournisseur) return false;
+  // Un document déjà enregistré est éligible : il REMPLACE sa version précédente (même clé).
+  if(it.status !== 'prêt' || !it.doc.document.date || !it.res.fournisseur) return false;
   return HIST_ONLY ? true : itemTodo(it) === 0;
 }
 function renderBatch(){
@@ -1760,6 +1769,8 @@ function openItem(id){
 }
 async function bulkHistory(){
   var list = BATCH.filter(bulkEligible); if(!list.length) return;
+  var dups = list.filter(function(it){ return it.dupe; });
+  if(dups.length && !confirm(list.length + ' document(s) à ajouter, dont ' + dups.length + ' déjà enregistré(s) (' + dups.map(function(it){ return it.doc.document.numero || it.name; }).join(', ') + ').\n\nLeur version précédente dans l\'historique sera remplacée. Continuer ?')) return;
   var btn = document.getElementById('btnBatchBulk'); btn.disabled = true;
   var keep = RES, ok = 0, ko = [];
   for(var i = 0; i < list.length; i++){
