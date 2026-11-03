@@ -115,7 +115,8 @@ function levenshtein(a, b) {
   return prev[n];
 }
 const compact = s => norm(s).replace(/\b(sas|sasu|sarl|sa|eurl|snc|ets|societe)\b/g, "").replace(/[^a-z0-9]/g, "");
-const sameRef = (a, b) => !!a && !!b && String(a).replace(/^0+/, "").toLowerCase() === String(b).replace(/^0+/, "").toLowerCase();
+const M = require("../lib/prix-match.js"); // même produit chez le même fournisseur (code OU libellé)
+const sameRef = M.sameRef;
 
 // ---------- Unités ----------
 // Ce que représente UNE unité d'usage de l'article : { dim: "masse"|"volume"|"piece", q }
@@ -202,6 +203,10 @@ function matchLines(doc, cat, providerId, seuil, aliases) {
     // 1) par référence
     const byRef = [];
     if (l.ref) for (const a of cat.articles) for (const s of a.suppliers) if (sameRef(s.ref, l.ref)) byRef.push({ a, s });
+    // Fournisseur sans code (ex. NOMIE) : sa référence Sextan est le libellé du produit, ou son libellé fournisseur
+    if (providerId) for (const a of cat.articles) for (const s of a.suppliers) {
+      if (s.provider_id === providerId && M.lineMatch(s, l.ref, l.designation) === "libelle" && !byRef.some(h => h.s === s)) byRef.push({ a, s, via: "libelle" });
+    }
     let hits = byRef.filter(h => !providerId || h.s.provider_id === providerId);
     if (!hits.length && byRef.length) { hits = byRef; r.alertes.push("Référence trouvée chez un autre fournisseur (" + byRef[0].s.provider + ")."); }
     const scored = hits.map(h => {
@@ -217,10 +222,11 @@ function matchLines(doc, cat, providerId, seuil, aliases) {
       r.candidats = scored.map(h => ({ id: h.a.id, name: h.a.name, unit: h.a.unit, via: "référence", score: round(h.score, 2) }));
       if (scored.length > 1) { r.statut = "ambigu"; r.alertes.push("La référence " + l.ref + " est rattachée à " + scored.length + " articles : " + scored.map(h => "« " + h.a.name + " »").join(", ") + "."); }
       r.conversion = best.conv;
+      if (best.via === "libelle") r.alertes.push("Reconnu par le libellé (« " + (best.s.ref || best.s.supplier_label) + " ») : ce fournisseur n'a pas de code article.");
     } else if (myAliases[normDes(l.designation)] && cat.articles.find(a => a.id === myAliases[normDes(l.designation)].id)) {
       // 2) correspondance apprise (même fournisseur, même désignation) : les références changent, la désignation reste
       const a = cat.articles.find(x => x.id === myAliases[normDes(l.designation)].id);
-      const s = a.suppliers.find(x => x.provider_id === providerId) || null;
+      const s = M.findSupplierLine(a.suppliers, providerId, l.ref, l.designation) || a.suppliers.find(x => x.provider_id === providerId) || null;
       r.article = { id: a.id, name: a.name, unit: a.unit, price: a.price };
       r.ligne_fournisseur = s;
       r.conversion = convertPrice(l, a, s);
@@ -233,13 +239,18 @@ function matchLines(doc, cat, providerId, seuil, aliases) {
       r.candidats = sims.map(x => ({ id: x.a.id, name: x.a.name, unit: x.a.unit, via: "nom", score: round(x.score, 2) }));
       if (sims.length) {
         const a = sims[0].a;
-        const s = a.suppliers.find(x => x.provider_id === providerId) || null;
+        const s = M.findSupplierLine(a.suppliers, providerId, l.ref, l.designation) || a.suppliers.find(x => x.provider_id === providerId) || null;
         r.article = { id: a.id, name: a.name, unit: a.unit, price: a.price };
         r.ligne_fournisseur = s;
         r.conversion = convertPrice(l, a, s);
         r.statut = "a_confirmer";
         r.alertes.push("Aucune fiche avec la référence " + (l.ref || "(absente)") + " : rapprochement par le nom, à confirmer.");
-        r.action = "rattacher";
+        // La fiche a déjà une ligne chez ce fournisseur : on mettra son prix à jour, on ne crée pas de seconde référence
+        const mine = a.suppliers.filter(x => x.provider_id === providerId);
+        if (s && (M.lineMatch(s, l.ref, l.designation) || (!l.ref && mine.length === 1))) {
+          r.action = "maj_prix";
+          r.alertes.push("La fiche « " + a.name + " » a déjà une ligne " + (s.provider || "chez ce fournisseur") + " (« " + (s.ref || "sans réf.") + " ») : son prix sera mis à jour, sans nouvelle référence.");
+        } else r.action = "rattacher";
       } else {
         r.statut = "inconnu";
         r.alertes.push("Article introuvable dans Sextan.");
@@ -255,6 +266,11 @@ function matchLines(doc, cat, providerId, seuil, aliases) {
     r.ecart_negocie = round(pct(r.prix_converti, neg), 2);
     r.ecart_dernier = round(pct(r.prix_converti, r.article && r.article.price), 2);
     if (r.ligne_fournisseur && !neg) r.alertes.push("Pas de prix négocié renseigné pour cette ligne fournisseur.");
+    if (r.article) {
+      const art = cat.articles.find(a => a.id === r.article.id);
+      const dups = art ? M.duplicateLines(art.suppliers).filter(d => !providerId || d.provider_id === providerId) : [];
+      if (dups.length) r.alertes.push("La fiche « " + r.article.name + " » contient déjà une référence en double (« " + (dups[0].ref || dups[0].supplier_label) + " ») : à nettoyer dans Sextan.");
+    }
 
     // Désignation incohérente (ex. 18 % facturé, fiche 30 %)
     if (r.article && r.statut !== "inconnu") {

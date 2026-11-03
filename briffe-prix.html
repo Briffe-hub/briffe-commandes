@@ -781,20 +781,28 @@ function convertPrice(line, article, sl){
   }
   return best;
 }
-function sameRef(a, b){ return !!a && !!b && String(a).replace(/^0+/, '').toLowerCase() === String(b).replace(/^0+/, '').toLowerCase(); }
+function sameRef(a, b){ return !!a && !!b && String(a).trim().replace(/^0+/, '').toLowerCase() === String(b).trim().replace(/^0+/, '').toLowerCase(); }
+// Même produit chez le même fournisseur : même code, OU référence Sextan = libellé du produit (fournisseurs
+// sans code, ex. NOMIE), OU libellé fournisseur identique. Même règle que netlify/lib/prix-match.js.
+function normTxt(s){ return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function sameTxt(a, b){ var x = normTxt(a), y = normTxt(b); return !!x && x.length >= 3 && x === y; }
+function lineMatch(s, ref, des){ if(!s) return false; return sameRef(s.ref, ref) || sameTxt(s.ref, des) || sameTxt(s.ref, ref) || sameTxt(s.supplier_label, des) || sameTxt(s.supplier_label, ref); }
 function pct(a, b){ return a !== null && a !== undefined && b > 0 ? (a / b - 1) * 100 : null; }
 
 // Réaffecte une ligne à un autre article (choisi dans la liste ou par recherche)
 function reassign(r, art){
   var pid = RES.fournisseur && RES.fournisseur.id;
-  var sl = (art.suppliers || []).find(function(s){ return s.provider_id === pid && sameRef(s.ref, r.ligne.ref); })
-        || (art.suppliers || []).find(function(s){ return s.provider_id === pid; }) || null;
+  var mine = (art.suppliers || []).filter(function(s){ return s.provider_id === pid; });
+  var exact = mine.find(function(s){ return lineMatch(s, r.ligne.ref, r.ligne.designation); }) || null;
+  var sl = exact || mine[0] || null;
   r.article = { id:art.id, name:art.name, unit:art.unit, price:art.price };
   r.ligne_fournisseur = sl;
   r.conversion = convertPrice(r.ligne, art, sl);
   r.prix_saisi = r.conversion.value !== null ? Math.round(r.conversion.value * 1e6) / 1e6 : null;
   r.manuel = true;
-  var hasRef = sl && sameRef(sl.ref, r.ligne.ref);
+  // Ligne déjà présente pour ce produit (ou facture sans code et une seule ligne de ce fournisseur) :
+  // on met son prix à jour, on ne rattache pas une seconde référence.
+  var hasRef = !!exact || (!!sl && !r.ligne.ref && mine.length === 1);
   r.action = hasRef ? (Math.abs(pct(r.prix_saisi, sl.price) || 0) > seuil() ? 'maj_prix' : 'aucune') : 'rattacher';
 }
 function seuil(){ return parseFloat(document.getElementById('seuil').value) || 1; }

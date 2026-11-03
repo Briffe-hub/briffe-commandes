@@ -51,7 +51,8 @@ async function blobDel(key) {
 // ---------- utilitaires ----------
 const num = v => { const n = parseFloat(String(v === null || v === undefined ? "" : v).replace(",", ".")); return isFinite(n) ? n : null; };
 const priceStr = v => { const n = num(v); return n === null ? "" : String(Math.round(n * 1e6) / 1e6); };
-const sameRef = (a, b) => !!a && !!b && String(a).replace(/^0+/, "").toLowerCase() === String(b).replace(/^0+/, "").toLowerCase();
+const M = require("../lib/prix-match.js"); // même produit chez le même fournisseur (code OU libellé)
+const sameRef = M.sameRef;
 const validUnitWord = u => !!u && !/^\s*[\d.,]+\s*$/.test(String(u));
 
 // Recopie d'une ligne fournisseur existante, à l'identique (sans le libellé, que Sextan conserve
@@ -76,19 +77,26 @@ function planArticle(article, ops, providerId) {
     if (!p) return { error: "Prix manquant pour « " + (op.designation || op.ref) + " »." };
     if (op.action === "maj_dernier") { newPrice = p; changes.push("dernier prix → " + p); continue; }
     if (op.action === "maj_prix" || op.action === "rattacher") {
-      let target = lines.find(s => s.provider_id === providerId && sameRef(s.ref, op.ref));
+      // Ligne existante de ce fournisseur pour ce produit : même code, ou référence Sextan = libellé
+      // (fournisseurs sans code, ex. NOMIE). On la met à jour au lieu d'en créer une seconde.
+      let target = M.findSupplierLine(lines, providerId, op.ref, op.designation);
       if (!target && op.action === "maj_prix") target = lines.find(s => s.provider_id === providerId && !s.ref);
+      // Facture sans code et une seule ligne de ce fournisseur sur la fiche : c'est elle.
+      if (!target && !op.ref) { const mine = lines.filter(s => s.provider_id === providerId); if (mine.length === 1) target = mine[0]; }
       if (target) {
         const before = target.price;
         target.price = p;
         if (!target.ref && op.ref) target.ref = op.ref;
         changes.push("prix négocié " + (target.ref || "") + " : " + (before === "" || before === null ? "vide" : before) + " → " + p);
+        if (op.action === "rattacher") changes.push("référence déjà présente sur la fiche, pas de doublon créé");
       } else {
         const lot = num(op.lot);
         if (!(lot > 0)) return { error: "Conditionnement (quantité) manquant pour rattacher « " + (op.designation || op.ref) + " »." };
         const unit = op.unite_cond || "COLIS";
         if (!validUnitWord(unit)) return { error: "Le nom du conditionnement doit être un mot (pas un nombre) : « " + unit + " »." };
-        const nl = { provider_id: providerId, ref: op.ref || "", price: p, lot: String(lot), unit: unit, comment: "1" };
+        // Sans code fournisseur, la référence prend le libellé (règle déjà suivie dans Sextan, ex. NOMIE) :
+        // la facture suivante sera reconnue au lieu de recréer une ligne.
+        const nl = { provider_id: providerId, ref: op.ref || String(op.designation || "").trim().slice(0, 100), price: p, lot: String(lot), unit: unit, comment: "1" };
         if (op.designation) nl.supplier_label = String(op.designation).slice(0, 255);
         nl._new = true;
         lines.push(nl);
@@ -97,6 +105,12 @@ function planArticle(article, ops, providerId) {
       touchSuppliers = true;
       newPrice = p;
     }
+  }
+  // Garde-fou final : jamais deux lignes pour le même produit chez le même fournisseur par notre fait.
+  const created = lines.filter(s => s._new);
+  for (const nl of created) {
+    const twin = lines.find(s => s !== nl && Number(s.provider_id) === Number(nl.provider_id) && (M.lineMatch(s, nl.ref, nl.supplier_label) || M.sameTxt(s.ref, nl.ref)));
+    if (twin) return { error: "« " + article.name + " » a déjà la référence « " + (twin.ref || twin.supplier_label) + " » chez ce fournisseur : ajout annulé pour ne pas créer de doublon." };
   }
   if (touchSuppliers && bad) {
     return { error: "La fiche « " + article.name + " » a une ligne fournisseur incomplète (" + (bad.provider || "fournisseur " + bad.provider_id) + " : conditionnement « " + (bad.lot || "vide") + " » / unité « " + (bad.unit || "vide") + " »). Sextan refuserait la modification : corrige-la d'abord dans Sextan." };
@@ -176,7 +190,7 @@ async function applyBatch(body) {
     const msg = ok ? (dry ? "Simulation OK" : "Enregistré") + " sur « " + article.name + " » : " + plan.changes.join(" ; ") : "Modification refusée : " + ((r && (r.message || r.error || r.text)) || "erreur inconnue");
     ops.forEach(o => results.push({
       key: o.key, ok, dry_run: dry, article_id: Number(id), message: msg,
-      avant: { dernier: article.price, negocie: ((article.suppliers || []).find(s => s.provider_id === providerId && sameRef(s.ref, o.ref)) || {}).price || null },
+      avant: { dernier: article.price, negocie: (M.findSupplierLine(article.suppliers, providerId, o.ref, o.designation) || {}).price || null },
       warnings: (r && r.warnings) || [], url: r && r.review && r.review.url ? r.review.url : null
     }));
   }));
