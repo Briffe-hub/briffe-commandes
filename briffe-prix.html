@@ -715,7 +715,28 @@ async function readAll(){
   await Promise.all([worker(), worker(), worker()]);
   var ok = results.filter(Boolean);
   if(!ok.length){ prog.innerHTML = '<div class="err-box">' + esc(errors.join(' · ') || 'Aucune page lue.') + '</div>'; btn.disabled = false; return; }
-  // Fusion des pages
+  // Plusieurs factures dans l'import ? Jamais de fusion : chacune devient un document du lot,
+  // avec son propre numéro et sa propre date (sinon tous les prix prenaient la date de la première).
+  var docGroups = splitByNumero(results);
+  if(docGroups.length > 1){
+    prog.innerHTML = esc(docGroups.length + ' factures différentes détectées dans cet import : elles sont traitées séparément dans « Traitement par lot »…');
+    try{ await loadHist(true); }catch(e){}
+    var created = [];
+    for(var gi = 0; gi < docGroups.length; gi++){
+      var item = { id: ++BATCH_SEQ, name: 'Import ' + (gi + 1) + ' / ' + docGroups.length, src: 'Import direct', pages: [], status: 'lecture' };
+      BATCH.push(item); created.push(item);
+      try{ await prepareBatchItem(item, docGroups[gi], gi === 0 ? errors : []); }catch(e){ item.status = 'erreur'; item.err = e.message; }
+      renderBatch();
+    }
+    BATCH.sort(function(a, b){ return String((a.doc && a.doc.document.date) || '9999').localeCompare(String((b.doc && b.doc.document.date) || '9999')); });
+    renderBatch();
+    PAGES = []; renderPages();
+    prog.innerHTML = esc(docGroups.length + ' factures détectées (' + created.map(function(it){ return it.doc ? (it.doc.document.numero || '?') + ' du ' + fmtD(it.doc.document.date || '') : it.name; }).join(', ') + ') : elles ont été placées dans « Traitement par lot », une par facture, chacune à sa date.');
+    var bc = document.getElementById('batchCard'); bc.open = true; bc.scrollIntoView({ behavior:'smooth' });
+    btn.disabled = false;
+    return;
+  }
+  // Fusion des pages (un seul document)
   DOC = { fournisseur:{ nom:null }, document:{ type:'autre', numero:null, date:null, bl:[] }, lignes:[], remarques:[] };
   ok.forEach(function(r){
     var d = r.data;
@@ -1484,14 +1505,19 @@ function mergePages(list){
   });
   return D;
 }
-// Un PDF peut contenir plusieurs factures : on coupe quand le numéro de document change
+// Plusieurs factures dans un même import (un PDF qui en regroupe plusieurs, ou plusieurs fichiers) :
+// on coupe dès que le numéro OU la date du document change. Une page sans numéro ni date (page 2
+// d'une facture) reste avec la précédente.
+function normNum(v){ return String(v || '').replace(/[\s.\-\/]/g, '').toUpperCase(); }
 function splitByNumero(results){
   var groups = [], cur = null;
   results.forEach(function(r){
     if(!r) return;
-    var num = r.data.document.numero;
-    if(!cur || (num && cur.numero && num !== cur.numero)){ cur = { numero: num, list: [] }; groups.push(cur); }
+    var num = normNum(r.data.document.numero), date = r.data.document.date || '';
+    var other = cur && ((num && cur.numero && num !== cur.numero) || (date && cur.date && date !== cur.date));
+    if(!cur || other){ cur = { numero: num, date: date, list: [] }; groups.push(cur); }
     if(!cur.numero && num) cur.numero = num;
+    if(!cur.date && date) cur.date = date;
     cur.list.push(r);
   });
   return groups.map(function(g){ return g.list; });
@@ -1501,6 +1527,17 @@ async function matchQuiet(doc){
   if(!j.ok){ if(j.reconnect){ document.getElementById('connCard').open = true; setState('err', 'Sextan : reconnexion nécessaire'); } throw new Error(j.error || 'Rapprochement impossible.'); }
   j.lignes.forEach(function(r){ r.prix_saisi = r.prix_converti; initForms(r); });
   return j;
+}
+// Fusionne les pages d'UN document, rapproche avec Sextan et contrôle avec l'historique
+async function prepareBatchItem(x, pages, errors){
+  x.doc = mergePages(pages);
+  if(errors && errors.length) x.doc.remarques = x.doc.remarques.concat(errors);
+  x.status = 'rapprochement'; renderBatch();
+  x.res = await matchQuiet(x.doc);
+  await applyHistChecks(x.res, x.doc);
+  x.key = itemKey(x);
+  x.dupe = !!(HIST && (HIST.docs || []).some(function(d){ return d.key === x.key; }));
+  x.status = 'prêt'; x.pages = null; // libère la mémoire des images
 }
 function itemKey(it){
   var pid = it.res && it.res.fournisseur ? it.res.fournisseur.id : 'x';
@@ -1528,15 +1565,8 @@ async function runBatch(){
       });
       for(var g = 0; g < groups.length; g++){
         var x = items[g];
-        x.doc = mergePages(groups[g]);
-        if(rd.errors.length) x.doc.remarques = x.doc.remarques.concat(rd.errors);
         if(g > 0) BATCH.splice(BATCH.indexOf(it) + g, 0, x);
-        x.status = 'rapprochement'; renderBatch();
-        x.res = await matchQuiet(x.doc);
-        await applyHistChecks(x.res, x.doc);
-        x.key = itemKey(x);
-        x.dupe = !!(HIST && (HIST.docs || []).some(function(d){ return d.key === x.key; }));
-        x.status = 'prêt'; x.pages = null; // libère la mémoire des images
+        await prepareBatchItem(x, groups[g], rd.errors);
       }
       i += groups.length - 1;
     }catch(e){ it.status = 'erreur'; it.err = e.message; }
