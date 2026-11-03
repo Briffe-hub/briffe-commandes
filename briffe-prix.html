@@ -874,7 +874,7 @@ function lineHtml(r){
   if(r.conversion && r.conversion.value !== null) alerts.push('Conversion : ' + r.conversion.how + '.');
   return '<div class="ln st-' + r.statut + (r.action === 'ignorer' ? ' ignored' : '') + (r.result && r.result.ok && !r.result.dry_run ? ' done' : '') + '" data-i="' + r.idx + '">' +
     '<div><div class="lbl">Document</div><div class="des">' + esc(l.designation) + '</div>' +
-      '<div class="ref">' + (l.ref ? 'Réf. ' + esc(l.ref) : 'Sans référence') + (l.quantite !== null ? ' · ' + fmt(l.quantite, 3).replace(/,?0+$/, '') + ' ' + esc(l.unite_quantite || '') : '') + '</div>' +
+      '<div class="ref">' + (l.ref ? 'Réf. ' + esc(l.ref) : 'Sans référence') + (l.lot ? ' · lot ' + esc(l.lot) : '') + (l.quantite !== null ? ' · ' + fmt(l.quantite, 3).replace(/,?0+$/, '') + ' ' + esc(l.unite_quantite || '') : '') + '</div>' +
       '<span class="badge ' + st.b + '">' + st.t + '</span></div>' +
     '<div><div class="lbl">Article Sextan</div>' + artSel + '</div>' +
     '<div class="pr"><div class="lbl">Prix</div>' +
@@ -1094,6 +1094,10 @@ function docKey(){
 }
 function payloadLine(r){
   var o = { key: String(r.idx), action: r.action, article_id: r.article ? r.article.id : null, ref: r.ligne.ref, designation: r.ligne.designation };
+  // Mise à jour de prix : on vise la ligne fournisseur retenue au rapprochement (même si la facture porte
+  // une autre « référence », ex. un numéro de lot), au lieu d'en ajouter une nouvelle.
+  var pid = RES.fournisseur && RES.fournisseur.id;
+  if(r.action === 'maj_prix' && r.ligne_fournisseur && r.ligne_fournisseur.provider_id === pid) o.target_ref = r.ligne_fournisseur.ref || '';
   if(r.action === 'creer'){
     o.prix = r.prix_nouvel; o.lot = r.nouvel_lot; o.unite_cond = r.unite_cond;
     o.nouvel = { name: r.nouvel.name, unit: r.nouvel.unit, rayon: r.nouvel.rayon, category: r.nouvel.category, family: r.nouvel.family,

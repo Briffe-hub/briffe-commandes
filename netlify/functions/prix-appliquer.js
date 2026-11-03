@@ -79,14 +79,18 @@ function planArticle(article, ops, providerId) {
     if (op.action === "maj_prix" || op.action === "rattacher") {
       // Ligne existante de ce fournisseur pour ce produit : même code, ou référence Sextan = libellé
       // (fournisseurs sans code, ex. NOMIE). On la met à jour au lieu d'en créer une seconde.
-      let target = M.findSupplierLine(lines, providerId, op.ref, op.designation);
+      // La ligne fournisseur retenue au rapprochement (ex. reconnue par la désignation alors que la facture
+      // porte une autre « référence », comme un numéro de lot) est celle à mettre à jour.
+      let target = op.target_ref !== undefined && op.target_ref !== null
+        ? lines.find(s => s.provider_id === providerId && String(s.ref || "") === String(op.target_ref)) || null : null;
+      if (!target) target = M.findSupplierLine(lines, providerId, op.ref, op.designation);
       if (!target && op.action === "maj_prix") target = lines.find(s => s.provider_id === providerId && !s.ref);
       // Facture sans code et une seule ligne de ce fournisseur sur la fiche : c'est elle.
       if (!target && !op.ref) { const mine = lines.filter(s => s.provider_id === providerId); if (mine.length === 1) target = mine[0]; }
       if (target) {
         const before = target.price;
         target.price = p;
-        if (!target.ref && op.ref) target.ref = op.ref;
+        if (!target.ref && op.ref && !op.target_ref) target.ref = op.ref; // ne remplace jamais une référence existante
         changes.push("prix négocié " + (target.ref || "") + " : " + (before === "" || before === null ? "vide" : before) + " → " + p);
         if (op.action === "rattacher") changes.push("référence déjà présente sur la fiche, pas de doublon créé");
       } else {

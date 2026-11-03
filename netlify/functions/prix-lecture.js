@@ -32,7 +32,8 @@ Format :
  "document": { "type": "facture"|"bl"|"autre", "numero": string|null, "date": "AAAA-MM-JJ"|null, "bl": [string] },
  "lignes": [
   {
-   "ref": string|null,            // code article du fournisseur (colonne CODE / CODE ART.), sans espaces
+   "ref": string|null,            // code ARTICLE du fournisseur (colonne CODE / CODE ART. / RÉF.), identique à chaque livraison, sans espaces
+   "lot": string|null,            // numéro de LOT / traçabilité de la ligne s'il est imprimé (change à chaque livraison) ; jamais dans "ref"
    "designation": string,         // libellé tel qu'imprimé
    "quantite": number|null,       // quantité facturée
    "unite_quantite": string|null, // KG, L, UN, PCE, CAR, COLIS...
@@ -49,6 +50,12 @@ Format :
 Règles :
 - Le vendeur (fournisseur) est l'émetteur du document, jamais le client. Le client est BRIFFE / FESTOYER : ne le mets jamais comme fournisseur.
 - Une ligne = un article facturé. Ignore les lignes de lot, DLC, code-barre, sous-totaux, frais de port sans article, textes de livraison.
+- "ref" est le CODE ARTICLE, qui désigne le produit et reste le même d'une facture à l'autre. Ne mets JAMAIS dans "ref" :
+  un numéro de lot (LOT, N° LOT, LOT N°, TRAÇABILITÉ, N° ABATTAGE, N° D'ÉLEVAGE, ESTAMPILLE), une DLC/DDM/date de fabrication,
+  un poids, un numéro de colis ou de palette, un numéro de pesée. Un numéro de lot va dans "lot".
+  Indices d'un lot : colonne intitulée « Lot », valeur différente pour un même produit, valeur qui contient une date,
+  ou numéro imprimé sous la désignation. S'il n'y a pas de colonne de code article distincte, mets "ref": null
+  plutôt que d'y recopier un lot. En cas de doute entre code article et lot, mets "ref": null et ajoute une remarque.
 - Nombres au format JSON (point décimal), sans symbole €. « 16,80 » -> 16.8.
 - "base_prix" décrit ce que représente UNE unité de prix, en grammes, millilitres ou pièces, d'après la désignation et l'unité de prix :
   * prix au KG -> {"quantite":1000,"unite":"g"} ; prix au L -> {"quantite":1000,"unite":"ml"}
@@ -76,6 +83,17 @@ function cleanNumber(v) {
   return isFinite(n) ? n : null;
 }
 
+// Code article : jamais identique au lot, jamais une date (garde-fou si la lecture se trompe)
+function cleanRef(l) {
+  if (!l || !l.ref) return null;
+  const ref = String(l.ref).replace(/\s+/g, "");
+  const lot = l.lot ? String(l.lot).replace(/\s+/g, "") : "";
+  if (lot && ref.toLowerCase() === lot.toLowerCase()) return null;
+  if (/^(lot|l)[-:.#]?\d/i.test(ref)) return null;                                      // « LOT1234 », « L-2611… »
+  if (/^\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}$/.test(ref) || /^\d{4}-\d{2}-\d{2}$/.test(ref)) return null; // une date
+  return ref;
+}
+
 function normalize(d) {
   d = d && typeof d === "object" ? d : {};
   const f = d.fournisseur || {}, doc = d.document || {};
@@ -83,7 +101,8 @@ function normalize(d) {
     const bp = l && l.base_prix && cleanNumber(l.base_prix.quantite) && ["g", "ml", "piece"].includes(l.base_prix.unite)
       ? { quantite: cleanNumber(l.base_prix.quantite), unite: l.base_prix.unite } : null;
     return {
-      ref: l && l.ref ? String(l.ref).replace(/\s+/g, "") : null,
+      ref: cleanRef(l),
+      lot: l && l.lot ? String(l.lot).trim().slice(0, 60) : null,
       designation: String((l && l.designation) || "").trim(),
       quantite: cleanNumber(l && l.quantite),
       unite_quantite: l && l.unite_quantite ? String(l.unite_quantite).toUpperCase() : null,
