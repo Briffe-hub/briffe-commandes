@@ -913,6 +913,7 @@ function renderLines(){
   box.innerHTML = rows.length ? rows.map(lineHtml).join('') : '<p class="small muted">Aucune ligne dans ce filtre.</p>';
   box.querySelectorAll('.ln').forEach(bindLine);
   renderSummary();
+  refreshSimPanel();
   if(typeof renderProducts === 'function' && BATCH_VIEW === 'prod') renderProducts();
 }
 function bindLine(el){
@@ -1196,7 +1197,37 @@ async function saveHistory(results){
   HIST = null;
   return j;
 }
+// État de la simulation affichée, réévalué à chaque modification de ligne :
+//  ready   = toutes les lignes à écrire ont été simulées telles quelles et acceptées -> confirmation possible
+//  ko      = une ligne à écrire a été refusée à la simulation
+//  changed = une ligne à écrire a changé (ou est nouvelle) depuis la simulation -> relancer
+//  none    = plus rien à écrire (tout est ignoré)
+var SIMSTATE = null;
+function simVerdict(){
+  if(!SIMSTATE || !RES) return null;
+  var cur = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale; });
+  if(!cur.length) return 'none';
+  for(var i = 0; i < cur.length; i++){
+    var r = cur[i];
+    if(SIMSTATE.sig[r.idx] !== JSON.stringify(payloadLine(r))) return 'changed';
+    if(!SIMSTATE.ok[String(r.idx)]) return 'ko';
+  }
+  return 'ready';
+}
+function refreshSimPanel(){
+  var c = document.getElementById('btnConfirm'), h = document.getElementById('simHint'), rs = document.getElementById('btnResim');
+  if(!c || !h || !SIMSTATE) return;
+  var v = simVerdict(), n = RES.lignes.filter(function(r){ return WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale; }).length;
+  c.disabled = v !== 'ready';
+  rs.hidden = v === 'ready';
+  h.style.color = v === 'ready' ? 'var(--ok)' : v === 'none' ? 'var(--mut)' : 'var(--err)';
+  h.textContent = v === 'ready' ? n + ' modification(s) prête(s), toutes acceptées à la simulation.'
+    : v === 'ko' ? 'Corrige ou passe en « Ignorer la ligne » les lignes refusées (✗).'
+    : v === 'changed' ? 'Des lignes ont changé depuis la simulation : relance-la avant de confirmer.'
+    : 'Plus aucune modification Sextan à faire : annule, puis « Enregistrer » pour ajouter le document à l\'historique.';
+}
 async function startApply(){
+  SIMSTATE = null;
   var errs = validate();
   if(errs.length){ setPanel('<h3>À compléter avant l\'enregistrement</h3><ul>' + errs.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>'); return; }
   // document déjà traité ? (et dates des derniers prix connus)
@@ -1230,12 +1261,21 @@ async function startApply(){
     var html = '<h3>Simulation : ' + (sim.length - ko.length) + ' / ' + sim.length + ' modification(s) acceptée(s) par Sextan</h3>' + warnDup + staleHtml +
       '<ul>' + sim.map(function(x){ var r = RES.lignes[+x.key]; return '<li>' + (x.ok ? '✓ ' : '✗ ') + esc(r ? r.ligne.designation : x.key) + ' — ' + esc(x.message) + '</li>'; }).join('') + '</ul>' +
       (recettes ? '<p class="small muted">Environ ' + recettes + ' recalcul(s) de recettes seront déclenchés par Sextan.</p>' : '') +
-      (ko.length ? '<p class="small" style="color:var(--err)">Corrige ou passe en « Ignorer la ligne » les lignes refusées, puis relance.</p>' : '') +
-      '<div class="row"><button class="primary" id="btnConfirm"' + (ko.length ? ' disabled' : '') + '>Confirmer l\'enregistrement dans Sextan</button><button id="btnCancel">Annuler</button></div>';
+      '<p class="small" id="simHint"></p>' +
+      '<div class="row"><button class="primary" id="btnConfirm" disabled>Confirmer l\'enregistrement dans Sextan</button><button id="btnResim" hidden>Relancer la simulation</button><button id="btnCancel">Annuler</button></div>';
     setPanel(html);
-    document.getElementById('btnCancel').onclick = function(){ RES.lignes.forEach(function(r){ r.result = null; }); setPanel(''); renderLines(); btn.disabled = false; };
+    // Mémorise ce qui a été simulé : la confirmation n'enverra que des lignes simulées, inchangées et acceptées.
+    SIMSTATE = { sig:{}, ok:{} };
+    RES.lignes.forEach(function(r){ if(WRITE_ACTIONS.indexOf(r.action) >= 0 && !r.stale) SIMSTATE.sig[r.idx] = JSON.stringify(payloadLine(r)); });
+    sim.forEach(function(x){ SIMSTATE.ok[x.key] = !!x.ok; });
+    btn.disabled = false; // on peut relancer à tout moment
+    refreshSimPanel();
+    document.getElementById('btnResim').onclick = function(){ startApply(); };
+    document.getElementById('btnCancel').onclick = function(){ SIMSTATE = null; RES.lignes.forEach(function(r){ r.result = null; }); setPanel(''); renderLines(); btn.disabled = false; };
     document.getElementById('btnConfirm').onclick = async function(){
-      this.disabled = true;
+      if(simVerdict() !== 'ready'){ refreshSimPanel(); return; }
+      SIMSTATE = null;
+      this.disabled = true; btn.disabled = true;
       try{
         var real = await runApply(false);
         renderLines();
