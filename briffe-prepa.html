@@ -1565,8 +1565,12 @@ function svRec(){
   if(!ev||!ev.id) return null;
   var lieu=[ev.venue_name||ev.location_name||'', ev.venue_address||ev.location_address||'', ev.room?('salle '+ev.room):''].filter(Boolean).join(' · ');
   return { id:ev.id, project:(ev.project&&ev.project.id)||null, name:ev.name||'', client:(ev.project&&ev.project.client&&ev.project.client.name)||S.client||'', date:ev.date||S.date||'',
-    heure:(S.heure||String(ev.organizer_arrival||'').slice(0,5)||''), nb:S.nb||ev.nbr_pax||0, lieu:lieu, type:ev.type||'', commercial:(ev.project&&ev.project.sale_user)||'' };
+    heure:(S.heure||String(ev.organizer_arrival||'').slice(0,5)||''), nb:S.nb||ev.nbr_pax||0, lieu:lieu, type:ev.type||'', commercial:(ev.project&&ev.project.sale_user)||'',
+    mep:svHM(ev.organizer_arrival), debut:svHM(ev.start_time)||svHM(ev.client_arrival), fin:svHM(ev.end_time) };
 }
+// heure Sextan « HH:MM:SS » -> « HH:MM » ; vide si non saisie (00:00:00, « :00 »)
+function svHM(t){ var m=String(t||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return ''; var v=('0'+m[1]).slice(-2)+':'+m[2]; return v==='00:00'?'':v; }
+function svHoraires(r){ return (r.debut?r.debut+(r.fin&&r.fin>r.debut?' - '+r.fin:''):'horaires à préciser'); }
 
 // ---------- 3. dépôt et contrôle des bons de dispatch ----------
 // Sextan sort les bons de dispatch dans UN PDF multi-pages (un service par section). On le lit page par
@@ -1720,7 +1724,7 @@ function svRender(){
   var prevN=rec?(SV.hist||[]).filter(function(e){ return e.reception&&e.reception.id===rec.id; }).length:0;
   h+='<div class="sv-sec">Prestation</div>';
   if(!rec){ b.innerHTML=h+'<div class="sv-pres">Aucune réception Sextan chargée. Charge d\'abord la réception (n° en haut de page), puis prépare le bon de prep.</div>'+svHistHtml(null); return; }
-  h+='<div class="sv-pres"><b>R'+rec.id+(rec.project?' · projet '+rec.project:'')+' · '+esc(rec.client||rec.name)+'</b><br>'+esc(svFmtD(rec.date))+(rec.heure?' · '+esc(rec.heure):'')+' · '+(rec.nb||0)+' pers.'+(rec.lieu?'<br><span class="mut">'+esc(rec.lieu)+'</span>':'')+'</div>';
+  h+='<div class="sv-pres"><b>R'+rec.id+(rec.project?' · projet '+rec.project:'')+' · '+esc(rec.client||rec.name)+'</b><br>'+esc(svFmtD(rec.date))+' · '+esc(svHoraires(rec))+(rec.mep?' (mise en place '+esc(rec.mep)+')':'')+' · '+(rec.nb||0)+' pers.'+(rec.lieu?'<br><span class="mut">'+esc(rec.lieu)+'</span>':'')+'</div>';
   if(prevN&&SV.phase!=='fini') h+='<div class="sv-err" style="color:#fbbf24">Déjà envoyée '+prevN+' fois : ce nouvel envoi sera une MODIFICATION (version '+(prevN+1)+'), signalée comme telle à l\'exploitation.</div>';
   h+=svStepper();
   if(!svCanSend()&&SV.phase==='depot'){ b.innerHTML=h.replace(svStepper(),'')+'<div class="sv-pres" style="margin-top:10px">Ton accès à cette brique est en lecture : tu peux consulter les envois, pas valider ni envoyer.</div>'+svHistHtml(rec); return; }
@@ -1883,9 +1887,12 @@ async function svAgenda(tokP){
   try{
     var tok=await tokP;
     var date=/^\d{4}-\d{2}-\d{2}$/.test(r.date)?r.date:null; if(!date) throw new Error('Date de prestation illisible');
-    var hm=(String(r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
-    var h2=('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
-    var desc=['Prestation R'+r.id+(r.name?' · '+r.name:''),'Client : '+(r.client||'—'),'Couverts : '+(r.nb||'—'),r.lieu?'Lieu : '+r.lieu:'','Validée par '+env.author+' le '+svFmtDT(env.at)+(env.modif?' (MODIFICATION v'+env.version+')':''),env.commentaire?'Commentaire : '+env.commentaire:'','','──────────'].concat((env.files||[]).map(function(f){ return f.label+' : '+f.url; })).filter(function(x){return x!=='';}).join('\n');
+    // horaires de la prestation (début / fin Sextan) ; envoi antérieur sans horaires : relus sur la réception chargée
+    var cur=svRec(); if(cur&&cur.id==r.id&&!r.debut){ r=Object.assign({},r,{mep:cur.mep,debut:cur.debut,fin:cur.fin}); }
+    var hm=(String(r.debut||r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
+    var h2=(r.debut&&r.fin&&r.fin>h1)?r.fin:('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
+    var desc=['Prestation R'+r.id+(r.name?' · '+r.name:''),'Client : '+(r.client||'—'),'Couverts : '+(r.nb||'—'),
+      r.mep?'Mise en place : '+r.mep:'','Début : '+(r.debut||'à préciser'),'Fin : '+(r.fin||'à préciser'),r.lieu?'Lieu : '+r.lieu:'','Validée par '+env.author+' le '+svFmtDT(env.at)+(env.modif?' (MODIFICATION v'+env.version+')':''),env.commentaire?'Commentaire : '+env.commentaire:'','','──────────'].concat((env.files||[]).map(function(f){ return f.label+' : '+f.url; })).filter(function(x){return x!=='';}).join('\n');
     var ev={ summary:'PREP · '+(r.client||r.name||'R'+r.id)+' · '+(r.nb||'?')+' pers.'+(env.modif?' (modifiée)':''), location:r.lieu||'', description:desc,
       start:{dateTime:date+'T'+h1+':00',timeZone:'Europe/Paris'}, end:{dateTime:date+'T'+h2+':00',timeZone:'Europe/Paris'}, colorId:'9' };
     var base='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CAL_ID)+'/events', resp;
@@ -1893,7 +1900,7 @@ async function svAgenda(tokP){
     if(!resp||!resp.ok){ resp=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(ev)}); }
     var out=await resp.json().catch(function(){return {};});
     if(!resp.ok||!out.id) throw new Error('Agenda refusé ('+resp.status+(out.error&&out.error.message?' : '+out.error.message:'')+') — ton compte Google doit pouvoir modifier l\'agenda '+CAL_ID);
-    result={ok:true,message:(env.agenda_event_id?'Entrée mise à jour':'Entrée créée')+' le '+svFmtD(date)+' à '+h1+' dans '+CAL_ID,event_id:out.id};
+    result={ok:true,message:(env.agenda_event_id?'Entrée mise à jour':'Entrée créée')+' le '+svFmtD(date)+' de '+h1+' à '+h2+(r.debut?'':' (horaires non renseignés dans Sextan)')+' dans '+CAL_ID,event_id:out.id};
     env.agenda_event_id=out.id;
   }catch(e){ result={ok:false,message:e.message}; }
   SV.steps.agenda=result; svRender();

@@ -74,7 +74,7 @@ function mailHtml(rec, env, links) {
 ${env.modif ? `<p style="background:#fde68a;padding:8px 12px;border-radius:6px"><b>MODIFICATION</b> (version ${env.version}) : cette prestation avait déjà été envoyée le ${escH(frDate(env.previous_at))}. Les documents ci-joints remplacent les précédents.</p>` : ""}
 <p>Prestation validée par <b>${escH(env.author)}</b>, à imprimer et distribuer aux pôles.</p>
 <table style="border-collapse:collapse;margin:8px 0">
-${row("Réception", "R" + r.id + (r.name ? " · " + r.name : ""))}${row("Client", r.client)}${row("Date", frDate(r.date))}${row("Heure", r.heure)}${row("Couverts", r.nb ? r.nb + " pers." : "")}${row("Lieu", r.lieu)}${row("Type", r.type)}
+${row("Réception", "R" + r.id + (r.name ? " · " + r.name : ""))}${row("Client", r.client)}${row("Date", frDate(r.date))}${r.debut ? row("Horaires", r.debut + (r.fin && r.fin > r.debut ? " - " + r.fin : "")) : row("Heure", r.heure)}${row("Mise en place", r.mep)}${row("Couverts", r.nb ? r.nb + " pers." : "")}${row("Lieu", r.lieu)}${row("Type", r.type)}
 </table>
 ${env.commentaire ? `<p><b>Commentaire :</b><br>${escH(env.commentaire).replace(/\n/g, "<br>")}</p>` : ""}
 <p><b>Pièces jointes :</b></p><ul>${links.map(l => `<li>${escH(l.label)} — <a href="${escH(l.url)}">ouvrir</a></li>`).join("")}${env.sans.cuisine ? "<li>Pas de bon de dispatch cuisine pour cette prestation</li>" : ""}${env.sans.patisserie ? "<li>Pas de bon de dispatch pâtisserie pour cette prestation</li>" : ""}</ul>
@@ -163,7 +163,8 @@ exports.handler = async function (event) {
       const rec = (await blobGet("rec/" + rid)) || { reception: {}, envois: [], agenda_event_id: null };
       rec.reception = {
         id: rid, name: str(r.name), client: str(r.client), date: str(r.date, 20), heure: str(r.heure, 20), nb: Number(r.nb) || 0,
-        lieu: str(r.lieu, 300), type: str(r.type, 60), commercial: str(r.commercial, 60)
+        lieu: str(r.lieu, 300), type: str(r.type, 60), commercial: str(r.commercial, 60),
+        mep: str(r.mep, 5), debut: str(r.debut, 5), fin: str(r.fin, 5)
       };
       const prev = rec.envois[rec.envois.length - 1] || null;
       const env = {
