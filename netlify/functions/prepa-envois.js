@@ -146,11 +146,17 @@ exports.handler = async function (event) {
       const prep = cleanB64(files.prep);
       if (!prep || !isPdf(prep)) return json(400, { error: "Bon de préparation manquant ou illisible." });
       const docs = [{ k: "prep", label: "Bon de préparation", b64: prep, name: names.prep || ("BON PREP R" + rid + ".pdf") }];
-      for (const k of ["cuisine", "patisserie"]) {
+      // bons de dispatch : découpés par service dans la page (cuisine / pâtisserie / logistique),
+      // ou le PDF Sextan entier quand le découpage n'est pas possible (« dispatch »)
+      const LAB = { cuisine: "Bon de dispatch CUISINE", patisserie: "Bon de dispatch PÂTISSERIE", logistique: "Bon de dispatch LOGISTIQUE", dispatch: "Bons de dispatch (PDF Sextan complet)" };
+      for (const k of ["cuisine", "patisserie", "logistique", "dispatch"]) {
         const b = cleanB64(files[k]);
-        if (!b) { if (!sans[k]) return json(400, { error: "Bon de dispatch " + (k === "cuisine" ? "cuisine" : "pâtisserie") + " manquant (ou coche « pas de bon » pour cette prestation)." }); continue; }
-        if (!isPdf(b)) return json(400, { error: "Le bon de dispatch " + k + " n'est pas un PDF." });
-        docs.push({ k, label: "Bon de dispatch " + (k === "cuisine" ? "CUISINE" : "PÂTISSERIE"), b64: b, name: names[k] || ("DISPATCH " + k.toUpperCase() + " R" + rid + ".pdf") });
+        if (!b) continue;
+        if (!isPdf(b)) return json(400, { error: LAB[k] + " : ce n'est pas un PDF." });
+        docs.push({ k, label: LAB[k], b64: b, name: names[k] || (LAB[k] + " R" + rid + ".pdf") });
+      }
+      if (!files.dispatch) for (const k of ["cuisine", "patisserie"]) {
+        if (!cleanB64(files[k]) && !sans[k]) return json(400, { error: LAB[k] + " manquant : dépose les bons de dispatch, ou confirme qu'il n'y en a pas." });
       }
       for (const d of docs) if (Buffer.byteLength(d.b64, "base64") > MAX_PDF) return json(413, { error: d.label + " trop lourd (4,5 Mo max)." });
 
