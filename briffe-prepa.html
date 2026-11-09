@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+<script src="briffe-auth.js" data-brique="prepa"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Briffe · Préparation prestation</title>
@@ -1527,6 +1528,7 @@ function svLoad(src){ return new Promise(function(res,rej){ if(document.querySel
 
 // ---------- 1. connexion à l'ouverture de la tuile ----------
 function svGate(msg){
+  if(window.BriffeAuth){ BriffeAuth.check(); return; } // connexion commune (briffe-auth.js)
   var g=document.getElementById('sv-gate'); if(!g) return;
   g.style.display='flex';
   document.getElementById('sv-gate-err').textContent=msg||'';
@@ -1537,6 +1539,7 @@ function svWho(){
   w.innerHTML=SV.me?esc(SV.me.name||SV.me.login)+' · <a href="#" onclick="svLogout();return false" style="color:#888">déconnexion</a>':'';
 }
 async function svBoot(){
+  if(window.BriffeAuth){ try{ await BriffeAuth.ready; }catch(e){} }
   if(!svTok()&&!svSec()){ svGate(''); return; }
   var j=await svPost({action:'config'});
   if(j.ok){ SV.me=j.me; SV.cfg=j.config; document.getElementById('sv-gate').style.display='none'; svWho(); }
@@ -1553,6 +1556,9 @@ async function svGateLogin(){
 function svLogout(){ try{ localStorage.removeItem('bt_prix_token'); localStorage.removeItem('bt_prix_exp'); sessionStorage.removeItem('bt_prix_secours'); }catch(e){} SV.me=null; svWho(); svGate(''); }
 
 // ---------- réception chargée ----------
+// niveau sur la brique « Préparation prestation »
+function svLevel(){ var m=SV.me; if(!m) return 'aucun'; if(m.is_admin||m.master) return 'admin'; return (m.perms&&m.perms.prepa)||'aucun'; }
+function svCanSend(){ return ['editeur','admin'].indexOf(svLevel())>=0; }
 function svRec(){
   var ev=window.SX_EV||null;
   if(!ev||!ev.id) return null;
@@ -1670,6 +1676,7 @@ function svRender(){
   h+='<div class="sv-pres"><b>R'+rec.id+(rec.project?' · projet '+rec.project:'')+' · '+esc(rec.client||rec.name)+'</b><br>'+esc(svFmtD(rec.date))+(rec.heure?' · '+esc(rec.heure):'')+' · '+(rec.nb||0)+' pers.'+(rec.lieu?'<br><span class="mut">'+esc(rec.lieu)+'</span>':'')+'</div>';
   if(prevN&&SV.phase!=='fini') h+='<div class="sv-err" style="color:#fbbf24">Déjà envoyée '+prevN+' fois : ce nouvel envoi sera une MODIFICATION (version '+(prevN+1)+'), signalée comme telle à l\'exploitation.</div>';
   h+=svStepper();
+  if(!svCanSend()&&SV.phase==='depot'){ b.innerHTML=h.replace(svStepper(),'')+'<div class="sv-pres" style="margin-top:10px">Ton accès à cette brique est en lecture : tu peux consulter les envois, pas valider ni envoyer.</div>'+svHistHtml(rec); return; }
   if(SV.phase==='depot'){
     h+='<div class="sv-sec">Bons de dispatch Sextan (dernière version, portrait)</div><div class="sv-drops">'+svDrop('cuisine')+svDrop('patisserie')+'</div>';
     h+='<div class="sv-sec">Commentaire pour l\'exploitation (facultatif)</div><textarea id="sv-c" class="sv-in" rows="2" placeholder="Précisions, changements…">'+esc(SV.comment||'')+'</textarea>';
@@ -1698,7 +1705,7 @@ function svRender(){
   }
   if(SV.err) h+='<div class="sv-err">'+esc(SV.err)+'</div>';
   h+=svHistHtml(rec);
-  if(SV.me&&SV.me.role==='admin'){
+  if(svLevel()==='admin'){
     var cf=SV.cfg||{};
     h+='<details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;color:#888;letter-spacing:.1em;text-transform:uppercase">Réglages (admin)</summary><div class="sv-cfg" style="margin-top:8px">'+
       '<label style="font-size:11px;color:#aaa">Mail(s) de l\'exploitation<input id="sv-ce" class="sv-in" value="'+esc((cf.emails||[]).join(', '))+'"></label>'+

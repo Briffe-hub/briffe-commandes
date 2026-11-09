@@ -16,7 +16,30 @@ const STORE = "briffe-users";
 const KEY = "users";
 const TTL_MS = 12 * 60 * 60 * 1000;
 const ROLES = ["lecteur", "editeur", "admin"];
-const ROLE_LABEL = { lecteur: "Lecteur", editeur: "Éditeur", admin: "Admin" };
+const ROLE_LABEL = { aucun: "Aucun accès", lecteur: "Lecture", editeur: "Édition", admin: "Admin" };
+// Briques de briffetools : chaque compte a un niveau par brique (aucun / lecteur / editeur / admin).
+// Un administrateur général (is_admin) a tous les droits partout et gère les comptes.
+const BRIQUES = [
+  { id: "commandes", label: "Commandes appels d'offre" },
+  { id: "pdf",       label: "Signature & cachet" },
+  { id: "prepa",     label: "Préparation prestation" },
+  { id: "liens",     label: "Menu de liens (QR)" },
+  { id: "cartels",   label: "Cartels allergènes" },
+  { id: "prix",      label: "Prix fournisseurs" }
+];
+const BRIQUE_IDS = BRIQUES.map(b => b.id);
+// Comptes créés avant les droits par brique : leur rôle valait pour Prix et Préparation.
+function normUser(u) {
+  if (!u) return u;
+  if (u.is_admin === undefined) u.is_admin = u.role === "admin";
+  if (!u.perms) { u.perms = {}; if (!u.is_admin && ROLES.includes(u.role)) { u.perms.prix = u.role; u.perms.prepa = u.role; } }
+  return u;
+}
+function cleanPerms(p) {
+  const out = {};
+  BRIQUE_IDS.forEach(b => { const v = p && p[b]; if (ROLES.includes(v)) out[b] = v; });
+  return out;
+}
 const MIN_PASSWORD = 8;
 
 // ---------- Blobs ----------
@@ -94,15 +117,24 @@ function masterOk(event) {
   const allowed = String(process.env.BRIFFE_AUTH_PASSWORD || "").split(",").map(s => s.trim()).filter(Boolean);
   return allowed.some(pw => safeEqual(given, pw));
 }
-const MASTER = { id: "secours", login: "secours", name: "Accès de secours", role: "admin", master: true };
+const MASTER = { id: "secours", login: "secours", name: "Accès de secours", role: "admin", is_admin: true, perms: {}, master: true };
 function publicUser(u) {
-  return { id: u.id, login: u.login, name: u.name || u.login, role: u.role, master: !!u.master, active: u.active !== false, created: u.created || null, updated: u.updated || null, last_login: u.last_login || null };
+  normUser(u);
+  return { id: u.id, login: u.login, name: u.name || u.login, role: u.is_admin ? "admin" : (u.role || "lecteur"), is_admin: !!u.is_admin, perms: Object.assign({}, u.perms),
+    master: !!u.master, active: u.active !== false, created: u.created || null, updated: u.updated || null, last_login: u.last_login || null };
+}
+// Niveau effectif d'un compte sur une brique ("aucun" si pas d'accès)
+function levelFor(user, brique) {
+  if (!user) return "aucun";
+  if (user.is_admin) return "admin";
+  if (!brique) return "lecteur"; // actions sans brique (session, mot de passe) : tout compte connecté
+  return (user.perms && user.perms[brique]) || "aucun";
 }
 const rank = role => ROLES.indexOf(role);
 
 // Vérifie l'accès. Renvoie { user } ou { status, error }.
-// minRole : "lecteur" | "editeur" | "admin".
-async function authenticate(event, minRole) {
+// minRole : "lecteur" | "editeur" | "admin" ; brique : id de la brique (droits par brique), sinon droits généraux.
+async function authenticate(event, minRole, brique) {
   let user = null;
   if (masterOk(event)) user = MASTER;
   else {
@@ -114,16 +146,20 @@ async function authenticate(event, minRole) {
     if (!u || u.active === false || (u.ver || 1) !== d.s) return { status: 401, error: "Session expirée, reconnecte-toi." };
     user = publicUser(u);
   }
-  if (rank(user.role) < rank(minRole || "lecteur")) {
-    return { status: 403, error: "Droits insuffisants : action réservée au rôle " + ROLE_LABEL[minRole] + "." };
+  const lvl = levelFor(user, brique);
+  user.level = lvl; user.brique = brique || null;
+  if (rank(lvl) < rank(minRole || "lecteur")) {
+    const b = BRIQUES.find(x => x.id === brique);
+    if (lvl === "aucun") return { status: 403, error: b ? "Pas d'accès à la brique « " + b.label + " » : demande-le à un administrateur." : "Action réservée à un administrateur." };
+    return { status: 403, error: "Droits insuffisants : action réservée au niveau « " + ROLE_LABEL[minRole] + " »" + (b ? " sur « " + b.label + " »" : "") + "." };
   }
   return { user };
 }
 
 // Adaptateur pour les fonctions Netlify : renvoie null si autorisé (et pose event.briffeUser), sinon la réponse d'erreur.
-async function guard(event, minRole, json) {
+async function guard(event, minRole, json, brique) {
   try {
-    const a = await authenticate(event, minRole);
+    const a = await authenticate(event, minRole, brique);
     if (a.error) return json(a.status, { error: a.error, auth: a.status === 401 ? "login" : "forbidden" });
     event.briffeUser = a.user;
     return null;
@@ -142,7 +178,7 @@ function roleFor(event, byAction, fallback) {
 const AUTH_HEADERS = "Content-Type, x-briffe-pass, x-briffe-token";
 
 module.exports = {
-  ROLES, ROLE_LABEL, MIN_PASSWORD, AUTH_HEADERS, MASTER,
+  ROLES, ROLE_LABEL, BRIQUES, BRIQUE_IDS, MIN_PASSWORD, AUTH_HEADERS, MASTER, normUser, cleanPerms, levelFor,
   loadStore, saveStore, hashPassword, checkPassword, passwordProblem,
   makeToken, readToken, authenticate, guard, roleFor, publicUser, rank
 };

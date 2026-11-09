@@ -255,7 +255,7 @@ exports.handler = async function (event) {
   }
 
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  { const deny = await U.guard(event, U.roleFor(event, { status: "lecteur", start: "admin", disconnect: "admin" }, "admin"), json); if (deny) return deny; }
+  { const deny = await U.guard(event, U.roleFor(event, { status: "lecteur", start: "admin", disconnect: "admin" }, "admin"), json, "prix"); if (deny) return deny; }
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}
 
   try {

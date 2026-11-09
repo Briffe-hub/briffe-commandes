@@ -5,8 +5,9 @@
 //   { action:"me" }                            -> { ok, user }                         (tout compte connecté)
 //   { action:"change_password", current, password } -> { ok, token, exp }            (compte nominatif)
 //   { action:"list" }                          -> { ok, users:[...] }                   (admin)
-//   { action:"create", login, name, role, password }  -> { ok, user }                  (admin)
-//   { action:"update", id, name?, role?, active? }    -> { ok, user }                  (admin)
+//   { action:"create", login, name, password, is_admin?, perms? }  -> { ok, user }     (admin)
+//   { action:"update", id, name?, is_admin?, perms?, active? }    -> { ok, user }     (admin)
+//      perms = { <brique>: "lecteur"|"editeur"|"admin" } ; brique absente = aucun accès ; is_admin = tous les droits
 //   { action:"reset_password", id, password }  -> { ok }   déconnecte toutes ses sessions (admin)
 //   { action:"logout_all", id }                -> { ok }   déconnecte toutes ses sessions (admin)
 //   { action:"delete", id }                    -> { ok }                                (admin)
@@ -29,7 +30,7 @@ function headers() {
 const json = (code, obj) => ({ statusCode: code, headers: headers(), body: JSON.stringify(obj) });
 const normLogin = s => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9._-]+/g, "");
 const now = () => new Date().toISOString();
-const activeAdmins = store => store.users.filter(u => u.role === "admin" && u.active !== false);
+const activeAdmins = store => store.users.filter(u => U.normUser(u).is_admin && u.active !== false);
 
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
@@ -42,7 +43,7 @@ exports.handler = async function (event) {
     if (action === "login") {
       const login = normLogin(body.login);
       const store = await U.loadStore();
-      const u = store.users.find(x => x.login === login);
+      const u = U.normUser(store.users.find(x => x.login === login));
       if (!u || u.active === false || !U.checkPassword(u, body.password || "")) {
         await new Promise(r => setTimeout(r, 500)); // ralentit la force brute
         return json(401, { error: "Identifiant ou mot de passe incorrect." });
@@ -79,7 +80,7 @@ exports.handler = async function (event) {
     const find = id => store.users.find(x => x.id === id);
 
     if (action === "list") {
-      return json(200, { ok: true, users: store.users.map(U.publicUser), roles: U.ROLES, me });
+      return json(200, { ok: true, users: store.users.map(U.publicUser), roles: U.ROLES, briques: U.BRIQUES, me });
     }
 
     if (action === "create") {
@@ -87,12 +88,13 @@ exports.handler = async function (event) {
       if (!login || login.length < 2) return json(400, { error: "Identifiant invalide (lettres, chiffres, point, tiret ; 2 caractères minimum)." });
       if (login === "secours") return json(400, { error: "Identifiant réservé." });
       if (store.users.some(x => x.login === login)) return json(400, { error: "L'identifiant « " + login + " » existe déjà." });
-      const role = U.ROLES.includes(body.role) ? body.role : "lecteur";
+      const isAdmin = body.is_admin !== undefined ? !!body.is_admin : body.role === "admin";
+      const perms = body.perms ? U.cleanPerms(body.perms) : (U.ROLES.includes(body.role) && body.role !== "admin" ? { prix: body.role, prepa: body.role } : {});
       const pb = U.passwordProblem(body.password); if (pb) return json(400, { error: pb });
       const u = Object.assign({
         id: crypto.randomBytes(8).toString("hex"),
         login, name: String(body.name || "").trim().slice(0, 80) || login,
-        role, active: true, ver: 1, created: now(), updated: now(), created_by: me.login
+        role: isAdmin ? "admin" : "lecteur", is_admin: isAdmin, perms, active: true, ver: 1, created: now(), updated: now(), created_by: me.login
       }, U.hashPassword(body.password));
       store.users.push(u);
       await U.saveStore(store);
@@ -100,21 +102,28 @@ exports.handler = async function (event) {
     }
 
     if (action === "update") {
-      const u = find(body.id); if (!u) return json(404, { error: "Compte introuvable." });
+      const u = U.normUser(find(body.id)); if (!u) return json(404, { error: "Compte introuvable." });
       const self = u.id === me.id;
       if (body.name !== undefined) u.name = String(body.name || "").trim().slice(0, 80) || u.login;
-      if (body.role !== undefined) {
+      // ancien format (rôle unique) : converti en administrateur général ou droits Prix + Préparation
+      if (body.role !== undefined && body.is_admin === undefined) {
         if (!U.ROLES.includes(body.role)) return json(400, { error: "Rôle inconnu." });
-        if (u.role === "admin" && body.role !== "admin") {
-          if (self) return json(400, { error: "Tu ne peux pas retirer ton propre rôle admin." });
-          if (activeAdmins(store).length <= 1 && u.active !== false) return json(400, { error: "Il doit rester au moins un admin actif." });
-        }
-        u.role = body.role;
+        body.is_admin = body.role === "admin";
+        if (body.role !== "admin" && !body.perms) body.perms = Object.assign({}, u.perms, { prix: body.role, prepa: body.role });
       }
+      if (body.is_admin !== undefined) {
+        const want = !!body.is_admin;
+        if (u.is_admin && !want) {
+          if (self) return json(400, { error: "Tu ne peux pas retirer tes propres droits d'administrateur." });
+          if (activeAdmins(store).length <= 1 && u.active !== false) return json(400, { error: "Il doit rester au moins un administrateur actif." });
+        }
+        u.is_admin = want; u.role = want ? "admin" : "lecteur";
+      }
+      if (body.perms !== undefined) u.perms = U.cleanPerms(body.perms);
       if (body.active !== undefined) {
         const act = !!body.active;
         if (!act && self) return json(400, { error: "Tu ne peux pas désactiver ton propre compte." });
-        if (!act && u.role === "admin" && activeAdmins(store).length <= 1 && u.active !== false) return json(400, { error: "Il doit rester au moins un admin actif." });
+        if (!act && u.is_admin && activeAdmins(store).length <= 1 && u.active !== false) return json(400, { error: "Il doit rester au moins un administrateur actif." });
         if (!act) u.ver = (u.ver || 1) + 1; // coupe les sessions ouvertes
         u.active = act;
       }
@@ -141,7 +150,7 @@ exports.handler = async function (event) {
     if (action === "delete") {
       const u = find(body.id); if (!u) return json(404, { error: "Compte introuvable." });
       if (u.id === me.id) return json(400, { error: "Tu ne peux pas supprimer ton propre compte." });
-      if (u.role === "admin" && u.active !== false && activeAdmins(store).length <= 1) return json(400, { error: "Il doit rester au moins un admin actif." });
+      if (U.normUser(u).is_admin && u.active !== false && activeAdmins(store).length <= 1) return json(400, { error: "Il doit rester au moins un administrateur actif." });
       store.users = store.users.filter(x => x.id !== u.id);
       await U.saveStore(store);
       return json(200, { ok: true });

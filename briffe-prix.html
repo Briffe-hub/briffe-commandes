@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head>
+<script src="briffe-auth.js" data-brique="prix"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Prix fournisseurs · briffetools</title>
@@ -185,7 +186,7 @@ body:not(.can-admin) .need-admin{display:none!important}
   <div class="who">
     <span class="u" id="whoTxt"></span>
     <button class="ghost" id="btnMyPass" hidden>Mon mot de passe</button>
-    <button class="ghost need-admin" id="btnUsers">Utilisateurs</button>
+    <button class="ghost" id="btnUsers" hidden title="Comptes et accès par brique">Administration</button>
     <button class="ghost" id="btnLogout" hidden>Déconnexion</button>
     <span class="mini"><b>briffe</b>tools</span>
   </div>
@@ -353,7 +354,7 @@ body:not(.can-admin) .need-admin{display:none!important}
    ========================================================= */
 var FN = '/.netlify/functions/';
 var ME = null, LOGIN_WAIT = [];
-var ROLE_LABEL = { lecteur:'Lecteur', editeur:'Éditeur', admin:'Admin' };
+var ROLE_LABEL = { lecteur:'Lecture', editeur:'Édition', admin:'Admin', aucun:'Aucun accès' };
 function ss(k, v){ try{ if(v === undefined) return localStorage.getItem(k) || ''; if(v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); }catch(e){ return ''; } }
 function sss(k, v){ try{ if(v === undefined) return sessionStorage.getItem(k) || ''; if(v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); }catch(e){ return ''; } }
 function getToken(){ var t = ss('bt_prix_token'), exp = parseInt(ss('bt_prix_exp'), 10) || 0; return t && exp > Date.now() ? t : ''; }
@@ -363,12 +364,16 @@ function authHeaders(){
   return h;
 }
 function clearAuth(){ ss('bt_prix_token', null); ss('bt_prix_exp', null); sss('bt_prix_secours', null); ME = null; applyRole(); }
-function hasRole(r){ var o = ['lecteur','editeur','admin']; return !!ME && o.indexOf(ME.role) >= o.indexOf(r); }
+// Niveau sur la brique Prix fournisseurs (droits par brique ; administrateur général = admin)
+function prixLevel(){ if(!ME) return 'aucun'; if(ME.is_admin || ME.master) return 'admin'; return (ME.perms && ME.perms.prix) || 'aucun'; }
+function hasRole(r){ var o = ['lecteur','editeur','admin']; return !!ME && o.indexOf(prixLevel()) >= o.indexOf(r); }
 function applyRole(){
   var b = document.body;
   b.classList.toggle('can-edit', hasRole('editeur'));
   b.classList.toggle('can-admin', hasRole('admin'));
-  document.getElementById('whoTxt').innerHTML = ME ? '<b>' + esc(ME.name || ME.login) + '</b><span class="role ' + esc(ME.role) + '">' + esc(ROLE_LABEL[ME.role] || ME.role) + '</span>' : '';
+  var lv = prixLevel();
+  document.getElementById('whoTxt').innerHTML = ME ? '<b>' + esc(ME.name || ME.login) + '</b><span class="role ' + esc(lv) + '">' + esc(ROLE_LABEL[lv] || lv) + '</span>' : '';
+  document.getElementById('btnUsers').hidden = !(ME && (ME.is_admin || ME.master));
   document.getElementById('btnLogout').hidden = !ME;
   document.getElementById('btnMyPass').hidden = !ME || !!ME.master;
 }
@@ -500,11 +505,12 @@ function renderUsers(){
     };
   });
 }
-document.getElementById('btnUsers').onclick = async function(){
+document.getElementById('btnUsers').onclick = function(){ location.href = 'briffe-admin.html'; };
+document.getElementById('btnUsersOld') && (document.getElementById('btnUsersOld').onclick = async function(){
   uMsg(''); document.getElementById('usersOv').hidden = false;
   document.getElementById('usersTable').innerHTML = '<tr><td class="muted">Chargement…</td></tr>';
   try{ await loadUsers(); }catch(e){ uMsg(e.message); }
-};
+});
 document.getElementById('nuGen').onclick = function(){ document.getElementById('nuPass').value = genPass(); };
 document.getElementById('newUserForm').addEventListener('submit', async function(e){
   e.preventDefault();
@@ -520,6 +526,8 @@ document.getElementById('newUserForm').addEventListener('submit', async function
 
 // Démarrage : vérifie la session (ou la demande) puis lance la page
 async function boot(){
+  // la connexion commune (briffe-auth.js) passe d'abord : droits de la brique « prix » vérifiés
+  try{ await BriffeAuth.ready; if(BriffeAuth.me){ ME = BriffeAuth.me; applyRole(); refreshConn(); return; } }catch(e){}
   if(getToken() || sss('bt_prix_secours')){
     var j = await rawPost('users', { action:'me' });
     if(j.ok){ ME = j.user; applyRole(); }

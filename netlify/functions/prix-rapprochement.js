@@ -304,7 +304,7 @@ function matchLines(doc, cat, providerId, seuil, aliases) {
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  { const deny = await U.guard(event, U.roleFor(event, { catalogue: "lecteur" }, "editeur"), json); if (deny) return deny; }
+  { const deny = await U.guard(event, U.roleFor(event, { catalogue: "lecteur" }, "editeur"), json, "prix"); if (deny) return deny; }
   if (!SITE_ID || !NTOKEN) return json(500, { error: "SITE_ID / NETLIFY_TOKEN non configurés." });
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}
   const started = Date.now();

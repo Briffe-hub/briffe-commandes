@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="fr">
 <head>
+<script src="briffe-auth.js" data-menu></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>briffetools · Boîte à outils</title>
@@ -199,8 +200,38 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
+    <a class="card" href="briffe-admin.html" id="tile-admin" hidden>
+      <span class="num">··</span>
+      <span class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="8" r="3.2"/>
+          <path d="M3.5 19c.8-3 3-4.6 5.5-4.6s4.7 1.6 5.5 4.6"/>
+          <path d="M17 11v6M14 14h6"/>
+        </svg>
+      </span>
+      <h2>Administration</h2>
+      <p>Comptes et accès de chacun, brique par brique.</p>
+      <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
+    </a>
+
   </section>
 </main>
+<script>
+// Menu : n'affiche que les briques auxquelles le compte a accès
+(function(){
+  var MAP = { 'briffe-commandes.html':'commandes', 'briffe-outilsPDF.html':'pdf', 'briffe-prepa.html':'prepa', 'briffe-liens-admin.html':'liens', 'briffe-cartels.html':'cartels', 'briffe-prix.html':'prix' };
+  document.querySelectorAll('.grid .card').forEach(function(c){ if(MAP[c.getAttribute('href')]) c.style.visibility='hidden'; });
+  BriffeAuth.ready.then(function(me){
+    var n=0;
+    document.querySelectorAll('.grid .card').forEach(function(c){
+      var b=MAP[c.getAttribute('href')]; if(!b) return;
+      if(BriffeAuth.can(b,'lecteur')){ c.style.visibility=''; n++; } else c.remove();
+    });
+    var ta=document.getElementById('tile-admin'); if(me.is_admin) ta.hidden=false; else ta.remove();
+    if(!n && !me.is_admin){ var l=document.querySelector('.lead'); if(l) l.textContent='Aucune brique ne t\'est ouverte pour le moment : demande un accès à un administrateur.'; }
+  });
+})();
+</script>
 
 <footer><b>briffe</b>tools &middot; usage interne Briffe</footer>
 

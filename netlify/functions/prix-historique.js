@@ -118,7 +118,7 @@ async function learnAliases(entry) {
 exports.handler = async function (event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: headers(), body: "" };
   if (event.httpMethod !== "POST") return json(405, { error: "Méthode non autorisée" });
-  { const deny = await U.guard(event, U.roleFor(event, { lire: "lecteur", document: "lecteur" }, "editeur"), json); if (deny) return deny; }
+  { const deny = await U.guard(event, U.roleFor(event, { lire: "lecteur", document: "lecteur" }, "editeur"), json, "prix"); if (deny) return deny; }
   if (!SITE_ID || !NTOKEN) return json(500, { error: "SITE_ID / NETLIFY_TOKEN non configurés." });
   let body = {}; try { body = JSON.parse(event.body || "{}"); } catch (e) {}
   try {

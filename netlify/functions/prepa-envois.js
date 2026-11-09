@@ -102,7 +102,7 @@ exports.handler = async function (event) {
   const action = body.action;
   if (!SITE_ID || !NTOKEN) return json(500, { error: "SITE_ID / NETLIFY_TOKEN non configurés." });
 
-  const deny = await U.guard(event, U.roleFor(event, { config: "lecteur", historique: "lecteur", config_save: "admin" }, "editeur"), json);
+  const deny = await U.guard(event, U.roleFor(event, { config: "lecteur", historique: "lecteur", config_save: "admin" }, "editeur"), json, "prepa");
   if (deny) return deny;
   const me = event.briffeUser;
 
