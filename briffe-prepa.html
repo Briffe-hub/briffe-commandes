@@ -152,6 +152,56 @@ tr.added td.cat .catin{font-style:italic}
 .cat-cust-mod{margin-top:6px;font-size:10px;color:#888;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .cc-mod{display:inline-flex;align-items:center;gap:3px;color:#b0b0a8}
 .cc-mod input{accent-color:#f59e0b}
+
+/* ===== Validation et envoi à l'exploitation ===== */
+.btn.send{background:#b3242e;border-color:#b3242e;color:#fff}
+.btn.send:hover{background:#c62f39}
+.btn.send:disabled{opacity:.4;cursor:not-allowed}
+.sv-box{width:min(760px,100%)}
+#sv-body{padding:10px 18px 14px;max-height:72vh;overflow:auto}
+.sv-sec{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#f59e0b;margin:14px 0 6px}
+.sv-pres{font-size:13px;line-height:1.6;color:#e8e8e0;background:#0f0f0f;border:1px solid #222;border-radius:6px;padding:10px 12px}
+.sv-pres .mut{color:#888}
+.sv-drops{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sv-drop{border:1px dashed #3a3a3a;border-radius:8px;padding:12px;min-height:96px;display:flex;flex-direction:column;gap:6px;background:#101010;transition:border-color .15s}
+.sv-drop.over{border-color:#f59e0b;background:#17130b}
+.sv-drop.ok{border-style:solid;border-color:#22c55e}
+.sv-drop.warn{border-style:solid;border-color:#f59e0b}
+.sv-drop b{font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.sv-drop .fn{font-size:12px;color:#e8e8e0;word-break:break-all}
+.sv-drop .hint{font-size:11px;color:#888;line-height:1.5}
+.sv-drop .w{font-size:11px;color:#f59e0b;line-height:1.5}
+.sv-drop label.no{font-size:11px;color:#aaa;display:flex;gap:6px;align-items:center;margin-top:auto}
+.sv-steps{display:flex;flex-direction:column;gap:6px}
+.sv-step{display:grid;grid-template-columns:22px 150px 1fr;gap:8px;align-items:start;font-size:12px;padding:8px 10px;border:1px solid #222;border-radius:6px;background:#0f0f0f}
+.sv-step .ic{font-weight:700;text-align:center}
+.sv-step.ok .ic{color:#22c55e}.sv-step.ko .ic{color:#f87171}.sv-step.wait .ic{color:#888}.sv-step.run .ic{color:#f59e0b}
+.sv-step .msg{color:#b0b0a8;line-height:1.5}
+.sv-step.ko .msg{color:#fca5a5}
+.sv-hist{display:flex;flex-direction:column;gap:6px}
+.sv-env{border:1px solid #222;border-radius:6px;padding:8px 10px;font-size:12px;background:#0f0f0f}
+.sv-env .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sv-env .tag{font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:#1f2937;color:#93c5fd}
+.sv-env .tag.mod{background:#422006;color:#fbbf24}
+.sv-env .dots{margin-left:auto;font-size:11px;color:#888}
+.sv-env .docs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.sv-env .docs a{font-size:11px;color:#e8e8e0;border:1px solid #333;border-radius:3px;padding:3px 7px;text-decoration:none}
+.sv-env .docs a:hover{border-color:#f59e0b}
+.sv-login{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}
+.sv-in{background:#0a0a0a;color:#e8e8e0;border:1px solid #2a2a2a;border-radius:3px;padding:7px 9px;font-size:12px;width:100%;font-family:inherit}
+.sv-err{color:#f87171;font-size:12px;margin-top:6px;line-height:1.5}
+.sv-ok{color:#22c55e;font-size:12px;margin-top:6px}
+.sv-cfg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media (max-width:640px){ .sv-drops,.sv-login,.sv-cfg{grid-template-columns:1fr} .sv-step{grid-template-columns:22px 1fr} .sv-step .msg{grid-column:2} }
+/* rendu du bon de prep en PDF : reprend la mise en page d'impression */
+body.pdfmode .sheet{background:#fff;color:#000;max-width:none;padding:18px 22px}
+body.pdfmode .no-print,body.pdfmode .bulksel,body.pdfmode .addline{display:none!important}
+body.pdfmode .grp-title{color:#000;border-color:#999}
+body.pdfmode td,body.pdfmode th{border-color:#ddd}
+body.pdfmode .qty,body.pdfmode .el,body.pdfmode .qty.chk,body.pdfmode .eid,body.pdfmode .sheet-title,body.pdfmode .sheet-meta b{color:#000}
+body.pdfmode .cat,body.pdfmode .store,body.pdfmode .loc,body.pdfmode .cmt{color:#444}
+body.pdfmode .sheet *{color:#000}
+body.pdfmode .cellsel,body.pdfmode .cellother,body.pdfmode .cellcmt,body.pdfmode .elin,body.pdfmode .qtyin,body.pdfmode .catin,body.pdfmode .celltext{border:none!important;background:transparent!important;color:#000!important;padding:0!important;-webkit-appearance:none;appearance:none}
 </style>
 </head>
 <body>
@@ -165,6 +215,7 @@ tr.added td.cat .catin{font-style:italic}
     <button class="btn" onclick="saveDefaults()" title="Mémoriser l'état actuel de cet onglet comme modèle par défaut, partagé par tous les postes">&#9733; Défaut de l'onglet</button>
     <button class="btn" onclick="resetForm()">&#8635; Réinitialiser</button>
     <button class="btn primary" onclick="window.print()">Imprimer</button>
+    <button class="btn send" onclick="openSend()" title="Valider la prestation : envoi du bon de prep et des bons de dispatch à l'exploitation">Valider et envoyer</button>
   </div>
 </div>
 <div id="import-bar">
@@ -1396,6 +1447,7 @@ function mapSextanToForm(ev){
 }
 function applySextan(ev){
   const m=mapSextanToForm(ev);
+  window.SX_EV=ev; // réception Sextan chargée (utilisée par « Valider et envoyer »)
   S.type=m.model; S.client=m.client; S.date=m.date; S.heure=m.heure; S.nb=m.nb; S.sextan=m.sextan;
   S.alcool=m.alcool; S.softs=m.softs;
   S.rouge=m.rouge; S.blanc=m.blanc; S.rose=m.rose; S.biere=m.biere;
@@ -1434,6 +1486,242 @@ async function importSextan(){
 }
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
+// ════════════════════════════════════════════════════════════════════════
+//  VALIDER ET ENVOYER À L'EXPLOITATION
+//  Bon de prep (généré ici) + bons de dispatch Sextan cuisine / pâtisserie (déposés par la commerciale,
+//  Sextan n'exposant pas leurs versions) -> archive, mail avec PJ, notification Sextan, agenda, historique.
+// ════════════════════════════════════════════════════════════════════════
+var SV = { files:{}, sans:{ cuisine:false, patisserie:false }, steps:null, hist:null, cfg:null, me:null, busy:false, err:'', lastEnv:null };
+var SV_FN = '/.netlify/functions/prepa-envois', CAL_ID = 'logistique@briffe.me';
+var G_CLIENT_ID = '31703629214-ej72ursr2609cfnbun5se5vf2clrmptn.apps.googleusercontent.com';
+function svTok(){ try{ var t=localStorage.getItem('bt_prix_token'), e=+localStorage.getItem('bt_prix_exp')||0; return t&&e>Date.now()?t:''; }catch(e){ return ''; } }
+function svHeaders(){ var h={'Content-Type':'application/json'}, t=svTok(); if(t) h['x-briffe-token']=t; else { var p=''; try{ p=sessionStorage.getItem('bt_prix_secours')||''; }catch(e){} if(p) h['x-briffe-pass']=p; } return h; }
+async function svPost(body){
+  var r=await fetch(SV_FN,{method:'POST',headers:svHeaders(),body:JSON.stringify(body)});
+  var j={}; try{ j=await r.json(); }catch(e){ j={error:'Réponse inattendue ('+r.status+').'}; }
+  j._status=r.status; return j;
+}
+function svRec(){
+  var ev=window.SX_EV||null;
+  if(!ev||!ev.id) return null;
+  var lieu=[ev.venue_name||ev.location_name||'', ev.venue_address||ev.location_address||'', ev.room?('salle '+ev.room):''].filter(Boolean).join(' · ');
+  return { id:ev.id, name:ev.name||'', client:(ev.project&&ev.project.client&&ev.project.client.name)||S.client||'', date:ev.date||S.date||'',
+    heure:(S.heure||String(ev.organizer_arrival||'').slice(0,5)||''), nb:S.nb||ev.nbr_pax||0, lieu:lieu, type:ev.type||'', commercial:(ev.project&&ev.project.sale_user)||'' };
+}
+function svFmtD(d){ var m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?m[3]+'/'+m[2]+'/'+m[1]:(d||''); }
+function svFmtDT(iso){ var d=new Date(iso); if(isNaN(d)) return ''; var p=function(n){return (n<10?'0':'')+n;}; return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+'h'+p(d.getMinutes()); }
+
+async function openSend(){
+  document.getElementById('send-modal').style.display='flex';
+  SV.err=''; SV.steps=null; SV.hist=null; svRender();
+  var j=await svPost({action:'config'});
+  if(j._status===401){ SV.me=null; svRender(); return; }
+  if(!j.ok){ SV.err=j.error||'Erreur'; svRender(); return; }
+  SV.me=j.me; SV.cfg=j.config; svRender(); svLoadHist();
+}
+function closeSend(){ if(SV.busy) return; document.getElementById('send-modal').style.display='none'; }
+async function svLoadHist(){
+  var rec=svRec();
+  var j=await svPost({action:'historique', reception_id: rec?rec.id:null});
+  SV.hist=j.ok?j.envois:[]; svRender();
+}
+async function svLogin(){
+  var l=document.getElementById('sv-l').value, p=document.getElementById('sv-p').value;
+  var r=await fetch('/.netlify/functions/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'login',login:l,password:p})});
+  var j=await r.json().catch(function(){return {};});
+  if(!j.ok){ SV.err=j.error||'Connexion impossible.'; svRender(); return; }
+  try{ localStorage.setItem('bt_prix_token',j.token); localStorage.setItem('bt_prix_exp',String(j.exp)); }catch(e){}
+  openSend();
+}
+// ---- dépôt des bons de dispatch ----
+function svExpect(){ var r=svRec(); return r?('OD_RECEPTION_'+r.id):''; }
+function svCheckName(name){
+  var r=svRec(); if(!r) return '';
+  var nums=(String(name).match(/\d{3,}/g)||[]);
+  if(nums.indexOf(String(r.id))>=0) return '';
+  return 'Le nom du fichier ne contient pas le n° de réception '+r.id+' (attendu : '+svExpect()+'…). Vérifie qu\'il s\'agit bien de cette prestation.';
+}
+function svSetFile(k,file){
+  if(!file) return;
+  if(!/pdf$/i.test(file.type||'')&&!/\.pdf$/i.test(file.name)){ SV.err='Le bon de dispatch doit être un PDF.'; svRender(); return; }
+  var fr=new FileReader();
+  fr.onload=function(){ SV.files[k]={ name:file.name, size:file.size, modified:file.lastModified, b64:String(fr.result).split(',')[1], warn:svCheckName(file.name) }; SV.sans[k]=false; SV.err=''; svRender(); };
+  fr.readAsDataURL(file);
+}
+function svDrop(k){
+  var f=SV.files[k], lab=k==='cuisine'?'Bon de dispatch CUISINE':'Bon de dispatch PÂTISSERIE';
+  var cls=f?(f.warn?'warn':'ok'):'';
+  return '<div class="sv-drop '+cls+'" data-k="'+k+'"><b>'+lab+'</b>'+
+    (f? '<div class="fn">'+esc(f.name)+'</div><div class="hint">'+Math.round(f.size/1024)+' Ko · fichier du '+svFmtDT(f.modified)+'</div>'+(f.warn?'<div class="w">'+esc(f.warn)+'</div>':'')+
+        '<div><button class="btn" onclick="svPick(\''+k+'\')">Remplacer</button> <button class="btn" onclick="SV.files.'+k+'=null;svRender()">Retirer</button></div>'
+      : (SV.sans[k]?'<div class="hint">Pas de bon '+(k==='cuisine'?'cuisine':'pâtisserie')+' pour cette prestation.</div>'
+        :'<div class="hint">Glisse ici le PDF de la <b>dernière version</b> téléchargée depuis l\'Ordre de Dispatch Sextan (service '+(k==='cuisine'?'CUISINE':'PATISSERIE')+'), ou <a href="#" onclick="svPick(\''+k+'\');return false" style="color:#f59e0b">choisis le fichier</a>.</div>'))+
+    (!f?'<label class="no"><input type="checkbox" '+(SV.sans[k]?'checked':'')+' onchange="SV.sans.'+k+'=this.checked;svRender()"> Pas de bon '+(k==='cuisine'?'cuisine':'pâtisserie')+' pour cette prestation</label>':'')+'</div>';
+}
+function svPick(k){ var i=document.createElement('input'); i.type='file'; i.accept='application/pdf,.pdf'; i.onchange=function(){ svSetFile(k,i.files[0]); }; i.click(); }
+function svBindDrops(){
+  document.querySelectorAll('.sv-drop').forEach(function(el){
+    var k=el.dataset.k;
+    el.ondragover=function(e){ e.preventDefault(); el.classList.add('over'); };
+    el.ondragleave=function(){ el.classList.remove('over'); };
+    el.ondrop=function(e){ e.preventDefault(); el.classList.remove('over'); svSetFile(k,e.dataTransfer.files&&e.dataTransfer.files[0]); };
+  });
+}
+// ---- étapes ----
+var SV_STEPS=[['pdf','Bon de prep (PDF)'],['archive','Archivage'],['email','Mail exploitation'],['notification','Notification Sextan'],['agenda','Agenda logistique']];
+function svStepsHtml(steps){
+  return '<div class="sv-steps">'+SV_STEPS.map(function(x){
+    var s=steps[x[0]]||{}; var st=s.run?'run':(s.ok?'ok':(s.pending||s.ok===undefined?'wait':'ko'));
+    var ic=st==='ok'?'✓':st==='ko'?'✗':st==='run'?'…':'·';
+    return '<div class="sv-step '+st+'"><span class="ic">'+ic+'</span><span>'+x[1]+'</span><span class="msg">'+esc(s.message||(st==='wait'?'en attente':''))+
+      (x[0]==='agenda'&&st!=='ok'&&!s.run&&SV.lastEnv?' <button class="btn" style="padding:2px 8px" onclick="svAgenda(true)">'+(s.ok===false&&!s.pending?'Réessayer':'Faire maintenant')+'</button>':'')+'</span></div>';
+  }).join('')+'</div>';
+}
+function svRender(){
+  var b=document.getElementById('sv-body'); if(!b) return;
+  var rec=svRec(), h='';
+  if(!SV.me){
+    b.innerHTML='<p style="font-size:12px;color:#b0b0a8;line-height:1.6">Connecte-toi avec ton compte briffetools (le même que pour les prix fournisseurs).</p>'+
+      '<div class="sv-login"><input id="sv-l" class="sv-in" placeholder="Identifiant" autocapitalize="none"><input id="sv-p" class="sv-in" type="password" placeholder="Mot de passe" onkeydown="if(event.key===\'Enter\')svLogin()"><button class="btn primary" onclick="svLogin()">Se connecter</button></div>'+
+      (SV.err?'<div class="sv-err">'+esc(SV.err)+'</div>':'');
+    return;
+  }
+  h+='<div class="sv-sec">Prestation</div>';
+  if(!rec) h+='<div class="sv-pres">Aucune réception Sextan chargée. Charge d\'abord la réception (n° en haut de page), puis prépare le bon.</div>';
+  else h+='<div class="sv-pres"><b>R'+rec.id+' · '+esc(rec.client||rec.name)+'</b><br>'+esc(svFmtD(rec.date))+(rec.heure?' · '+esc(rec.heure):'')+' · '+(rec.nb||0)+' pers.'+(rec.lieu?'<br><span class="mut">'+esc(rec.lieu)+'</span>':'')+
+    '<br><span class="mut">Validée par '+esc(SV.me.name||SV.me.login)+' · bon de prep : onglet « '+esc(TITLES[S.type]||S.type)+' » tel qu\'affiché</span></div>';
+  var prevN=(SV.hist||[]).filter(function(e){ return rec&&e.reception&&e.reception.id===rec.id; }).length;
+  if(rec&&prevN) h+='<div class="sv-err" style="color:#fbbf24">Cette prestation a déjà été envoyée '+prevN+' fois : ce nouvel envoi sera une MODIFICATION (version '+(prevN+1)+'), signalée comme telle à l\'exploitation.</div>';
+  if(rec){
+    h+='<div class="sv-sec">Bons de dispatch Sextan (dernière version)</div><div class="sv-drops">'+svDrop('cuisine')+svDrop('patisserie')+'</div>';
+    h+='<div class="sv-sec">Commentaire pour l\'exploitation (facultatif)</div><textarea id="sv-c" class="sv-in" rows="2" placeholder="Précisions, changements…">'+esc(SV.comment||'')+'</textarea>';
+    var ready=(SV.files.cuisine||SV.sans.cuisine)&&(SV.files.patisserie||SV.sans.patisserie);
+    h+='<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn send" '+(ready&&!SV.busy?'':'disabled')+' onclick="svValidate()">'+(prevN?'Valider la modification et envoyer':'Valider et envoyer')+'</button>'+
+      (!ready?'<span style="font-size:11px;color:#888">Dépose les deux bons de dispatch (ou coche « pas de bon »).</span>':'')+'</div>';
+  }
+  if(SV.err) h+='<div class="sv-err">'+esc(SV.err)+'</div>';
+  if(SV.steps) h+='<div class="sv-sec">Étapes</div>'+svStepsHtml(SV.steps);
+  h+='<div class="sv-sec">'+(rec?'Envois de cette prestation':'Derniers envois')+'</div>';
+  if(!SV.hist) h+='<div style="font-size:12px;color:#888">Chargement…</div>';
+  else if(!SV.hist.length) h+='<div style="font-size:12px;color:#888">Aucun envoi pour l\'instant.</div>';
+  else h+='<div class="sv-hist">'+SV.hist.map(function(e){
+    var st=e.steps||{}, okN=['archive','email','notification','agenda'].filter(function(k){ return st[k]&&st[k].ok; }).length;
+    var r=e.reception||{};
+    return '<div class="sv-env"><div class="top"><span class="tag'+(e.modif?' mod':'')+'">'+(e.modif?'Modification v'+e.version:'Envoi v'+e.version)+'</span>'+
+      (rec?'':'<b>R'+esc(r.id)+' · '+esc(r.client||r.name)+'</b> <span style="color:#888">'+esc(svFmtD(r.date))+'</span>')+
+      '<span style="color:#b0b0a8">'+esc(svFmtDT(e.at))+' · '+esc(e.author)+'</span><span class="dots" title="'+esc(['archive','email','notification','agenda'].map(function(k){ return k+' : '+((st[k]&&st[k].message)||'—'); }).join('\n'))+'">'+okN+' / 4 étapes</span></div>'+
+      (e.commentaire?'<div style="color:#b0b0a8;margin-top:4px">'+esc(e.commentaire)+'</div>':'')+
+      '<div class="docs">'+(e.files||[]).map(function(f){ return '<a href="'+esc(f.url)+'" target="_blank" rel="noopener">'+esc(f.label)+'</a>'; }).join('')+'</div></div>';
+  }).join('')+'</div>';
+  if(SV.me&&SV.me.role==='admin'){
+    var c=SV.cfg||{};
+    h+='<details style="margin-top:14px"><summary style="cursor:pointer;font-size:11px;color:#888;letter-spacing:.1em;text-transform:uppercase">Réglages (admin)</summary><div class="sv-cfg" style="margin-top:8px">'+
+      '<label style="font-size:11px;color:#aaa">Mail(s) de l\'exploitation<input id="sv-ce" class="sv-in" value="'+esc((c.emails||[]).join(', '))+'"></label>'+
+      '<label style="font-size:11px;color:#aaa">Copie (facultatif)<input id="sv-cc" class="sv-in" value="'+esc((c.cc||[]).join(', '))+'"></label>'+
+      '<label style="font-size:11px;color:#aaa">Notification Sextan (identifiants)<input id="sv-cn" class="sv-in" value="'+esc((c.notify_users||[]).join(', '))+'"></label>'+
+      '<div style="display:flex;align-items:end"><button class="btn" onclick="svSaveCfg()">Enregistrer</button></div></div>'+
+      '<p style="font-size:11px;color:#888;line-height:1.5">Sextan n\'envoie qu\'aux adresses présentes sur une fiche contact (personnel, client…). Le compte Sextan « briffetools » doit être autorisé à utiliser l\'envoi de mail et les notifications.</p></details>';
+  }
+  b.innerHTML=h; svBindDrops();
+  var ta=document.getElementById('sv-c'); if(ta) ta.oninput=function(){ SV.comment=this.value; };
+}
+async function svSaveCfg(){
+  var j=await svPost({action:'config_save',config:{emails:document.getElementById('sv-ce').value,cc:document.getElementById('sv-cc').value,notify_users:document.getElementById('sv-cn').value}});
+  if(j.ok){ SV.cfg=j.config; SV.err=''; } else SV.err=j.error||'Erreur'; svRender();
+}
+// ---- bon de prep en PDF (même contenu que l'impression) ----
+function svLoad(src){ return new Promise(function(res,rej){ if(document.querySelector('script[src="'+src+'"]')) return res(); var s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=function(){ rej(new Error('Chargement impossible : '+src)); }; document.head.appendChild(s); }); }
+async function svPrepPdf(){
+  await svLoad('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  await svLoad('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  // Copie hors écran du bon : les champs modifiables (intitulés, quantités, listes, commentaires) sont
+  // remplacés par leur texte, sinon le rendu les rogne sur une ligne.
+  var src=document.getElementById('sheet'), sheet=src.cloneNode(true), holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-20000px;top:0;width:1000px;background:#fff';
+  sheet.removeAttribute('id'); holder.appendChild(sheet); document.body.appendChild(holder);
+  var orig=src.querySelectorAll('input,select,textarea'), copies=sheet.querySelectorAll('input,select,textarea');
+  copies.forEach(function(el,i){
+    var o=orig[i]||el, v='';
+    if(el.closest('.no-print,.bulksel')||el.classList.contains('bulksel')){ el.remove(); return; } // commandes d'écran, pas de contenu
+    if(o.tagName==='SELECT') v=(o.selectedIndex>=0&&o.options[o.selectedIndex])?o.options[o.selectedIndex].text:'';
+    else if(o.type==='checkbox'||o.type==='radio') v=o.checked?'✓':'';
+    else v=o.value||'';
+    var span=document.createElement('span'); span.textContent=v; span.style.cssText='white-space:pre-wrap;word-break:break-word;color:#000';
+    el.parentNode.replaceChild(span,el);
+  });
+  document.body.classList.add('pdfmode');
+  try{
+    var canvas=await html2canvas(sheet,{scale:2,backgroundColor:'#ffffff',windowWidth:1100});
+    var jsPDF=window.jspdf.jsPDF, doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    var W=210, H=297, m=8, w=W-2*m, pageH=H-2*m, ratio=canvas.width/w, sliceH=Math.floor(pageH*ratio), y=0, first=true;
+    while(y<canvas.height){
+      var h=Math.min(sliceH,canvas.height-y), c=document.createElement('canvas'); c.width=canvas.width; c.height=h;
+      c.getContext('2d').drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
+      if(!first) doc.addPage(); first=false;
+      doc.addImage(c.toDataURL('image/jpeg',0.85),'JPEG',m,m,w,h/ratio);
+      y+=h;
+    }
+    return doc.output('datauristring').split(',')[1];
+  } finally { document.body.classList.remove('pdfmode'); holder.remove(); }
+}
+async function svValidate(){
+  var rec=svRec(); if(!rec||SV.busy) return;
+  SV.busy=true; SV.err=''; SV.lastEnv=null;
+  SV.steps={pdf:{run:true,message:'Génération…'}}; svRender();
+  var prep;
+  try{ prep=await svPrepPdf(); SV.steps.pdf={ok:true,message:'Généré ('+TITLES[S.type]+')'}; }
+  catch(e){ SV.steps.pdf={ok:false,message:e.message}; SV.busy=false; svRender(); return; }
+  ['archive','email','notification'].forEach(function(k){ SV.steps[k]={run:true,message:'En cours…'}; }); svRender();
+  var safe=function(s){ return String(s||'').replace(/[\\/:*?"<>|]+/g,'-').trim(); };
+  var base='R'+rec.id+' · '+safe(rec.client||rec.name)+' · '+svFmtD(rec.date).replace(/\//g,'-');
+  var j=await svPost({ action:'valider', reception:rec, commentaire:SV.comment||'', sans:SV.sans,
+    files:{ prep:prep, cuisine:SV.files.cuisine&&SV.files.cuisine.b64, patisserie:SV.files.patisserie&&SV.files.patisserie.b64 },
+    names:{ prep:'BON PREP · '+base+'.pdf', cuisine:'DISPATCH CUISINE · '+base+'.pdf', patisserie:'DISPATCH PATISSERIE · '+base+'.pdf' } });
+  if(!j.ok){ SV.err=j.error||'Envoi impossible.'; ['archive','email','notification'].forEach(function(k){ SV.steps[k]=(j.steps&&j.steps[k])||{ok:false,message:'non fait'}; }); SV.busy=false; svRender(); return; }
+  ['archive','email','notification'].forEach(function(k){ SV.steps[k]=j.steps[k]; });
+  SV.lastEnv=j.envoi; SV.lastEnv.agenda_event_id=j.agenda_event_id;
+  SV.steps.agenda={run:true,message:'En cours…'}; svRender();
+  await svAgenda(false);
+  SV.busy=false; SV.files={}; SV.sans={cuisine:false,patisserie:false}; SV.comment='';
+  await svLoadHist();
+}
+// ---- agenda logistique (Google Agenda, compte de la commerciale) ----
+var G_TOKEN=null, G_EXP=0, G_CLIENT=null;
+function svGoogleToken(interactive){
+  return new Promise(async function(res,rej){
+    if(G_TOKEN&&G_EXP>Date.now()) return res(G_TOKEN);
+    try{ await svLoad('https://accounts.google.com/gsi/client'); }catch(e){ return rej(e); }
+    try{
+      G_CLIENT=google.accounts.oauth2.initTokenClient({ client_id:G_CLIENT_ID, scope:'https://www.googleapis.com/auth/calendar',
+        callback:function(r){ if(r&&r.access_token){ G_TOKEN=r.access_token; G_EXP=Date.now()+((+r.expires_in||3600)-90)*1000; res(G_TOKEN); } else rej(new Error((r&&r.error)||'Connexion Google refusée')); } });
+      G_CLIENT.requestAccessToken(interactive?{}:{prompt:''});
+    }catch(e){ rej(e); }
+  });
+}
+async function svAgenda(interactive){
+  var env=SV.lastEnv; if(!env) return;
+  var r=env.reception||{}, result;
+  SV.steps.agenda={run:true,message:'Connexion Google…'}; svRender();
+  try{
+    var tok=await svGoogleToken(interactive!==false);
+    var date=/^\d{4}-\d{2}-\d{2}$/.test(r.date)?r.date:null; if(!date) throw new Error('Date de prestation illisible');
+    var hm=(String(r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
+    var h2=('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
+    var desc=['Prestation R'+r.id+(r.name?' · '+r.name:''),'Client : '+(r.client||'—'),'Couverts : '+(r.nb||'—'),r.lieu?'Lieu : '+r.lieu:'','Validée par '+env.author+' le '+svFmtDT(env.at)+(env.modif?' (MODIFICATION v'+env.version+')':''),env.commentaire?'Commentaire : '+env.commentaire:'','','──────────'].concat((env.files||[]).map(function(f){ return f.label+' : '+f.url; })).filter(function(x){return x!=='';}).join('\n');
+    var ev={ summary:'PREP · '+(r.client||r.name||'R'+r.id)+' · '+(r.nb||'?')+' pers.'+(env.modif?' (modifiée)':''), location:r.lieu||'', description:desc,
+      start:{dateTime:date+'T'+h1+':00',timeZone:'Europe/Paris'}, end:{dateTime:date+'T'+h2+':00',timeZone:'Europe/Paris'}, colorId:'9' };
+    var base='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CAL_ID)+'/events', resp;
+    if(env.agenda_event_id){ resp=await fetch(base+'/'+encodeURIComponent(env.agenda_event_id),{method:'PATCH',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(ev)}); }
+    if(!resp||!resp.ok){ resp=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(ev)}); }
+    var out=await resp.json().catch(function(){return {};});
+    if(!resp.ok||!out.id) throw new Error('Agenda refusé ('+resp.status+(out.error&&out.error.message?' : '+out.error.message:'')+') — ton compte Google doit pouvoir modifier l\'agenda '+CAL_ID);
+    result={ok:true,message:(env.agenda_event_id?'Entrée mise à jour':'Entrée créée')+' le '+svFmtD(date)+' à '+h1+' dans '+CAL_ID,event_id:out.id};
+    env.agenda_event_id=out.id;
+  }catch(e){ result={ok:false,message:e.message}; }
+  SV.steps.agenda=result; svRender();
+  svPost({ action:'agenda', reception_id:r.id, envoi_id:env.id, ok:result.ok, message:result.message, event_id:result.event_id||null }).then(svLoadHist);
+}
+
 loadDefaults().then(render);
 </script>
 <div id="catalog-modal" class="pm-wrap" style="display:none">
@@ -1459,6 +1747,12 @@ loadDefaults().then(render);
       <button class="btn primary" onclick="saveParams()">Enregistrer</button>
       <button class="btn" onclick="closeParams()">Fermer</button>
     </div>
+  </div>
+</div>
+<div id="send-modal" class="pm-wrap" style="display:none">
+  <div class="pm-box sv-box">
+    <div class="pm-head"><b>Valider et envoyer à l'exploitation</b><span class="pm-x" onclick="closeSend()">&#10005;</span></div>
+    <div id="sv-body"></div>
   </div>
 </div>
 </body>
