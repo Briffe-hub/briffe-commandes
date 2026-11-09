@@ -1690,6 +1690,7 @@ function svDispatchReady(){
 // ---------- panneau ----------
 async function openSend(){
   if(!SV.me){ svGate(''); return; }
+  svLoad('https://accounts.google.com/gsi/client').then(svGoogleInit).catch(function(){}); // prêt avant le clic
   document.getElementById('send-modal').style.display='flex';
   SV.err=''; if(SV.phase!=='depot'&&!SV.busy){ SV.phase='depot'; SV.steps=null; }
   svRender(); svLoadHist();
@@ -1832,6 +1833,7 @@ async function svRecap(){
 // ---------- 5. envoi ----------
 async function svSend(){
   var rec=svRec(); if(!rec||SV.busy||!SV.prep) return;
+  var gTok=svGoogleStart(); gTok.catch(function(){}); // autorisation Google demandée tout de suite, dans le clic
   SV.busy=true; SV.err=''; SV.lastEnv=null; SV.phase='envoi';
   SV.steps={archive:{run:true,message:'En cours…'},email:{run:true,message:'En cours…'},notification:{run:true,message:'En cours…'},agenda:{pending:true}}; svRender();
   var safe=function(s){ return String(s||'').replace(/[\\/:*?"<>|]+/g,'-').trim(); };
@@ -1843,29 +1845,43 @@ async function svSend(){
   if(!j.ok){ SV.err=j.error||'Envoi impossible.'; ['archive','email','notification'].forEach(function(k){ SV.steps[k]=(j.steps&&j.steps[k])||{ok:false,message:'non fait'}; }); SV.busy=false; SV.phase='recap'; svRender(); return; }
   ['archive','email','notification'].forEach(function(k){ SV.steps[k]=j.steps[k]; });
   SV.lastEnv=j.envoi; SV.lastEnv.agenda_event_id=j.agenda_event_id;
-  await svAgenda(false);
+  await svAgenda(gTok);
   SV.busy=false; SV.phase='fini'; SV.dispatch=null; SV.parts=null; SV.noDispatch=false; SV.comment=''; SV.prep=null;
   await svLoadHist();
 }
 // ---------- agenda logistique (Google Agenda, compte de la commerciale) ----------
-var G_TOKEN=null, G_EXP=0, G_CLIENT=null;
-function svGoogleToken(interactive){
-  return new Promise(async function(res,rej){
-    if(G_TOKEN&&G_EXP>Date.now()) return res(G_TOKEN);
-    try{ await svLoad('https://accounts.google.com/gsi/client'); }catch(e){ return rej(e); }
-    try{
-      G_CLIENT=google.accounts.oauth2.initTokenClient({ client_id:G_CLIENT_ID, scope:'https://www.googleapis.com/auth/calendar',
-        callback:function(r){ if(r&&r.access_token){ G_TOKEN=r.access_token; G_EXP=Date.now()+((+r.expires_in||3600)-90)*1000; res(G_TOKEN); } else rej(new Error((r&&r.error)||'Connexion Google refusée')); } });
-      G_CLIENT.requestAccessToken(interactive?{}:{prompt:''});
-    }catch(e){ rej(e); }
+// La fenêtre d'autorisation Google doit s'ouvrir PENDANT le clic (sinon le navigateur la bloque sans
+// prévenir) : la demande part dès « Confirmer et envoyer » / « Réessayer », et toute issue (refus,
+// fenêtre fermée ou bloquée, délai dépassé) est signalée.
+var G_TOKEN=null, G_EXP=0, G_CLIENT=null, G_PENDING=null;
+function svGoogleInit(){
+  if(G_CLIENT||!(window.google&&google.accounts&&google.accounts.oauth2)) return G_CLIENT;
+  G_CLIENT=google.accounts.oauth2.initTokenClient({ client_id:G_CLIENT_ID, scope:'https://www.googleapis.com/auth/calendar',
+    callback:function(r){ var p=G_PENDING; G_PENDING=null; if(!p) return;
+      if(r&&r.access_token){ G_TOKEN=r.access_token; G_EXP=Date.now()+((+r.expires_in||3600)-90)*1000; p.res(G_TOKEN); }
+      else p.rej(new Error('Autorisation Google refusée'+(r&&r.error?' ('+r.error+')':''))); },
+    error_callback:function(e){ var p=G_PENDING; G_PENDING=null; if(!p) return;
+      var t=e&&e.type; p.rej(new Error(t==='popup_failed_to_open'?'Fenêtre Google bloquée par le navigateur : autorise les fenêtres pop-up pour ce site, puis « Réessayer »':t==='popup_closed'?'Fenêtre Google fermée avant la fin : « Réessayer »':'Connexion Google impossible'+(t?' ('+t+')':''))); }
   });
+  return G_CLIENT;
 }
-async function svAgenda(interactive){
+// À appeler directement dans le gestionnaire de clic (aucun await avant).
+function svGoogleStart(){
+  if(G_TOKEN&&G_EXP>Date.now()) return Promise.resolve(G_TOKEN);
+  if(!svGoogleInit()) return Promise.reject(new Error('Google n\'est pas encore chargé : « Réessayer » dans un instant'));
+  if(G_PENDING) G_PENDING.rej(new Error('Demande Google remplacée'));
+  var pr=new Promise(function(res,rej){ G_PENDING={res:res,rej:rej}; });
+  try{ G_CLIENT.requestAccessToken({prompt:''}); }catch(e){ G_PENDING=null; return Promise.reject(e); }
+  var to=new Promise(function(res,rej){ setTimeout(function(){ rej(new Error('Pas de réponse de Google (fenêtre bloquée ?) : « Réessayer »')); },90000); });
+  return Promise.race([pr,to]);
+}
+async function svAgenda(tokP){
   var env=SV.lastEnv; if(!env) return;
+  if(!tokP||tokP===true) tokP=svGoogleStart(); // « Réessayer » : demande lancée dans le clic
   var r=env.reception||{}, result;
   SV.steps.agenda={run:true,message:'Connexion Google…'}; svRender();
   try{
-    var tok=await svGoogleToken(interactive!==false);
+    var tok=await tokP;
     var date=/^\d{4}-\d{2}-\d{2}$/.test(r.date)?r.date:null; if(!date) throw new Error('Date de prestation illisible');
     var hm=(String(r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
     var h2=('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
