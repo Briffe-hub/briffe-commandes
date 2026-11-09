@@ -163,7 +163,7 @@ exports.handler = async function (event) {
       const rec = (await blobGet("rec/" + rid)) || { reception: {}, envois: [], agenda_event_id: null };
       rec.reception = {
         id: rid, name: str(r.name), client: str(r.client), date: str(r.date, 20), heure: str(r.heure, 20), nb: Number(r.nb) || 0,
-        lieu: str(r.lieu, 300), type: str(r.type, 60), commercial: str(r.commercial, 60),
+        lieu: str(r.lieu, 300), lieu_nom: str(r.lieu_nom, 120), type: str(r.type, 60), commercial: str(r.commercial, 60),
         mep: str(r.mep, 5), debut: str(r.debut, 5), fin: str(r.fin, 5)
       };
       const prev = rec.envois[rec.envois.length - 1] || null;

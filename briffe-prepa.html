@@ -1566,10 +1566,18 @@ function svRec(){
   var lieu=[ev.venue_name||ev.location_name||'', ev.venue_address||ev.location_address||'', ev.room?('salle '+ev.room):''].filter(Boolean).join(' · ');
   return { id:ev.id, project:(ev.project&&ev.project.id)||null, name:ev.name||'', client:(ev.project&&ev.project.client&&ev.project.client.name)||S.client||'', date:ev.date||S.date||'',
     heure:(S.heure||String(ev.organizer_arrival||'').slice(0,5)||''), nb:S.nb||ev.nbr_pax||0, lieu:lieu, type:ev.type||'', commercial:(ev.project&&ev.project.sale_user)||'',
-    mep:svHM(ev.organizer_arrival), debut:svHM(ev.start_time)||svHM(ev.client_arrival), fin:svHM(ev.end_time) };
+    lieu_nom:(ev.venue_name||ev.location_name||'').trim(), mep:svHM(ev.organizer_arrival), debut:svHM(ev.start_time)||svHM(ev.client_arrival), fin:svHM(ev.end_time) };
 }
 // heure Sextan « HH:MM:SS » -> « HH:MM » ; vide si non saisie (00:00:00, « :00 »)
 function svHM(t){ var m=String(t||'').match(/^(\d{1,2}):(\d{2})/); if(!m) return ''; var v=('0'+m[1]).slice(-2)+':'+m[2]; return v==='00:00'?'':v; }
+// titre agenda : client · type · lieu (si différent du client) · couverts
+function svNorm(x){ return String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+function svTitre(r,modif){
+  var cl=r.client||r.name||('R'+r.id), ty=String(r.type||'').trim(), li=String(r.lieu_nom||String(r.lieu||'').split(' · ')[0]||'').trim();
+  if(ty) ty=ty.charAt(0).toUpperCase()+ty.slice(1).toLowerCase();
+  var a=svNorm(cl), b=svNorm(li); if(!b||a===b||a.indexOf(b)>=0||b.indexOf(a)>=0) li='';
+  return [cl,ty,li,(r.nb||'?')+' pers.'].filter(Boolean).join(' · ')+(modif?' (modifiée)':'');
+}
 function svHoraires(r){ return (r.debut?r.debut+(r.fin&&r.fin>r.debut?' - '+r.fin:''):'horaires à préciser'); }
 
 // ---------- 3. dépôt et contrôle des bons de dispatch ----------
@@ -1889,11 +1897,12 @@ async function svAgenda(tokP){
     var date=/^\d{4}-\d{2}-\d{2}$/.test(r.date)?r.date:null; if(!date) throw new Error('Date de prestation illisible');
     // horaires de la prestation (début / fin Sextan) ; envoi antérieur sans horaires : relus sur la réception chargée
     var cur=svRec(); if(cur&&cur.id==r.id&&!r.debut){ r=Object.assign({},r,{mep:cur.mep,debut:cur.debut,fin:cur.fin}); }
+    if(cur&&cur.id==r.id&&!r.lieu_nom) r=Object.assign({},r,{lieu_nom:cur.lieu_nom,type:r.type||cur.type});
     var hm=(String(r.debut||r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
     var h2=(r.debut&&r.fin&&r.fin>h1)?r.fin:('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
     var desc=['Prestation R'+r.id+(r.name?' · '+r.name:''),'Client : '+(r.client||'—'),'Couverts : '+(r.nb||'—'),
       r.mep?'Mise en place : '+r.mep:'','Début : '+(r.debut||'à préciser'),'Fin : '+(r.fin||'à préciser'),r.lieu?'Lieu : '+r.lieu:'','Validée par '+env.author+' le '+svFmtDT(env.at)+(env.modif?' (MODIFICATION v'+env.version+')':''),env.commentaire?'Commentaire : '+env.commentaire:'','','──────────'].concat((env.files||[]).map(function(f){ return f.label+' : '+f.url; })).filter(function(x){return x!=='';}).join('\n');
-    var ev={ summary:'PREP · '+(r.client||r.name||'R'+r.id)+' · '+(r.nb||'?')+' pers.'+(env.modif?' (modifiée)':''), location:r.lieu||'', description:desc,
+    var ev={ summary:svTitre(r,env.modif), location:r.lieu||'', description:desc,
       start:{dateTime:date+'T'+h1+':00',timeZone:'Europe/Paris'}, end:{dateTime:date+'T'+h2+':00',timeZone:'Europe/Paris'}, colorId:'9' };
     var base='https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(CAL_ID)+'/events', resp;
     if(env.agenda_event_id){ resp=await fetch(base+'/'+encodeURIComponent(env.agenda_event_id),{method:'PATCH',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(ev)}); }
