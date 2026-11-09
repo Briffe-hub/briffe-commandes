@@ -13,11 +13,11 @@ header{display:flex;align-items:center;gap:14px;padding:14px 24px;border-bottom:
 header a.back{color:var(--mut);text-decoration:none;font-size:12px}
 header .brand{font-size:16px}header .brand b{font-weight:500}header .brand i{color:var(--red);font-style:normal}
 header .sub{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);margin-left:6px}
-main{max-width:1200px;margin:0 auto;padding:20px 24px 80px}
+main{max-width:1320px;margin:0 auto;padding:20px 24px 80px}
 h2{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--warn);font-weight:500;margin:26px 0 10px}
 .card{background:var(--panel);border:1px solid var(--line-2);border-radius:10px;padding:14px}
 .tw{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:980px}
+table{border-collapse:collapse;width:100%;min-width:1060px}
 th,td{padding:8px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:middle}
 th{border-top:none;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);font-weight:400;line-height:1.3}
 th.b,td.b{text-align:center;width:104px}
@@ -30,7 +30,7 @@ select.l-aucun{color:var(--mut-2)}select.l-lecteur{color:#93c5fd}select.l-editeu
 button{background:transparent;color:var(--ink);border:1px solid var(--line-2);border-radius:4px;padding:6px 9px;font:inherit;font-size:11px;cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--mut)}
 button.primary{background:var(--red);border-color:var(--red);color:#fff}
-.acts{display:flex;gap:5px;flex-wrap:wrap}
+.acts{display:flex;gap:4px;flex-wrap:nowrap}
 .name input{width:100%;min-width:130px}
 .login{color:var(--mut);font-size:11px}
 .msg{min-height:1.2em;margin-top:10px;font-size:12px;line-height:1.5}.msg.ok{color:var(--ok)}.msg.ko{color:var(--err)}
@@ -90,7 +90,7 @@ function render(){
           LEVELS.map(function(l){ return '<option value="'+l[0]+'"'+((u.is_admin?'admin':v)===l[0]?' selected':'')+'>'+l[1]+'</option>'; }).join('')+'</select></td>'; }).join('')+
       '<td class="chkc"><input type="checkbox" data-f="active" '+(u.active?'checked':'')+(self?' disabled':'')+'></td>'+
       '<td class="login">'+esc(u.last_login?fmtDT(u.last_login):'jamais')+'</td>'+
-      '<td><div class="acts"><button data-a="pass">Mot de passe</button><button data-a="out" title="Fermer toutes ses sessions ouvertes">Déconnecter</button>'+(self?'':'<button data-a="del">Supprimer</button>')+'</div></td></tr>';
+      '<td><div class="acts"><button data-a="pass" title="Nouveau mot de passe">Mdp</button><button data-a="out" title="Fermer toutes ses sessions ouvertes">Déco.</button>'+(self?'':'<button data-a="del" title="Supprimer le compte">Suppr.</button>')+'</div></td></tr>';
   });
   h+='</table></div><div id="msg" class="msg"></div></div>';
   h+='<h2>Nouveau compte</h2><div class="card"><form class="new" id="nf" autocomplete="off">'+

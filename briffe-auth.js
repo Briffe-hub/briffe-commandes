@@ -32,8 +32,9 @@
     '#ba-chip a{color:#e8e8e0;cursor:pointer;text-decoration:underline}@media print{#ba-chip,#ba-ov{display:none!important}}';
   function el(html) { var d = document.createElement('div'); d.innerHTML = html; return d.firstChild; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function style() { if (!document.getElementById('ba-css')) { var st = document.createElement('style'); st.id = 'ba-css'; st.textContent = css; document.head.appendChild(st); } }
   function mount() {
-    if (!document.getElementById('ba-css')) { var st = document.createElement('style'); st.id = 'ba-css'; st.textContent = css; document.head.appendChild(st); }
+    style();
     var ov = document.getElementById('ba-ov'); if (ov) ov.remove();
     ov = el('<div id="ba-ov"><div id="ba-box"></div></div>'); document.body.appendChild(ov); return ov.firstChild;
   }
@@ -65,6 +66,7 @@
     document.getElementById('ba-out').onclick = function (e) { e.preventDefault(); A.logout(); };
   }
   function chip() {
+    style();
     var c = document.getElementById('ba-chip'); if (c) c.remove();
     c = el('<div id="ba-chip">' + esc(A.me.name || A.me.login) + (BRIQUE ? ' · ' + esc({ lecteur: 'lecture', editeur: 'édition', admin: 'admin' }[A.level] || '') : (A.me.is_admin ? ' · administrateur' : '')) + ' · <a id="ba-x">déconnexion</a></div>');
     document.body.appendChild(c); document.getElementById('ba-x').onclick = A.logout;
