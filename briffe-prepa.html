@@ -1898,8 +1898,9 @@ async function svAgenda(tokP){
     // horaires de la prestation (début / fin Sextan) ; envoi antérieur sans horaires : relus sur la réception chargée
     var cur=svRec(); if(cur&&cur.id==r.id&&!r.debut){ r=Object.assign({},r,{mep:cur.mep,debut:cur.debut,fin:cur.fin}); }
     if(cur&&cur.id==r.id&&!r.lieu_nom) r=Object.assign({},r,{lieu_nom:cur.lieu_nom,type:r.type||cur.type});
-    var hm=(String(r.debut||r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
-    var h2=(r.debut&&r.fin&&r.fin>h1)?r.fin:('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
+    // début de l'entrée = installation (arrivée équipe) ; fin = fin de prestation, sinon début de prestation, sinon +1 h
+    var hm=(String(r.mep||r.debut||r.heure||'').match(/(\d{1,2})[:h](\d{2})/)||[]), h1=hm[1]?('0'+hm[1]).slice(-2)+':'+hm[2]:'08:00';
+    var h2=(r.fin&&r.fin>h1)?r.fin:(r.debut&&r.debut>h1)?r.debut:('0'+((+h1.slice(0,2)+1)%24)).slice(-2)+h1.slice(2);
     var desc=['Prestation R'+r.id+(r.name?' · '+r.name:''),'Client : '+(r.client||'—'),'Couverts : '+(r.nb||'—'),
       r.mep?'Mise en place : '+r.mep:'','Début : '+(r.debut||'à préciser'),'Fin : '+(r.fin||'à préciser'),r.lieu?'Lieu : '+r.lieu:'','Validée par '+env.author+' le '+svFmtDT(env.at)+(env.modif?' (MODIFICATION v'+env.version+')':''),env.commentaire?'Commentaire : '+env.commentaire:'','','──────────'].concat((env.files||[]).map(function(f){ return f.label+' : '+f.url; })).filter(function(x){return x!=='';}).join('\n');
     var ev={ summary:svTitre(r,env.modif), location:r.lieu||'', description:desc,
@@ -1909,7 +1910,7 @@ async function svAgenda(tokP){
     if(!resp||!resp.ok){ resp=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(ev)}); }
     var out=await resp.json().catch(function(){return {};});
     if(!resp.ok||!out.id) throw new Error('Agenda refusé ('+resp.status+(out.error&&out.error.message?' : '+out.error.message:'')+') — ton compte Google doit pouvoir modifier l\'agenda '+CAL_ID);
-    result={ok:true,message:(env.agenda_event_id?'Entrée mise à jour':'Entrée créée')+' le '+svFmtD(date)+' de '+h1+' à '+h2+(r.debut?'':' (horaires non renseignés dans Sextan)')+' dans '+CAL_ID,event_id:out.id};
+    result={ok:true,message:(env.agenda_event_id?'Entrée mise à jour':'Entrée créée')+' le '+svFmtD(date)+' de '+h1+' à '+h2+(r.mep||r.debut?'':' (horaires non renseignés dans Sextan)')+' dans '+CAL_ID,event_id:out.id};
     env.agenda_event_id=out.id;
   }catch(e){ result={ok:false,message:e.message}; }
   SV.steps.agenda=result; svRender();
