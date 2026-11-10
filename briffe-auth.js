@@ -51,6 +51,7 @@
           btn.disabled = false;
           if (!j.ok) { document.getElementById('ba-err').textContent = j.error || 'Connexion impossible.'; return; }
           try { localStorage.setItem('bt_prix_token', j.token); localStorage.setItem('bt_prix_exp', String(j.exp)); sessionStorage.removeItem('bt_prix_secours'); } catch (e) {}
+          LASTPW = document.getElementById('ba-p').value;
           check();
         }).catch(function (e) { btn.disabled = false; document.getElementById('ba-err').textContent = e.message; });
     };
@@ -58,6 +59,38 @@
     document.getElementById('ba-p').onkeydown = function (e) { if (e.key === 'Enter') go(); };
     setTimeout(function () { var l = document.getElementById('ba-l'); if (l) l.focus(); }, 30);
   }
+  // mot de passe initial (ou réinitialisé par un admin) : changement obligatoire avant d'accéder aux briques
+  var LASTPW = '';
+  function saveTok(j) { try { localStorage.setItem('bt_prix_token', j.token); localStorage.setItem('bt_prix_exp', String(j.exp)); } catch (e) {} }
+  function showChange(forced, msg) {
+    var box = mount();
+    box.innerHTML = '<h1>' + (forced ? 'Nouveau mot de passe obligatoire' : 'Changer mon mot de passe') + '</h1><div class="br"><b>briffe</b><i>tools</i></div>' +
+      (forced ? '<p>Bonjour ' + esc(A.me.name || A.me.login) + ', ton mot de passe a été fourni par un administrateur : choisis le tien pour continuer (8 caractères minimum).</p>' : '') +
+      (LASTPW && forced ? '' : '<input id="ba-c" type="password" placeholder="Mot de passe actuel" autocomplete="current-password">') +
+      '<input id="ba-n" type="password" placeholder="Nouveau mot de passe" autocomplete="new-password"><input id="ba-n2" type="password" placeholder="Confirmer le nouveau mot de passe" autocomplete="new-password">' +
+      '<button id="ba-ok">Enregistrer</button><div class="err" id="ba-err">' + esc(msg || '') + '</div>' +
+      '<p>' + (forced ? '<a href="#" id="ba-out">changer de compte</a>' : '<a href="#" id="ba-cancel">annuler</a>') + '</p>';
+    var err = function (t) { document.getElementById('ba-err').textContent = t; };
+    var go = function () {
+      var cur = LASTPW && forced ? LASTPW : document.getElementById('ba-c').value, n1 = document.getElementById('ba-n').value, n2 = document.getElementById('ba-n2').value;
+      if (n1.length < 8) return err('8 caractères minimum.');
+      if (n1 !== n2) return err('Les deux saisies ne correspondent pas.');
+      if (n1 === cur) return err('Choisis un mot de passe différent de l\'actuel.');
+      var btn = document.getElementById('ba-ok'); btn.disabled = true;
+      fetch('/.netlify/functions/users', { method: 'POST', headers: A.headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ action: 'change_password', current: cur, password: n1 }) })
+        .then(function (r) { return r.json(); }).then(function (j) {
+          btn.disabled = false;
+          if (!j.ok) { if (/actuel incorrect/.test(j.error || '')) LASTPW = ''; showChange(forced, j.error || 'Échec.'); return; }
+          saveTok(j); LASTPW = ''; check();
+        }).catch(function (e) { btn.disabled = false; err(e.message); });
+    };
+    document.getElementById('ba-ok').onclick = go;
+    document.getElementById('ba-n2').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+    var o = document.getElementById('ba-out'); if (o) o.onclick = function (e) { e.preventDefault(); A.logout(); };
+    var c = document.getElementById('ba-cancel'); if (c) c.onclick = function (e) { e.preventDefault(); unmount(); };
+    setTimeout(function () { var f = document.getElementById(LASTPW && forced ? 'ba-n' : 'ba-c'); if (f) f.focus(); }, 30);
+  }
+  A.changePassword = function () { if (A.me && !A.me.master) showChange(false, ''); };
   function showDenied() {
     var box = mount();
     box.innerHTML = '<h1>Accès refusé</h1><div class="br">' + esc(LABELS[BRIQUE] || BRIQUE) + '</div>' +
@@ -68,8 +101,9 @@
   function chip() {
     style();
     var c = document.getElementById('ba-chip'); if (c) c.remove();
-    c = el('<div id="ba-chip">' + esc(A.me.name || A.me.login) + (BRIQUE ? ' · ' + esc({ lecteur: 'lecture', editeur: 'édition', admin: 'admin' }[A.level] || '') : (A.me.is_admin ? ' · administrateur' : '')) + ' · <a id="ba-x">déconnexion</a></div>');
+    c = el('<div id="ba-chip">' + esc(A.me.name || A.me.login) + (BRIQUE ? ' · ' + esc({ lecteur: 'lecture', editeur: 'édition', admin: 'admin' }[A.level] || '') : (A.me.is_admin ? ' · administrateur' : '')) + (A.me.master ? '' : ' · <a id="ba-pw">mot de passe</a>') + ' · <a id="ba-x">déconnexion</a></div>');
     document.body.appendChild(c); document.getElementById('ba-x').onclick = A.logout;
+    var pw = document.getElementById('ba-pw'); if (pw) pw.onclick = A.changePassword;
   }
   var resolveReady; A.ready = new Promise(function (r) { resolveReady = r; });
   function check() {
@@ -78,7 +112,9 @@
       .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
       .then(function (x) {
         if (!x.j.ok) { showLogin(x.s === 401 ? '' : (x.j.error || '')); return; }
-        A.me = x.j.user; A.level = BRIQUE ? A.levelFor(BRIQUE) : (A.me.is_admin ? 'admin' : 'lecteur');
+        A.me = x.j.user;
+        if (A.me.must_change && !A.me.master) { showChange(true, ''); return; }
+        A.level = BRIQUE ? A.levelFor(BRIQUE) : (A.me.is_admin ? 'admin' : 'lecteur');
         if (BRIQUE && A.level === 'aucun') { showDenied(); return; }
         unmount(); chip(); resolveReady(A.me);
         try { document.dispatchEvent(new CustomEvent('briffe-auth', { detail: A.me })); } catch (e) {}

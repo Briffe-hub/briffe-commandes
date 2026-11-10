@@ -9,6 +9,7 @@
 //   { action:"update", id, name?, is_admin?, perms?, active? }    -> { ok, user }     (admin)
 //      perms = { <brique>: "lecteur"|"editeur"|"admin" } ; brique absente = aucun accès ; is_admin = tous les droits
 //   { action:"reset_password", id, password }  -> { ok }   déconnecte toutes ses sessions (admin)
+//   create et reset_password posent must_change : le compte doit changer son mot de passe à la connexion suivante
 //   { action:"logout_all", id }                -> { ok }   déconnecte toutes ses sessions (admin)
 //   { action:"delete", id }                    -> { ok }                                (admin)
 // Authentification : en-tête x-briffe-token (jeton de session) ou x-briffe-pass (accès de secours = admin).
@@ -30,6 +31,7 @@ function headers() {
 const json = (code, obj) => ({ statusCode: code, headers: headers(), body: JSON.stringify(obj) });
 const normLogin = s => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9._-]+/g, "");
 const now = () => new Date().toISOString();
+const checkSame = (u, pw) => U.checkPassword(u, pw || "");
 const activeAdmins = store => store.users.filter(u => U.normUser(u).is_admin && u.active !== false);
 
 exports.handler = async function (event) {
@@ -67,7 +69,8 @@ exports.handler = async function (event) {
       const u = store.users.find(x => x.id === me.id);
       if (!u || !U.checkPassword(u, body.current || "")) return json(400, { error: "Mot de passe actuel incorrect." });
       const pb = U.passwordProblem(body.password); if (pb) return json(400, { error: pb });
-      Object.assign(u, U.hashPassword(body.password), { ver: (u.ver || 1) + 1, updated: now() });
+      if (checkSame(u, body.password)) return json(400, { error: "Le nouveau mot de passe doit être différent de l'actuel." });
+      Object.assign(u, U.hashPassword(body.password), { ver: (u.ver || 1) + 1, updated: now(), must_change: false });
       await U.saveStore(store);
       const t = U.makeToken(u); // les autres sessions sont déconnectées, celle-ci continue
       return json(200, { ok: true, token: t.token, exp: t.exp });
@@ -94,7 +97,7 @@ exports.handler = async function (event) {
       const u = Object.assign({
         id: crypto.randomBytes(8).toString("hex"),
         login, name: String(body.name || "").trim().slice(0, 80) || login,
-        role: isAdmin ? "admin" : "lecteur", is_admin: isAdmin, perms, active: true, ver: 1, created: now(), updated: now(), created_by: me.login
+        role: isAdmin ? "admin" : "lecteur", is_admin: isAdmin, perms, active: true, must_change: true, ver: 1, created: now(), updated: now(), created_by: me.login
       }, U.hashPassword(body.password));
       store.users.push(u);
       await U.saveStore(store);
@@ -135,7 +138,7 @@ exports.handler = async function (event) {
     if (action === "reset_password") {
       const u = find(body.id); if (!u) return json(404, { error: "Compte introuvable." });
       const pb = U.passwordProblem(body.password); if (pb) return json(400, { error: pb });
-      Object.assign(u, U.hashPassword(body.password), { ver: (u.ver || 1) + 1, updated: now() });
+      Object.assign(u, U.hashPassword(body.password), { ver: (u.ver || 1) + 1, updated: now(), must_change: true });
       await U.saveStore(store);
       return json(200, { ok: true });
     }

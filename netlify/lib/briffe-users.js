@@ -121,7 +121,7 @@ const MASTER = { id: "secours", login: "secours", name: "Accès de secours", rol
 function publicUser(u) {
   normUser(u);
   return { id: u.id, login: u.login, name: u.name || u.login, role: u.is_admin ? "admin" : (u.role || "lecteur"), is_admin: !!u.is_admin, perms: Object.assign({}, u.perms),
-    master: !!u.master, active: u.active !== false, created: u.created || null, updated: u.updated || null, last_login: u.last_login || null };
+    master: !!u.master, must_change: !!u.must_change, active: u.active !== false, created: u.created || null, updated: u.updated || null, last_login: u.last_login || null };
 }
 // Niveau effectif d'un compte sur une brique ("aucun" si pas d'accès)
 function levelFor(user, brique) {
@@ -146,6 +146,8 @@ async function authenticate(event, minRole, brique) {
     if (!u || u.active === false || (u.ver || 1) !== d.s) return { status: 401, error: "Session expirée, reconnecte-toi." };
     user = publicUser(u);
   }
+  // mot de passe initial ou réinitialisé par un admin : à changer avant d'utiliser les briques
+  if (user.must_change && (brique || rank(minRole || "lecteur") > 0)) return { status: 403, error: "Change ton mot de passe avant d'utiliser briffetools (recharge la page).", must_change: true };
   const lvl = levelFor(user, brique);
   user.level = lvl; user.brique = brique || null;
   if (rank(lvl) < rank(minRole || "lecteur")) {

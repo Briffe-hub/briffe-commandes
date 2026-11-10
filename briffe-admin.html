@@ -89,7 +89,7 @@ function render(){
         return '<td class="b"><select data-b="'+b.id+'" class="l-'+(u.is_admin?'admin':v)+'"'+(u.is_admin?' disabled title="Administrateur général : tous les droits"':'')+'>'+
           LEVELS.map(function(l){ return '<option value="'+l[0]+'"'+((u.is_admin?'admin':v)===l[0]?' selected':'')+'>'+l[1]+'</option>'; }).join('')+'</select></td>'; }).join('')+
       '<td class="chkc"><input type="checkbox" data-f="active" '+(u.active?'checked':'')+(self?' disabled':'')+'></td>'+
-      '<td class="login">'+esc(u.last_login?fmtDT(u.last_login):'jamais')+'</td>'+
+      '<td class="login">'+esc(u.last_login?fmtDT(u.last_login):'jamais')+(u.must_change?'<br><span style="color:#f59e0b">mdp provisoire</span>':'')+'</td>'+
       '<td><div class="acts"><button data-a="pass" title="Nouveau mot de passe">Mdp</button><button data-a="out" title="Fermer toutes ses sessions ouvertes">Déco.</button>'+(self?'':'<button data-a="del" title="Supprimer le compte">Suppr.</button>')+'</div></td></tr>';
   });
   h+='</table></div><div id="msg" class="msg"></div></div>';
@@ -99,7 +99,7 @@ function render(){
     '<label>Mot de passe initial<input id="n-pass" minlength="8" required></label>'+
     '<label>Droits de départ<select id="n-copy"><option value="">Aucun accès (à régler ensuite)</option>'+USERS.map(function(u){ return '<option value="'+esc(u.id)+'">Comme '+esc(u.name)+'</option>'; }).join('')+'</select></label>'+
     '<div class="acts"><button type="button" id="n-gen">Générer</button><button class="primary" type="submit">Créer le compte</button></div></form>'+
-    '<p style="font-size:12px;color:var(--mut);line-height:1.6;margin:12px 0 0">Communique l\'identifiant et le mot de passe initial à la personne ; elle pourra le changer dans le module Prix fournisseurs (« Mon mot de passe »).</p></div>';
+    '<p style="font-size:12px;color:var(--mut);line-height:1.6;margin:12px 0 0">Communique l\'identifiant et le mot de passe initial à la personne : à sa première connexion, elle devra choisir son propre mot de passe avant d\'accéder aux briques. Idem après un « Mdp » (nouveau mot de passe donné par un admin).</p></div>';
   h+='<h2>Niveaux</h2><div class="card legend">'+
     '<div><b>—</b> : la brique n\'apparaît pas dans son menu et son ouverture est refusée.</div>'+
     '<div><b>Lecture</b> : consulter (ex. historique des prix, envois de prestations, réimpressions).</div>'+
@@ -123,7 +123,7 @@ function bind(){
     }; });
     tr.querySelector('[data-a=pass]').onclick=async function(){
       var pw=prompt('Nouveau mot de passe pour '+u.login+' (8 caractères min.) :',genPass()); if(!pw) return;
-      var j=await api({action:'reset_password',id:id,password:pw}); if(j.ok) msg('Mot de passe de '+u.login+' : '+pw+' (ses sessions sont fermées).',true); else msg(j.error);
+      var j=await api({action:'reset_password',id:id,password:pw}); if(j.ok) { u.must_change=true; render(); msg('Mot de passe provisoire de '+u.login+' : '+pw+' (ses sessions sont fermées ; il devra le changer à la connexion).',true); } else msg(j.error);
     };
     tr.querySelector('[data-a=out]').onclick=async function(){ var j=await api({action:'logout_all',id:id}); if(j.ok){ msg('Sessions de '+u.login+' fermées.',true); if(ME.id===id) BriffeAuth.logout(); } else msg(j.error); };
     var del=tr.querySelector('[data-a=del]');
