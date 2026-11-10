@@ -1634,21 +1634,20 @@ async function svAnalyzeDispatch(){
   if(D.split){
     ['cuisine','patisserie','logistique'].forEach(function(k){ if(by[k]) checks.push({ok:true,label:'Service '+SVC_LABEL[k]+' : page(s) '+svPagesTxt(by[k].map(function(p){ return p.n; }))}); });
   } else {
-    checks.push({ok:'warn',label:(!hasText?'Contenu non lisible':by.tout?'Pages en vue « TOUT » (page(s) '+svPagesTxt(by.tout.map(function(p){return p.n;}))+')':'Service non reconnu page(s) '+svPagesTxt((by.inconnu||[]).map(function(p){return p.n;})))+' : le PDF sera envoyé entier, sans découpage par service.'});
+    checks.push({ok:'warn',label:(!hasText?'Contenu non lisible':by.tout?'Pages en vue « TOUT » (page(s) '+svPagesTxt(by.tout.map(function(p){return p.n;}))+')':'Service non reconnu page(s) '+svPagesTxt((by.inconnu||[]).map(function(p){return p.n;})))+' : services non vérifiés.'});
   }
   D.checks=checks; D.blocking=blocking;
   // services attendus absents : à confirmer (pour ne pas oublier un bon)
   D.missing=D.split?['cuisine','patisserie'].filter(function(k){ return !by[k]; }):[];
 }
-// Découpe en un PDF par service (pdf-lib)
+// Bons de dispatch envoyés en UN seul PDF (comme exporté de Sextan) ; la lecture par service ne sert qu'aux contrôles.
+// Plusieurs fichiers déposés : fusionnés dans l'ordre (pdf-lib).
 async function svSplitDispatch(){
   var D=SV.dispatch, out={};
-  if(!D.split){
-    if(D.sources.length===1){ out.dispatch=D.sources[0].b64; return out; }
-  }
+  if(D.sources.length===1){ out.dispatch=D.sources[0].b64; return out; }
   await svLoad('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
   var srcs=[]; for(var i=0;i<D.sources.length;i++) srcs.push(await PDFLib.PDFDocument.load(svB64ToBytes(D.sources[i].b64)));
-  var groups=D.split?D.by:{ dispatch:D.pages };
+  var groups={ dispatch:D.pages };
   for(var k in groups){
     if(!['cuisine','patisserie','logistique','dispatch'].includes(k)) continue;
     var doc=await PDFLib.PDFDocument.create();
@@ -1673,7 +1672,7 @@ function svDropZone(){
   var D=SV.dispatch, has=D&&D.sources&&D.sources.length;
   var cls=!has||D.checking?'':(D.blocking?'ko':(D.checks.some(function(c){return c.ok==='warn';})?'warn':'ok'));
   var h='<div class="sv-drop sv-drop1 '+cls+'" data-k="dispatch"><b>Bons de dispatch Sextan</b>';
-  if(!has) h+='<div class="hint">Glisse ici le PDF des bons de dispatch exporté depuis l\'Ordre de Dispatch Sextan (<b>dernière version</b>, mise en page <b>portrait</b>) : un seul PDF multi-pages, découpé automatiquement par service. Ou <a href="#" onclick="svPick();return false" style="color:#f59e0b">choisis le fichier</a>.</div>'+
+  if(!has) h+='<div class="hint">Glisse ici le PDF des bons de dispatch exporté depuis l\'Ordre de Dispatch Sextan (<b>dernière version</b>, mise en page <b>portrait</b>) : un seul PDF multi-pages, envoyé tel quel en un seul fichier. Ou <a href="#" onclick="svPick();return false" style="color:#f59e0b">choisis le fichier</a>.</div>'+
     '<label class="no"><input type="checkbox" '+(SV.noDispatch?'checked':'')+' onchange="SV.noDispatch=this.checked;svRender()"> Pas de bon de dispatch pour cette prestation</label>';
   else {
     h+=D.sources.map(function(s){ return '<div class="fn">'+esc(s.name)+' <span class="hint">· '+Math.round(s.size/1024)+' Ko · '+(s.pages||'?')+' page(s) · fichier du '+svFmtDT(s.modified)+'</span></div>'; }).join('');
@@ -1747,7 +1746,7 @@ function svRender(){
     var rows=[{n:'Bon de préparation',d:'Onglet « '+(TITLES[S.type]||S.type)+' » · '+SV.prep.pages+' page(s) A4 portrait',ok:true}];
     var D=SV.dispatch, parts=SV.parts||{};
     if(!D||!D.sources||!D.sources.length) rows.push({n:'Bons de dispatch',d:'Pas de bon de dispatch pour cette prestation',ok:'none'});
-    else if(parts.dispatch) rows.push({n:'Bons de dispatch (non découpés)',d:esc(D.sources.map(function(x){return x.name;}).join(', '))+' · '+D.pages.length+' page(s)<div class="cks">'+svChecksHtml(D.checks)+'</div>',ok:true,html:true});
+    else if(parts.dispatch) rows.push({n:'Bons de dispatch (un seul PDF)',d:esc(D.sources.map(function(x){return x.name;}).join(', '))+' · '+D.pages.length+' page(s)<div class="cks">'+svChecksHtml(D.checks)+'</div>',ok:true,html:true});
     else ['cuisine','patisserie','logistique'].forEach(function(k){
       var lab='Bon de dispatch '+SVC_LABEL[k];
       if(parts[k]) rows.push({n:lab,d:D.by[k].length+' page(s) · pages '+svPagesTxt(D.by[k].map(function(p){return p.n;}))+' du PDF Sextan',ok:true});
@@ -1850,7 +1849,7 @@ async function svSend(){
   SV.steps={archive:{run:true,message:'En cours…'},email:{run:true,message:'En cours…'},notification:{run:true,message:'En cours…'},agenda:{pending:true}}; svRender();
   var safe=function(s){ return String(s||'').replace(/[\\/:*?"<>|]+/g,'-').trim(); };
   var base='R'+rec.id+' · '+safe(rec.client||rec.name)+' · '+svFmtD(rec.date).replace(/\//g,'-');
-  var pr=SV.parts||{}, sans={ cuisine:!pr.cuisine&&!pr.dispatch, patisserie:!pr.patisserie&&!pr.dispatch };
+  var pr=SV.parts||{}, DD=SV.dispatch||{}, lu=!!(pr.dispatch&&DD.split&&DD.by), sans={ cuisine:!pr.cuisine&&(!pr.dispatch||(lu&&!DD.by.cuisine)), patisserie:!pr.patisserie&&(!pr.dispatch||(lu&&!DD.by.patisserie)) };
   var j=await svPost({ action:'valider', reception:rec, commentaire:SV.comment||'', sans:sans,
     files:Object.assign({ prep:SV.prep.b64 }, SV.parts||{}),
     names:{ prep:'BON PREP · '+base+'.pdf', cuisine:'DISPATCH CUISINE · '+base+'.pdf', patisserie:'DISPATCH PATISSERIE · '+base+'.pdf', logistique:'DISPATCH LOGISTIQUE · '+base+'.pdf', dispatch:'BONS DE DISPATCH · '+base+'.pdf' } });
