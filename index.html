@@ -97,6 +97,9 @@ footer b{color:var(--red);font-weight:500}
   .wrap{padding:44px 20px 30px}
   .hero{margin-bottom:40px}
 }
+/* aucune brique affichée avant vérification des droits : seules celles du compte apparaissent */
+.grid .card[data-b],.grid .card[hidden]{display:none}
+.grid .card[data-b].ok{display:flex}
 </style>
 </head>
 <body>
@@ -115,7 +118,7 @@ footer b{color:var(--red);font-weight:500}
 
   <section class="grid">
 
-    <a class="card" href="briffe-commandes.html">
+    <a class="card" href="briffe-commandes.html" data-b="commandes">
       <span class="num">01</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -129,7 +132,7 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
-    <a class="card" href="briffe-outilsPDF.html">
+    <a class="card" href="briffe-outilsPDF.html" data-b="pdf">
       <span class="num">02</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -143,7 +146,7 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
-    <a class="card" href="briffe-prepa.html">
+    <a class="card" href="briffe-prepa.html" data-b="prepa">
       <span class="num">03</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -157,7 +160,7 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
-    <a class="card" href="briffe-liens-admin.html">
+    <a class="card" href="briffe-liens-admin.html" data-b="liens">
       <span class="num">04</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -172,7 +175,7 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
-    <a class="card" href="briffe-cartels.html">
+    <a class="card" href="briffe-cartels.html" data-b="cartels">
       <span class="num">05</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -186,7 +189,7 @@ footer b{color:var(--red);font-weight:500}
       <span class="go">Ouvrir <span class="arw">&rarr;</span></span>
     </a>
 
-    <a class="card" href="briffe-prix.html">
+    <a class="card" href="briffe-prix.html" data-b="prix">
       <span class="num">06</span>
       <span class="icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -217,18 +220,18 @@ footer b{color:var(--red);font-weight:500}
   </section>
 </main>
 <script>
-// Menu : n'affiche que les briques auxquelles le compte a accès
+// Menu : n'affiche QUE les briques auxquelles le compte connecté a accès (les autres sont retirées de la page)
 (function(){
-  var MAP = { 'briffe-commandes.html':'commandes', 'briffe-outilsPDF.html':'pdf', 'briffe-prepa.html':'prepa', 'briffe-liens-admin.html':'liens', 'briffe-cartels.html':'cartels', 'briffe-prix.html':'prix' };
-  document.querySelectorAll('.grid .card').forEach(function(c){ if(MAP[c.getAttribute('href')]) c.style.visibility='hidden'; });
   BriffeAuth.ready.then(function(me){
     var n=0;
-    document.querySelectorAll('.grid .card').forEach(function(c){
-      var b=MAP[c.getAttribute('href')]; if(!b) return;
-      if(BriffeAuth.can(b,'lecteur')){ c.style.visibility=''; n++; } else c.remove();
+    document.querySelectorAll('.grid .card[data-b]').forEach(function(c){
+      if(BriffeAuth.can(c.getAttribute('data-b'),'lecteur')){ c.classList.add('ok'); n++; } else c.remove();
     });
     var ta=document.getElementById('tile-admin'); if(me.is_admin) ta.hidden=false; else ta.remove();
-    if(!n && !me.is_admin){ var l=document.querySelector('.lead'); if(l) l.textContent='Aucune brique ne t\'est ouverte pour le moment : demande un accès à un administrateur.'; }
+    document.querySelectorAll('.grid .card.ok .num').forEach(function(x,i){ x.textContent=('0'+(i+1)).slice(-2); });
+    var l=document.querySelector('.lead');
+    if(l) l.textContent=(!n && !me.is_admin)?'Aucune brique ne t\'est ouverte pour le moment : demande un accès à un administrateur.'
+      :'Connecté : '+(me.name||me.login)+(me.master?' (accès de secours, tous les droits)':me.is_admin?' (administrateur général, toutes les briques)':'')+'. Choisis un outil pour commencer.';
   });
 })();
 </script>
