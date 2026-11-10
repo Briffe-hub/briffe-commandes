@@ -295,11 +295,14 @@ async function onSignedIn() {
   }
 }
 
+// Adresses expéditrices des commandes appels d'offre (La Consignerie)
+var AO_SENDERS=["noreply@consignerie.com","contact@consignerie.com"];
+var AO_FROM_Q=encodeURIComponent("from:("+AO_SENDERS.join(" OR ")+")");
 async function fetchEmails() {
   // Fetch commandes (with PDF)
-  var d1 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+has:attachment+in:inbox");
+  var d1 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q="+AO_FROM_Q+"+has:attachment+in:inbox");
   // Fetch annulations (no PDF, subject contains ANNUL)
-  var d2 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+in:inbox+-has:attachment");
+  var d2 = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q="+AO_FROM_Q+"+in:inbox+-has:attachment");
 
   var ids = new Set();
   var msgs = [];
@@ -777,7 +780,7 @@ async function findBL(devNum, btn) {
   btn.textContent = "...";
   try {
     // Search in all mail (including archived) for this DEV number with attachment
-    var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:"+devNum+"+has:attachment");
+    var data = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q="+AO_FROM_Q+"+subject:"+devNum+"+has:attachment");
     if (!data.messages || !data.messages.length) {
       btn.textContent = "BL introuvable";
       return;
@@ -992,7 +995,7 @@ async function reprintSheet(msgId){
 
 function renderEmailList(){
   if (!EMAILS.length){
-    document.getElementById("main").innerHTML='<div class="empty">Aucun email de noreply@consignerie.com dans la boite de reception.</div>';
+    document.getElementById("main").innerHTML='<div class="empty">Aucun email de '+AO_SENDERS.join(' ou ')+' dans la boite de reception.</div>';
     return;
   }
   var html='<div class="toolbar"><div style="display:flex;align-items:center"><span class="section-label">Emails</span><span class="count">'+EMAILS.length+'</span></div>'
@@ -1209,7 +1212,7 @@ async function archiveCancellation(msgId) {
   // Find and archive original commande email
   if (devNum) {
     try {
-      var search = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q=from:noreply@consignerie.com+subject:"+devNum);
+      var search = await gFetch("https://gmail.googleapis.com/gmail/v1/users/"+GMAIL_USER+"/messages?q="+AO_FROM_Q+"+subject:"+devNum);
       if (search.messages && search.messages.length) {
         for (var i=0;i<search.messages.length;i++) {
           var m = search.messages[i];
