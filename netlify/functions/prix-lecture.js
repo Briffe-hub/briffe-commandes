@@ -1,3 +1,4 @@
+const { frAnthropicError } = require("../lib/anthropic-errors.js");
 // Netlify Function : /.netlify/functions/prix-lecture  (module Prix fournisseurs)
 // Lit UNE page de BL / facture fournisseur et renvoie son contenu structuré.
 // POST JSON (en-tête x-briffe-pass) :
@@ -154,7 +155,7 @@ exports.handler = async function (event) {
       body: JSON.stringify({ model: MODEL, max_tokens: 6000, system: SYSTEM, messages: [{ role: "user", content }] })
     });
     const j = await r.json();
-    if (!r.ok) return json(502, { error: "Lecture refusée par l'API Claude (" + r.status + ") : " + ((j.error && j.error.message) || "erreur inconnue"), model: MODEL });
+    if (!r.ok) return json(502, { error: frAnthropicError(r.status, j.error) || ("Lecture refusée par l'API Claude (" + r.status + ") : " + ((j.error && j.error.message) || "erreur inconnue")), model: MODEL });
     const text = (j.content || []).filter(c => c.type === "text").map(c => c.text).join("");
     const parsed = extractJson(text);
     if (!parsed) return json(502, { error: "Réponse illisible (JSON attendu).", raw: text.slice(0, 500), model: MODEL });

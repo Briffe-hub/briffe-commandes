@@ -1,3 +1,4 @@
+const { frAnthropicError } = require("../lib/anthropic-errors.js");
 exports.handler = async function(event) {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
@@ -13,6 +14,11 @@ exports.handler = async function(event) {
       body: event.body
     });
     const data = await response.json();
+    // erreur API (crédit épuisé, clé refusée…) : message en clair, relu par les briques via data.error.message
+    if (!response.ok && data && data.error) {
+      const fr = frAnthropicError(response.status, data.error);
+      if (fr) { data.error.original = data.error.message; data.error.message = fr; }
+    }
     return {
       statusCode: 200,
       headers: {
